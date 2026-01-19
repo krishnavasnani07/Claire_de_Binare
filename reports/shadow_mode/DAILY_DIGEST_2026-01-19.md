@@ -1,21 +1,21 @@
 # Shadow Mode Daily Digest - 2026-01-19
 
-**Report Generated:** 2026-01-19 10:33:31 UTC
+**Report Generated:** 2026-01-19 14:19:57 UTC
 
 ---
 
 ## Status: RED
 
-**2 critical alert(s) firing**
+**Approval rate critically low: 0.0%**
 
 ---
 
 ## KPIs (Last 24h)
 
 ### Signal Flow
-- **Signals Received:** 3230
+- **Signals Received:** 3469
 - **Orders Approved:** 0
-- **Orders Blocked:** 3230
+- **Orders Blocked:** 3469
 - **Approval Rate:** 0.0%
 
 ### Execution
@@ -27,21 +27,21 @@
 
 ## Top 3 Alerts (24h)
 
-   - DatabaseConnectionLost: 1 (severity: critical)
-   - RedisConnectionLost: 1 (severity: critical)
    - TradePipelineStalled: 1 (severity: warning)
 
 ---
 
 ## Incidents / Breakpoints
 
-   - **2 critical alert(s) firing** (active now)
+   - **Approval rate critically low: 0.0%** (active now)
 
 ---
 
 ## Actions
 
 ### Changes Today
+   - 802a7bc fix(monitoring): correct exporter configuration for DB/Redis metrics
+   - 87bfb32 feat(monitoring): add Shadow Mode daily digest generator
    - 5ae1df7 feat(alerting): implement daily digest for warning alerts
    - 53a7d6a fix(compose): mount alerts.yml to Prometheus container
    - 373f724 fix(monitoring): add TradePipelineStalled alert for dual-mode failure detection (#614)
@@ -58,7 +58,7 @@
 **Reproduce this report:**
 ```bash
 # Run digest generator
-python infrastructure/scripts/generate_shadow_digest.py --date 2026-01-19
+python scripts/generate_shadow_digest.py --date 2026-01-19
 
 # Manual data collection:
 # 24h signals
