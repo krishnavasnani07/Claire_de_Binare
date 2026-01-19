@@ -11,6 +11,7 @@ import signal
 import logging
 import logging.config
 import redis
+import psycopg2
 from flask import Flask, jsonify, Response
 from dataclasses import dataclass
 from datetime import datetime
@@ -136,6 +137,152 @@ class RiskManager:
         except redis.ConnectionError as e:
             logger.error(f"Redis-Verbindung fehlgeschlagen: {e}")
             sys.exit(1)
+
+    def bootstrap_state_from_db(self):
+        """
+        Bootstrap risk state from positions table (source-of-truth).
+
+        Reconciles in-memory risk state with persistent DB positions.
+        This ensures risk manager operates on accurate state after restarts.
+
+        Recovery strategy:
+        - Query positions table for all open positions (closed_at IS NULL)
+        - Rebuild risk_state.positions dict from DB
+        - Calculate total_exposure from position sizes * current_prices
+        - Log reconciliation results
+
+        Safety gate:
+        - If positions table empty BUT orders show net open position:
+          FAIL-CLOSED with actionable error message
+        - Prevents starting with incorrect state
+
+        Called during startup before processing signals.
+        """
+        try:
+            # Connect to PostgreSQL
+            conn = psycopg2.connect(
+                host=self.config.postgres_host,
+                port=self.config.postgres_port,
+                database=self.config.postgres_db,
+                user=self.config.postgres_user,
+                password=self.config.postgres_password,
+            )
+            cursor = conn.cursor()
+
+            # Query open positions
+            cursor.execute(
+                """
+                SELECT symbol, side, size, entry_price, current_price
+                FROM positions
+                WHERE closed_at IS NULL AND size > 0
+                ORDER BY symbol
+                """
+            )
+            positions = cursor.fetchall()
+
+            if not positions:
+                # SAFETY GATE: Check for state mismatch
+                # If positions empty, but orders show net open position, FAIL
+                logger.info("Positions table empty - checking for state mismatch...")
+
+                cursor.execute(
+                    """
+                    SELECT
+                        COALESCE(SUM(CASE WHEN side = 'buy' THEN filled_size ELSE 0 END), 0) as buy_total,
+                        COALESCE(SUM(CASE WHEN side = 'sell' THEN filled_size ELSE 0 END), 0) as sell_total
+                    FROM orders
+                    WHERE status = 'filled'
+                      AND filled_size > 0
+                      AND created_at >= '2026-01-17 14:15:00'
+                    """
+                )
+                buy_total, sell_total = cursor.fetchone()
+                net_position = float(buy_total) - float(sell_total)
+
+                # Threshold: consider position "open" if net > 0.0001 BTC (~$5 at 50k)
+                POSITION_THRESHOLD = 0.0001
+
+                if abs(net_position) > POSITION_THRESHOLD:
+                    error_msg = (
+                        f"\n{'=' * 80}\n"
+                        f"❌ CRITICAL: STATE MISMATCH DETECTED\n"
+                        f"{'=' * 80}\n"
+                        f"Positions table: EMPTY (0 open positions)\n"
+                        f"Orders table:    NET {net_position:.8f} BTC\n"
+                        f"  BUY fills:     {buy_total:.8f} BTC\n"
+                        f"  SELL fills:    {sell_total:.8f} BTC\n"
+                        f"\n"
+                        f"Risk manager CANNOT start with incorrect state.\n"
+                        f"\n"
+                        f"ACTION REQUIRED:\n"
+                        f"Run positions reconciliation script to reconstruct positions table:\n"
+                        f"\n"
+                        f"  python infrastructure/scripts/reconcile_positions.py\n"
+                        f"\n"
+                        f"Or set POSTGRES_PASSWORD environment variable and run:\n"
+                        f"\n"
+                        f"  docker compose exec cdb_risk python infrastructure/scripts/reconcile_positions.py\n"
+                        f"\n"
+                        f"This will rebuild positions table from order history.\n"
+                        f"After reconciliation completes, restart risk service.\n"
+                        f"{'=' * 80}\n"
+                    )
+                    logger.critical(error_msg)
+                    cursor.close()
+                    conn.close()
+                    raise RuntimeError("State mismatch: positions table empty but orders show open position")
+
+                logger.info("✅ Risk state bootstrap: No open positions in DB (clean state)")
+                cursor.close()
+                conn.close()
+                return
+
+            # Rebuild risk state
+            global risk_state
+            total_exposure = 0.0
+
+            for symbol, side, size, entry_price, current_price in positions:
+                # Convert side to position value (long=positive, short=negative)
+                position_size = float(size) if side == "long" else -float(size)
+                risk_state.positions[symbol] = position_size
+
+                # Use current_price for exposure calculation (fallback to entry_price if NULL)
+                price = float(current_price) if current_price else float(entry_price)
+                risk_state.last_prices[symbol] = price
+
+                # Calculate notional exposure
+                exposure = abs(position_size) * price
+                total_exposure += exposure
+
+                logger.info(
+                    "  Position loaded: %s %s %.8f @ %.2f (exposure: %.2f USD)",
+                    symbol,
+                    side.upper(),
+                    abs(position_size),
+                    price,
+                    exposure,
+                )
+
+            # Update risk state
+            risk_state.total_exposure = total_exposure
+            risk_state.open_positions = len(positions)
+
+            logger.info(
+                "✅ Risk state bootstrap complete: %d positions, total exposure: %.2f USD",
+                len(positions),
+                total_exposure,
+            )
+
+            cursor.close()
+            conn.close()
+
+        except psycopg2.Error as e:
+            logger.error(f"❌ Failed to bootstrap risk state from DB: {e}")
+            logger.warning("⚠️ Risk manager starting with EMPTY state (no reconciliation)")
+            # Continue startup with empty state rather than crashing
+        except Exception as e:
+            logger.error(f"❌ Unexpected error during risk state bootstrap: {e}")
+            logger.warning("⚠️ Risk manager starting with EMPTY state (no reconciliation)")
 
     @staticmethod
     def _parse_timestamp(value) -> int | None:
@@ -422,7 +569,17 @@ class RiskManager:
                 logger.warning(f"⚠️ {reason}")
                 stats["orders_blocked"] += 1
                 risk_state.signals_blocked += 1
+
+                # PROACTIVE AUTO-UNWIND: If over limit and have open positions, trigger unwind
+                self._trigger_proactive_unwind()
+
                 return None
+        else:
+            # Reduce-only order bypasses exposure limit (allowed to close positions)
+            logger.info(
+                f"✅ Reduce-only SELL allowed while over limit: {signal.symbol} (closes position)"
+            )
+            stats["reduce_only_approved"] = stats.get("reduce_only_approved", 0) + 1
 
         # Layer 3: Position-Size
         ok, reason = self.check_position_limit(signal)
@@ -604,7 +761,75 @@ class RiskManager:
             1 for qty in risk_state.positions.values() if abs(qty) > 1e-6
         )
 
+    def _trigger_proactive_unwind(self) -> None:
+        """
+        Proactive auto-unwind: Generate SELL orders when over limit.
+
+        This method is called when a signal is blocked due to max_exposure.
+        If we have open positions, we generate SELL orders to reduce exposure.
+
+        This breaks the deadlock where:
+        - Exposure > limit → all BUYs blocked
+        - No BUYs → no fills → reactive unwind never triggers
+        - Position stays open forever
+
+        Solution: Proactively unwind when blocked.
+        """
+        if not self.config.paper_auto_unwind:
+            return
+
+        # Check if we have any open positions
+        if not risk_state.positions:
+            return
+
+        # Generate SELL order for each open LONG position
+        for symbol, position_qty in list(risk_state.positions.items()):
+            if position_qty <= 0:
+                continue  # Skip short positions or zero positions
+
+            # Get current price for this symbol
+            current_price = risk_state.last_prices.get(symbol, 0.0)
+            if current_price <= 0:
+                logger.warning(
+                    f"⚠️ Proactive unwind skipped for {symbol}: no price data"
+                )
+                continue
+
+            order = Order(
+                symbol=symbol,
+                side="SELL",
+                quantity=abs(position_qty),
+                stop_loss_pct=self.config.stop_loss_pct,
+                signal_id=int(time.time()),
+                reason="proactive_unwind:over_limit",
+                timestamp=int(time.time()),
+                client_id=f"proactive-unwind-{symbol}-{int(time.time())}",
+                strategy_id="paper",  # Use paper strategy for auto-unwind
+                bot_id=None,
+                price=current_price,
+            )
+
+            logger.warning(
+                f"🔄 PROACTIVE AUTO-UNWIND: queued SELL {symbol} qty={abs(position_qty):.8f} "
+                f"(exposure over limit, forcing position close)"
+            )
+            stats["proactive_unwind_triggered"] = (
+                stats.get("proactive_unwind_triggered", 0) + 1
+            )
+            stats["orders_approved"] += 1
+            risk_state.pending_orders += 1
+            self.send_order(order)
+
+            # Only unwind one position per trigger to avoid flooding
+            break
+
     def _maybe_auto_unwind(self, result: OrderResult) -> None:
+        """
+        Reactive auto-unwind: Generate SELL after BUY fills.
+
+        This is the original auto-unwind logic that triggers after successful BUY fills.
+        Complements the proactive unwind above.
+        """
         if not self.config.paper_auto_unwind:
             return
         if result.status != "FILLED":
@@ -863,43 +1088,15 @@ def metrics():
         f"risk_pending_orders_total {risk_state.pending_orders}\n\n"
         "# HELP risk_total_exposure_value Gesamtposition (Notional)\n"
         "# TYPE risk_total_exposure_value gauge\n"
-        f"risk_total_exposure_value {risk_state.total_exposure}\n"
+        f"risk_total_exposure_value {risk_state.total_exposure}\n\n"
+        "# HELP risk_reduce_only_approved_total Reduce-only SELL orders approved while over exposure limit\n"
+        "# TYPE risk_reduce_only_approved_total counter\n"
+        f"risk_reduce_only_approved_total {stats.get('reduce_only_approved', 0)}\n\n"
+        "# HELP risk_proactive_unwind_triggered_total Proactive auto-unwind triggers (SELL orders generated when over limit)\n"
+        "# TYPE risk_proactive_unwind_triggered_total counter\n"
+        f"risk_proactive_unwind_triggered_total {stats.get('proactive_unwind_triggered', 0)}\n"
     )
     return Response(body, mimetype="text/plain")
-
-
-@app.route("/admin/reset_exposure", methods=["POST"])
-def admin_reset_exposure():
-    """Reset risk state exposure to 0 (Shadow Mode recovery only)"""
-    # Restrict to dev/shadow environments only
-    if config.env not in ["development", "shadow"]:
-        return jsonify({"error": "Only available in dev/shadow environments"}), 403
-
-    global risk_state
-    old_exposure = risk_state.total_exposure
-    old_positions_count = len(risk_state.positions)
-
-    # Reset all exposure-related state
-    risk_state.total_exposure = 0.0
-    risk_state.positions.clear()
-    risk_state.last_prices.clear()
-    risk_state.open_positions = 0
-
-    logger.warning(
-        "ADMIN: Exposure reset from %.2f to 0.0 (%d positions cleared) - Shadow Mode recovery",
-        old_exposure,
-        old_positions_count,
-    )
-
-    return jsonify(
-        {
-            "status": "ok",
-            "old_exposure": old_exposure,
-            "positions_cleared": old_positions_count,
-            "new_exposure": 0.0,
-            "message": "Risk state reset successful",
-        }
-    )
 
 
 # ===== SIGNAL HANDLER =====
@@ -930,6 +1127,9 @@ if __name__ == "__main__":
 
     manager = RiskManager()
     manager.connect_redis()
+
+    # Bootstrap risk state from DB positions (source-of-truth reconciliation)
+    manager.bootstrap_state_from_db()
 
     # Flask in Thread
     flask_thread = Thread(target=lambda: app.run(host="0.0.0.0", port=config.port))
