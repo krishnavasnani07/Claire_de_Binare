@@ -113,10 +113,10 @@ services:
     image: prometheuscommunity/postgres-exporter:latest
     container_name: cdb_postgres_exporter
     restart: unless-stopped
-    environment:
-      DATA_SOURCE_NAME_FILE: /run/secrets/postgres_password_dsn
     secrets:
       - postgres_password_dsn
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["DATA_SOURCE_NAME=$$(cat /run/secrets/postgres_password_dsn) exec /bin/postgres_exporter"]
     depends_on:
       - cdb_postgres
     healthcheck:
@@ -131,11 +131,10 @@ services:
     image: bitnami/redis-exporter:latest
     container_name: cdb_redis_exporter
     restart: unless-stopped
-    environment:
-      REDIS_ADDR: redis://cdb_redis:6379
     secrets:
       - redis_password
-    command: ["sh", "-c", "redis_exporter --redis.addr=$$REDIS_ADDR --redis.password=$$(cat /run/secrets/redis_password)"]
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["exec redis_exporter --redis.addr=redis://cdb_redis:6379 --redis.password=$$(cat /run/secrets/redis_password | tr -d '\\n')"]
     depends_on:
       - cdb_redis
     healthcheck:
