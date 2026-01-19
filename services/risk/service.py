@@ -868,6 +868,40 @@ def metrics():
     return Response(body, mimetype="text/plain")
 
 
+@app.route("/admin/reset_exposure", methods=["POST"])
+def admin_reset_exposure():
+    """Reset risk state exposure to 0 (Shadow Mode recovery only)"""
+    # Restrict to dev/shadow environments only
+    if config.env not in ["development", "shadow"]:
+        return jsonify({"error": "Only available in dev/shadow environments"}), 403
+
+    global risk_state
+    old_exposure = risk_state.total_exposure
+    old_positions_count = len(risk_state.positions)
+
+    # Reset all exposure-related state
+    risk_state.total_exposure = 0.0
+    risk_state.positions.clear()
+    risk_state.last_prices.clear()
+    risk_state.open_positions = 0
+
+    logger.warning(
+        "ADMIN: Exposure reset from %.2f to 0.0 (%d positions cleared) - Shadow Mode recovery",
+        old_exposure,
+        old_positions_count,
+    )
+
+    return jsonify(
+        {
+            "status": "ok",
+            "old_exposure": old_exposure,
+            "positions_cleared": old_positions_count,
+            "new_exposure": 0.0,
+            "message": "Risk state reset successful",
+        }
+    )
+
+
 # ===== SIGNAL HANDLER =====
 
 
