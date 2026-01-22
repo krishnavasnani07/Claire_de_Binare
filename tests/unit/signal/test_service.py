@@ -147,3 +147,100 @@ def test_signal_generation():
 
         signal_low_vol = engine.process_market_data(market_data_low_vol)
         assert signal_low_vol is None
+
+
+@pytest.mark.unit
+def test_raw_trade_data_pct_change_calculation():
+    """
+    Test: Raw trade data without pct_change field gets it calculated via PriceBuffer.
+
+    Issue #345: cdb_ws sends raw trades (no pct_change), cdb_signal must calculate it.
+    """
+    test_config = SignalConfig(
+        strategy_id="test_strategy",
+        bot_id="test_bot",
+        threshold_pct=2.0,
+        min_volume=100000.0
+    )
+
+    with patch("service.config", test_config):
+        engine = SignalEngine()
+
+        # First trade: cold start (pct_change will be 0.0)
+        raw_trade_1 = {
+            "symbol": "BTCUSDT",
+            "price": 50000.0,
+            "timestamp": 1609459200,
+            # NO pct_change field (raw trade data from cdb_ws)
+            "volume": 200000.0,
+        }
+
+        signal_1 = engine.process_market_data(raw_trade_1)
+        # No signal on cold start (pct_change = 0.0 < threshold 2.0%)
+        assert signal_1 is None
+
+        # Second trade: +3% movement (should generate signal)
+        # Formula: (51500 - 50000) / 50000 * 100 = 3.0%
+        raw_trade_2 = {
+            "symbol": "BTCUSDT",
+            "price": 51500.0,
+            "timestamp": 1609459260,
+            # NO pct_change field
+            "volume": 200000.0,
+        }
+
+        signal_2 = engine.process_market_data(raw_trade_2)
+
+        # Signal should be generated (3.0% > 2.0% threshold)
+        assert signal_2 is not None
+        assert signal_2.symbol == "BTCUSDT"
+        assert signal_2.side == "BUY"
+        assert signal_2.price == 51500.0
+        assert signal_2.pct_change == pytest.approx(3.0, rel=1e-9)
+        assert "Momentum: +3.0%" in signal_2.reason
+
+        # Third trade: -1% movement (should not generate signal)
+        # Formula: (51000 - 51500) / 51500 * 100 = -0.97%
+        raw_trade_3 = {
+            "symbol": "BTCUSDT",
+            "price": 51000.0,
+            "timestamp": 1609459320,
+            "volume": 200000.0,
+        }
+
+        signal_3 = engine.process_market_data(raw_trade_3)
+        # No signal (-0.97% < 2.0% threshold)
+        assert signal_3 is None
+
+
+@pytest.mark.unit
+def test_backward_compatibility_with_pct_change():
+    """
+    Test: Market data WITH pct_change field is used directly (no recalculation).
+
+    Backward compatibility: Existing enriched market_data events should still work.
+    """
+    test_config = SignalConfig(
+        strategy_id="test_strategy",
+        threshold_pct=2.0,
+        min_volume=100000.0
+    )
+
+    with patch("service.config", test_config):
+        engine = SignalEngine()
+
+        # Market data WITH pct_change (e.g., from aggregator or enriched source)
+        enriched_data = {
+            "symbol": "ETHUSDT",
+            "price": 3000.0,
+            "timestamp": 1609459200,
+            "pct_change": 2.5,  # Explicitly provided
+            "volume": 200000.0,
+        }
+
+        signal = engine.process_market_data(enriched_data)
+
+        # Signal should use provided pct_change value
+        assert signal is not None
+        assert signal.pct_change == 2.5
+        assert "Momentum: +2.5%" in signal.reason
