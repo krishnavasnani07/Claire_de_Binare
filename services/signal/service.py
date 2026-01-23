@@ -58,6 +58,12 @@ stats = {
     "signals_generated": 0,
     "last_signal": None,
     "status": "initializing",
+    # Sprint 1 #622: Latency + Error Tracking
+    "latency_samples": [],  # List of latency values (ms) for histogram
+    "latency_sum_ms": 0.0,  # Total latency for avg calculation
+    "latency_count": 0,  # Number of processed messages
+    "errors_total": 0,  # Total errors
+    "errors_by_type": {},  # Errors grouped by error type
 }
 
 
@@ -111,6 +117,9 @@ class SignalEngine:
         Momentum-Strategie:
         - BUY wenn pct_change > threshold
         """
+        # Sprint 1 #622: Track processing latency
+        start_time = time.time()
+
         try:
             market_data = MarketData.from_dict(data)
 
@@ -152,13 +161,55 @@ class SignalEngine:
                     f"✨ Signal generiert: {signal.symbol} {signal.side} @ ${signal.price:.2f} "
                     f"({signal.pct_change:+.2f}%)"
                 )
+
+                # Sprint 1 #622: Record latency for successful signal generation
+                latency_ms = (time.time() - start_time) * 1000
+                self._record_latency(latency_ms)
+
                 return signal
 
+            # Sprint 1 #622: Record latency even when no signal generated
+            latency_ms = (time.time() - start_time) * 1000
+            self._record_latency(latency_ms)
             return None
 
         except Exception as e:
             logger.error(f"Fehler bei Market-Data-Verarbeitung: {e}")
+
+            # Sprint 1 #622: Track errors
+            self._record_error(type(e).__name__)
+
+            # Still record latency for failed processing
+            latency_ms = (time.time() - start_time) * 1000
+            self._record_latency(latency_ms)
+
             return None
+
+    def _record_latency(self, latency_ms: float):
+        """
+        Record processing latency for metrics.
+
+        Sprint 1 #622: Track signal_processing_latency_ms
+        """
+        stats["latency_samples"].append(latency_ms)
+        stats["latency_sum_ms"] += latency_ms
+        stats["latency_count"] += 1
+
+        # Keep only last 1000 samples to avoid memory bloat
+        if len(stats["latency_samples"]) > 1000:
+            stats["latency_samples"].pop(0)
+
+    def _record_error(self, error_type: str):
+        """
+        Record error for metrics.
+
+        Sprint 1 #622: Track signal_errors_total by error type
+        """
+        stats["errors_total"] += 1
+
+        if error_type not in stats["errors_by_type"]:
+            stats["errors_by_type"][error_type] = 0
+        stats["errors_by_type"][error_type] += 1
 
     def publish_signal(self, signal: Signal):
         """Publiziert Signal auf Redis"""
@@ -258,13 +309,52 @@ def status():
 @app.route("/metrics")
 def metrics():
     """Prometheus Metriken (text/plain)"""
+    # Sprint 1 #622: Extended metrics with latency histogram and error counter
+
+    # Calculate histogram buckets for latency
+    buckets = [1, 5, 10, 25, 50, 100, 250, 500, 1000]
+    latency_buckets = {b: 0 for b in buckets}
+    latency_buckets["+Inf"] = 0
+
+    for sample in stats["latency_samples"]:
+        for bucket in buckets:
+            if sample <= bucket:
+                latency_buckets[bucket] += 1
+        latency_buckets["+Inf"] += 1
+
+    # Build histogram output
+    histogram_lines = []
+    cumulative = 0
+    for bucket in buckets + ["+Inf"]:
+        if bucket == "+Inf":
+            cumulative = latency_buckets["+Inf"]
+        else:
+            cumulative += latency_buckets[bucket]
+        histogram_lines.append(
+            f"signal_processing_latency_ms_bucket{{le=\"{bucket}\"}} {cumulative}"
+        )
+
+    histogram_lines.append(f"signal_processing_latency_ms_sum {stats['latency_sum_ms']}")
+    histogram_lines.append(f"signal_processing_latency_ms_count {stats['latency_count']}")
+
+    # Build error counter with labels
+    error_lines = []
+    for error_type, count in stats["errors_by_type"].items():
+        error_lines.append(f"signal_errors_total{{error_type=\"{error_type}\"}} {count}")
+
     body = (
         "# HELP signals_generated_total Anzahl generierter Signale\n"
         "# TYPE signals_generated_total counter\n"
         f"signals_generated_total {stats['signals_generated']}\n\n"
         "# HELP signal_engine_status Service Status (1=running, 0=stopped)\n"
         "# TYPE signal_engine_status gauge\n"
-        f"signal_engine_status {1 if stats['status'] == 'running' else 0}\n"
+        f"signal_engine_status {1 if stats['status'] == 'running' else 0}\n\n"
+        "# HELP signal_processing_latency_ms Signal processing latency in milliseconds\n"
+        "# TYPE signal_processing_latency_ms histogram\n"
+        + "\n".join(histogram_lines) + "\n\n"
+        "# HELP signal_errors_total Total signal processing errors\n"
+        "# TYPE signal_errors_total counter\n"
+        + ("\n".join(error_lines) if error_lines else "signal_errors_total 0") + "\n"
     )
     return Response(body, mimetype="text/plain")
 
