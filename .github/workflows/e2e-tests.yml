@@ -111,6 +111,12 @@ jobs:
             echo ""
             echo "**Action:** Real E2E runs only on protected/nightly with secrets. Do not treat this as full PASS."
           } >> "$GITHUB_STEP_SUMMARY"
+      # CI Exception Semantics
+      # GREEN + EXCEPTION != Real E2E PASS.
+      # Meaning: Pipeline passed with STUB/guardrails (missing secrets).
+      # Action: Treat as warning requiring follow-up.
+      # On protected/nightly: an Issue is auto-created.
+      # Only GREEN without EXCEPTION = real E2E validated.
       # --- 3) Provide stub env so compose/test doesn't crash ------------------------
       - name: Set stub secrets (CI-safe placeholders)
         if: steps.e2e_mode.outputs.mode == 'STUB'
