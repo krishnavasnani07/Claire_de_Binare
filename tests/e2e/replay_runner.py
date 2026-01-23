@@ -176,6 +176,111 @@ class ReplayRunner:
 
         return stats
 
+    def run_burst(
+        self, ticks_per_second: int = 100, duration_seconds: int = 10
+    ) -> Dict[str, Any]:
+        """
+        Run burst replay: publish ticks at high rate to simulate load.
+
+        Sprint 1 #623: Burst / Load / Race Conditions
+
+        Args:
+            ticks_per_second: Target publishing rate (e.g., 100 tps)
+            duration_seconds: How long to sustain the burst
+
+        Returns:
+            Statistics dict with performance metrics
+        """
+        logger.info("=" * 60)
+        logger.info(f"Starting BURST replay: {ticks_per_second} tps for {duration_seconds}s")
+        logger.info("=" * 60)
+
+        # Calculate total ticks needed
+        total_ticks_target = ticks_per_second * duration_seconds
+        tick_interval_sec = 1.0 / ticks_per_second
+
+        # Stats
+        stats = {
+            "ticks_published": 0,
+            "ticks_dropped": 0,
+            "errors": 0,
+            "duration_ms": 0,
+            "target_tps": ticks_per_second,
+            "actual_tps": 0.0,
+            "avg_latency_ms": 0.0,
+            "max_latency_ms": 0.0,
+        }
+
+        latencies = []
+        start_time = time.time()
+        tick_index = 0
+
+        logger.info(f"Target: {total_ticks_target} ticks @ {ticks_per_second} tps")
+        logger.info(f"Tick interval: {tick_interval_sec * 1000:.2f}ms")
+
+        # Cycle through fixture ticks repeatedly if needed
+        while tick_index < total_ticks_target:
+            tick_start = time.time()
+
+            # Get tick from fixture (cycle if necessary)
+            fixture_index = tick_index % len(self.ticks)
+            tick = self.ticks[fixture_index].copy()
+
+            # Update tick_id for burst sequence
+            tick["tick_id"] = tick_index + 1
+
+            try:
+                # Measure publishing latency
+                publish_start = time.time()
+                self.publish_tick(tick)
+                publish_latency = (time.time() - publish_start) * 1000
+                latencies.append(publish_latency)
+
+                stats["ticks_published"] += 1
+
+                # Rate control: sleep until next tick
+                elapsed = time.time() - tick_start
+                sleep_time = tick_interval_sec - elapsed
+
+                if sleep_time > 0:
+                    time.sleep(sleep_time)
+                else:
+                    # Fell behind target rate
+                    stats["ticks_dropped"] += 1
+
+            except Exception as e:
+                logger.error(f"❌ Error publishing tick {tick_index + 1}: {e}")
+                stats["errors"] += 1
+
+            tick_index += 1
+
+            # Progress logging (every 100 ticks)
+            if tick_index % 100 == 0:
+                logger.info(f"  Progress: {tick_index}/{total_ticks_target} ticks")
+
+        # Calculate final stats
+        end_time = time.time()
+        stats["duration_ms"] = int((end_time - start_time) * 1000)
+        stats["actual_tps"] = stats["ticks_published"] / (stats["duration_ms"] / 1000.0)
+
+        if latencies:
+            stats["avg_latency_ms"] = sum(latencies) / len(latencies)
+            stats["max_latency_ms"] = max(latencies)
+
+        logger.info("=" * 60)
+        logger.info("Burst replay complete")
+        logger.info(f"  Target: {total_ticks_target} ticks @ {ticks_per_second} tps")
+        logger.info(f"  Published: {stats['ticks_published']}")
+        logger.info(f"  Dropped: {stats['ticks_dropped']}")
+        logger.info(f"  Errors: {stats['errors']}")
+        logger.info(f"  Duration: {stats['duration_ms']}ms")
+        logger.info(f"  Actual TPS: {stats['actual_tps']:.2f}")
+        logger.info(f"  Avg Latency: {stats['avg_latency_ms']:.2f}ms")
+        logger.info(f"  Max Latency: {stats['max_latency_ms']:.2f}ms")
+        logger.info("=" * 60)
+
+        return stats
+
     def cleanup(self) -> None:
         """Cleanup resources."""
         if self.redis_client:
