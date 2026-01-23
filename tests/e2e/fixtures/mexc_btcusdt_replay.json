@@ -1,0 +1,374 @@
+{
+  "metadata": {
+    "description": "Deterministic BTCUSDT replay fixture for E2E testing",
+    "symbol": "BTCUSDT",
+    "tick_count": 40,
+    "created": "2026-01-22",
+    "purpose": "Sprint 2 - Force signal generation via threshold crossings (>3%)",
+    "expected_signals": ">=3",
+    "strategy_threshold_pct": 3.0,
+    "min_volume": 100000
+  },
+  "ticks": [
+    {
+      "tick_id": 1,
+      "symbol": "BTCUSDT",
+      "price": 50000.0,
+      "timestamp": 1609459200000,
+      "volume": 150000.0,
+      "side": "BUY",
+      "comment": "Cold start - pct_change will be 0.0% (no signal)"
+    },
+    {
+      "tick_id": 2,
+      "symbol": "BTCUSDT",
+      "price": 50500.0,
+      "timestamp": 1609459260000,
+      "volume": 150000.0,
+      "side": "BUY",
+      "comment": "+1.0% - Below threshold (no signal)"
+    },
+    {
+      "tick_id": 3,
+      "symbol": "BTCUSDT",
+      "price": 51000.0,
+      "timestamp": 1609459320000,
+      "volume": 150000.0,
+      "side": "BUY",
+      "comment": "+0.99% from prev - Below threshold (no signal)"
+    },
+    {
+      "tick_id": 4,
+      "symbol": "BTCUSDT",
+      "price": 50800.0,
+      "timestamp": 1609459380000,
+      "volume": 150000.0,
+      "side": "SELL",
+      "comment": "-0.39% from prev - Below threshold (no signal)"
+    },
+    {
+      "tick_id": 5,
+      "symbol": "BTCUSDT",
+      "price": 51500.0,
+      "timestamp": 1609459440000,
+      "volume": 150000.0,
+      "side": "BUY",
+      "comment": "+1.38% from prev - Below threshold (no signal)"
+    },
+    {
+      "tick_id": 6,
+      "symbol": "BTCUSDT",
+      "price": 53650.0,
+      "timestamp": 1609459500000,
+      "volume": 200000.0,
+      "side": "BUY",
+      "comment": "+4.17% from prev - ABOVE THRESHOLD - SIGNAL #1 EXPECTED"
+    },
+    {
+      "tick_id": 7,
+      "symbol": "BTCUSDT",
+      "price": 54000.0,
+      "timestamp": 1609459560000,
+      "volume": 150000.0,
+      "side": "BUY",
+      "comment": "+0.65% from prev - Below threshold (no signal)"
+    },
+    {
+      "tick_id": 8,
+      "symbol": "BTCUSDT",
+      "price": 53500.0,
+      "timestamp": 1609459620000,
+      "volume": 150000.0,
+      "side": "SELL",
+      "comment": "-0.93% from prev - Below threshold (no signal)"
+    },
+    {
+      "tick_id": 9,
+      "symbol": "BTCUSDT",
+      "price": 55300.0,
+      "timestamp": 1609459680000,
+      "volume": 180000.0,
+      "side": "BUY",
+      "comment": "+3.36% from prev - ABOVE THRESHOLD - SIGNAL #2 EXPECTED"
+    },
+    {
+      "tick_id": 10,
+      "symbol": "BTCUSDT",
+      "price": 55800.0,
+      "timestamp": 1609459740000,
+      "volume": 150000.0,
+      "side": "BUY",
+      "comment": "+0.90% from prev - Below threshold (no signal)"
+    },
+    {
+      "tick_id": 11,
+      "symbol": "BTCUSDT",
+      "price": 56000.0,
+      "timestamp": 1609459800000,
+      "volume": 150000.0,
+      "side": "BUY",
+      "comment": "+0.36% from prev - Below threshold (no signal)"
+    },
+    {
+      "tick_id": 12,
+      "symbol": "BTCUSDT",
+      "price": 55500.0,
+      "timestamp": 1609459860000,
+      "volume": 150000.0,
+      "side": "SELL",
+      "comment": "-0.89% from prev - Below threshold (no signal)"
+    },
+    {
+      "tick_id": 13,
+      "symbol": "BTCUSDT",
+      "price": 57500.0,
+      "timestamp": 1609459920000,
+      "volume": 190000.0,
+      "side": "BUY",
+      "comment": "+3.60% from prev - ABOVE THRESHOLD - SIGNAL #3 EXPECTED"
+    },
+    {
+      "tick_id": 14,
+      "symbol": "BTCUSDT",
+      "price": 57800.0,
+      "timestamp": 1609459980000,
+      "volume": 150000.0,
+      "side": "BUY",
+      "comment": "+0.52% from prev - Below threshold (no signal)"
+    },
+    {
+      "tick_id": 15,
+      "symbol": "BTCUSDT",
+      "price": 57000.0,
+      "timestamp": 1609460040000,
+      "volume": 150000.0,
+      "side": "SELL",
+      "comment": "-1.38% from prev - Below threshold (no signal)"
+    },
+    {
+      "tick_id": 16,
+      "symbol": "BTCUSDT",
+      "price": 56800.0,
+      "timestamp": 1609460100000,
+      "volume": 150000.0,
+      "side": "SELL",
+      "comment": "-0.35% from prev - Below threshold (no signal)"
+    },
+    {
+      "tick_id": 17,
+      "symbol": "BTCUSDT",
+      "price": 58800.0,
+      "timestamp": 1609460160000,
+      "volume": 200000.0,
+      "side": "BUY",
+      "comment": "+3.52% from prev - ABOVE THRESHOLD - SIGNAL #4 EXPECTED"
+    },
+    {
+      "tick_id": 18,
+      "symbol": "BTCUSDT",
+      "price": 59000.0,
+      "timestamp": 1609460220000,
+      "volume": 150000.0,
+      "side": "BUY",
+      "comment": "+0.34% from prev - Below threshold (no signal)"
+    },
+    {
+      "tick_id": 19,
+      "symbol": "BTCUSDT",
+      "price": 58500.0,
+      "timestamp": 1609460280000,
+      "volume": 150000.0,
+      "side": "SELL",
+      "comment": "-0.85% from prev - Below threshold (no signal)"
+    },
+    {
+      "tick_id": 20,
+      "symbol": "BTCUSDT",
+      "price": 58000.0,
+      "timestamp": 1609460340000,
+      "volume": 150000.0,
+      "side": "SELL",
+      "comment": "-0.85% from prev - Below threshold (no signal)"
+    },
+    {
+      "tick_id": 21,
+      "symbol": "BTCUSDT",
+      "price": 57500.0,
+      "timestamp": 1609460400000,
+      "volume": 150000.0,
+      "side": "SELL",
+      "comment": "-0.86% from prev - Below threshold (no signal)"
+    },
+    {
+      "tick_id": 22,
+      "symbol": "BTCUSDT",
+      "price": 59700.0,
+      "timestamp": 1609460460000,
+      "volume": 210000.0,
+      "side": "BUY",
+      "comment": "+3.83% from prev - ABOVE THRESHOLD - SIGNAL #5 EXPECTED"
+    },
+    {
+      "tick_id": 23,
+      "symbol": "BTCUSDT",
+      "price": 60000.0,
+      "timestamp": 1609460520000,
+      "volume": 150000.0,
+      "side": "BUY",
+      "comment": "+0.50% from prev - Below threshold (no signal)"
+    },
+    {
+      "tick_id": 24,
+      "symbol": "BTCUSDT",
+      "price": 59500.0,
+      "timestamp": 1609460580000,
+      "volume": 150000.0,
+      "side": "SELL",
+      "comment": "-0.83% from prev - Below threshold (no signal)"
+    },
+    {
+      "tick_id": 25,
+      "symbol": "BTCUSDT",
+      "price": 59200.0,
+      "timestamp": 1609460640000,
+      "volume": 150000.0,
+      "side": "SELL",
+      "comment": "-0.50% from prev - Below threshold (no signal)"
+    },
+    {
+      "tick_id": 26,
+      "symbol": "BTCUSDT",
+      "price": 61500.0,
+      "timestamp": 1609460700000,
+      "volume": 220000.0,
+      "side": "BUY",
+      "comment": "+3.89% from prev - ABOVE THRESHOLD - SIGNAL #6 EXPECTED"
+    },
+    {
+      "tick_id": 27,
+      "symbol": "BTCUSDT",
+      "price": 61800.0,
+      "timestamp": 1609460760000,
+      "volume": 150000.0,
+      "side": "BUY",
+      "comment": "+0.49% from prev - Below threshold (no signal)"
+    },
+    {
+      "tick_id": 28,
+      "symbol": "BTCUSDT",
+      "price": 61000.0,
+      "timestamp": 1609460820000,
+      "volume": 150000.0,
+      "side": "SELL",
+      "comment": "-1.29% from prev - Below threshold (no signal)"
+    },
+    {
+      "tick_id": 29,
+      "symbol": "BTCUSDT",
+      "price": 60500.0,
+      "timestamp": 1609460880000,
+      "volume": 150000.0,
+      "side": "SELL",
+      "comment": "-0.82% from prev - Below threshold (no signal)"
+    },
+    {
+      "tick_id": 30,
+      "symbol": "BTCUSDT",
+      "price": 62900.0,
+      "timestamp": 1609460940000,
+      "volume": 230000.0,
+      "side": "BUY",
+      "comment": "+3.97% from prev - ABOVE THRESHOLD - SIGNAL #7 EXPECTED"
+    },
+    {
+      "tick_id": 31,
+      "symbol": "BTCUSDT",
+      "price": 63000.0,
+      "timestamp": 1609461000000,
+      "volume": 150000.0,
+      "side": "BUY",
+      "comment": "+0.16% from prev - Below threshold (no signal)"
+    },
+    {
+      "tick_id": 32,
+      "symbol": "BTCUSDT",
+      "price": 62500.0,
+      "timestamp": 1609461060000,
+      "volume": 150000.0,
+      "side": "SELL",
+      "comment": "-0.79% from prev - Below threshold (no signal)"
+    },
+    {
+      "tick_id": 33,
+      "symbol": "BTCUSDT",
+      "price": 62000.0,
+      "timestamp": 1609461120000,
+      "volume": 150000.0,
+      "side": "SELL",
+      "comment": "-0.80% from prev - Below threshold (no signal)"
+    },
+    {
+      "tick_id": 34,
+      "symbol": "BTCUSDT",
+      "price": 61500.0,
+      "timestamp": 1609461180000,
+      "volume": 150000.0,
+      "side": "SELL",
+      "comment": "-0.81% from prev - Below threshold (no signal)"
+    },
+    {
+      "tick_id": 35,
+      "symbol": "BTCUSDT",
+      "price": 63800.0,
+      "timestamp": 1609461240000,
+      "volume": 240000.0,
+      "side": "BUY",
+      "comment": "+3.74% from prev - ABOVE THRESHOLD - SIGNAL #8 EXPECTED"
+    },
+    {
+      "tick_id": 36,
+      "symbol": "BTCUSDT",
+      "price": 64000.0,
+      "timestamp": 1609461300000,
+      "volume": 150000.0,
+      "side": "BUY",
+      "comment": "+0.31% from prev - Below threshold (no signal)"
+    },
+    {
+      "tick_id": 37,
+      "symbol": "BTCUSDT",
+      "price": 63500.0,
+      "timestamp": 1609461360000,
+      "volume": 150000.0,
+      "side": "SELL",
+      "comment": "-0.78% from prev - Below threshold (no signal)"
+    },
+    {
+      "tick_id": 38,
+      "symbol": "BTCUSDT",
+      "price": 63000.0,
+      "timestamp": 1609461420000,
+      "volume": 150000.0,
+      "side": "SELL",
+      "comment": "-0.79% from prev - Below threshold (no signal)"
+    },
+    {
+      "tick_id": 39,
+      "symbol": "BTCUSDT",
+      "price": 62800.0,
+      "timestamp": 1609461480000,
+      "volume": 150000.0,
+      "side": "SELL",
+      "comment": "-0.32% from prev - Below threshold (no signal)"
+    },
+    {
+      "tick_id": 40,
+      "symbol": "BTCUSDT",
+      "price": 62500.0,
+      "timestamp": 1609461540000,
+      "volume": 150000.0,
+      "side": "SELL",
+      "comment": "-0.48% from prev - Below threshold (no signal)"
+    }
+  ]
+}
