@@ -1,8 +1,13 @@
 {
   "uid": "claire_risk_v1",
   "title": "Claire - Risk Manager",
-  "description": "Risk analysis and circuit breaker monitoring - Blue/Black theme",
-  "tags": ["claire", "risk", "blue"],
+  "description": "ARCHIVED (legacy dashboard). Risk analysis and circuit breaker monitoring - Blue/Black theme",
+  "tags": [
+    "claire",
+    "risk",
+    "blue",
+    "legacy"
+  ],
   "timezone": "browser",
   "editable": true,
   "graphTooltip": 1,
@@ -11,7 +16,12 @@
     "to": "now"
   },
   "timepicker": {
-    "refresh_intervals": ["5s", "10s", "30s", "1m"]
+    "refresh_intervals": [
+      "5s",
+      "10s",
+      "30s",
+      "1m"
+    ]
   },
   "style": "dark",
   "panels": [
@@ -19,7 +29,12 @@
       "id": 1,
       "type": "stat",
       "title": "CIRCUIT BREAKER",
-      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 0},
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 0
+      },
       "datasource": "Prometheus",
       "targets": [
         {
@@ -29,21 +44,37 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "thresholds"},
+          "color": {
+            "mode": "thresholds"
+          },
           "mappings": [
             {
               "type": "value",
               "options": {
-                "0": {"color": "#0a0a0a", "index": 0, "text": "SAFE"},
-                "1": {"color": "#1e3a8a", "index": 1, "text": "⚠ TRIPPED"}
+                "0": {
+                  "color": "#0a0a0a",
+                  "index": 0,
+                  "text": "SAFE"
+                },
+                "1": {
+                  "color": "#1e3a8a",
+                  "index": 1,
+                  "text": "⚠ TRIPPED"
+                }
               }
             }
           ],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {"color": "#0a0a0a", "value": null},
-              {"color": "#1e3a8a", "value": 1}
+              {
+                "color": "#0a0a0a",
+                "value": null
+              },
+              {
+                "color": "#1e3a8a",
+                "value": 1
+              }
             ]
           }
         }
@@ -53,7 +84,9 @@
         "graphMode": "none",
         "textMode": "value_and_name",
         "reduceOptions": {
-          "calcs": ["lastNotNull"]
+          "calcs": [
+            "lastNotNull"
+          ]
         }
       }
     },
@@ -61,7 +94,12 @@
       "id": 2,
       "type": "gauge",
       "title": "MAX EXPOSURE",
-      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 0},
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 0
+      },
       "datasource": "Prometheus",
       "targets": [
         {
@@ -71,17 +109,31 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "thresholds"},
+          "color": {
+            "mode": "thresholds"
+          },
           "unit": "percent",
           "min": 0,
           "max": 100,
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {"color": "#0a0a0a", "value": null},
-              {"color": "#0ea5e9", "value": 30},
-              {"color": "#3b82f6", "value": 50},
-              {"color": "#1e3a8a", "value": 80}
+              {
+                "color": "#0a0a0a",
+                "value": null
+              },
+              {
+                "color": "#0ea5e9",
+                "value": 30
+              },
+              {
+                "color": "#3b82f6",
+                "value": 50
+              },
+              {
+                "color": "#1e3a8a",
+                "value": 80
+              }
             ]
           }
         }
@@ -95,7 +147,12 @@
       "id": 3,
       "type": "stat",
       "title": "ORDERS BLOCKED",
-      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 0},
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 0
+      },
       "datasource": "Prometheus",
       "targets": [
         {
@@ -105,14 +162,28 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "thresholds"},
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {"color": "#0a0a0a", "value": null},
-              {"color": "#0ea5e9", "value": 10},
-              {"color": "#3b82f6", "value": 50},
-              {"color": "#1e3a8a", "value": 100}
+              {
+                "color": "#0a0a0a",
+                "value": null
+              },
+              {
+                "color": "#0ea5e9",
+                "value": 10
+              },
+              {
+                "color": "#3b82f6",
+                "value": 50
+              },
+              {
+                "color": "#1e3a8a",
+                "value": 100
+              }
             ]
           }
         }
@@ -127,7 +198,12 @@
       "id": 4,
       "type": "timeseries",
       "title": "EXPOSURE TIMELINE",
-      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 8},
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 8
+      },
       "datasource": "Prometheus",
       "targets": [
         {
@@ -138,7 +214,9 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "palette-classic"},
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
             "drawStyle": "line",
             "lineInterpolation": "smooth",
@@ -152,27 +230,51 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {"color": "#0ea5e9", "value": null},
-              {"color": "#3b82f6", "value": 50},
-              {"color": "#1e3a8a", "value": 80}
+              {
+                "color": "#0ea5e9",
+                "value": null
+              },
+              {
+                "color": "#3b82f6",
+                "value": 50
+              },
+              {
+                "color": "#1e3a8a",
+                "value": 80
+              }
             ]
           }
         },
         "overrides": [
           {
-            "matcher": {"id": "byName", "options": "Max Exposure %"},
+            "matcher": {
+              "id": "byName",
+              "options": "Max Exposure %"
+            },
             "properties": [
-              {"id": "color", "value": {"mode": "fixed", "fixedColor": "#3b82f6"}}
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#3b82f6"
+                }
+              }
             ]
           }
         ]
       },
       "options": {
-        "tooltip": {"mode": "multi"},
+        "tooltip": {
+          "mode": "multi"
+        },
         "legend": {
           "displayMode": "table",
           "placement": "bottom",
-          "calcs": ["last", "max", "mean"]
+          "calcs": [
+            "last",
+            "max",
+            "mean"
+          ]
         }
       }
     },
@@ -180,7 +282,12 @@
       "id": 5,
       "type": "timeseries",
       "title": "RISK THRESHOLDS",
-      "gridPos": {"h": 10, "w": 12, "x": 0, "y": 18},
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 0,
+        "y": 18
+      },
       "datasource": "Prometheus",
       "targets": [
         {
@@ -196,7 +303,9 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "palette-classic"},
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
             "drawStyle": "line",
             "lineInterpolation": "smooth",
@@ -208,21 +317,41 @@
         },
         "overrides": [
           {
-            "matcher": {"id": "byName", "options": "Signal Threshold"},
+            "matcher": {
+              "id": "byName",
+              "options": "Signal Threshold"
+            },
             "properties": [
-              {"id": "color", "value": {"mode": "fixed", "fixedColor": "#3b82f6"}}
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#3b82f6"
+                }
+              }
             ]
           },
           {
-            "matcher": {"id": "byName", "options": "RSI Threshold"},
+            "matcher": {
+              "id": "byName",
+              "options": "RSI Threshold"
+            },
             "properties": [
-              {"id": "color", "value": {"mode": "fixed", "fixedColor": "#0ea5e9"}}
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#0ea5e9"
+                }
+              }
             ]
           }
         ]
       },
       "options": {
-        "tooltip": {"mode": "multi"},
+        "tooltip": {
+          "mode": "multi"
+        },
         "legend": {
           "displayMode": "list",
           "placement": "bottom"
@@ -233,7 +362,12 @@
       "id": 6,
       "type": "gauge",
       "title": "PERFORMANCE SCORE",
-      "gridPos": {"h": 10, "w": 12, "x": 12, "y": 18},
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 12,
+        "y": 18
+      },
       "datasource": "Prometheus",
       "targets": [
         {
@@ -243,16 +377,30 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "thresholds"},
+          "color": {
+            "mode": "thresholds"
+          },
           "min": 0,
           "max": 1,
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {"color": "#0a0a0a", "value": null},
-              {"color": "#0ea5e9", "value": 0.3},
-              {"color": "#3b82f6", "value": 0.6},
-              {"color": "#1e3a8a", "value": 0.8}
+              {
+                "color": "#0a0a0a",
+                "value": null
+              },
+              {
+                "color": "#0ea5e9",
+                "value": 0.3
+              },
+              {
+                "color": "#3b82f6",
+                "value": 0.6
+              },
+              {
+                "color": "#1e3a8a",
+                "value": 0.8
+              }
             ]
           }
         }
@@ -266,7 +414,12 @@
       "id": 7,
       "type": "table",
       "title": "RISK EVENTS LOG",
-      "gridPos": {"h": 12, "w": 24, "x": 0, "y": 28},
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 28
+      },
       "datasource": "PostgreSQL",
       "targets": [
         {
@@ -284,7 +437,10 @@
         },
         "overrides": [
           {
-            "matcher": {"id": "byName", "options": "confidence"},
+            "matcher": {
+              "id": "byName",
+              "options": "confidence"
+            },
             "properties": [
               {
                 "id": "custom.displayMode",
@@ -295,9 +451,18 @@
                 "value": {
                   "mode": "absolute",
                   "steps": [
-                    {"color": "#1e3a8a", "value": null},
-                    {"color": "#3b82f6", "value": 0.3},
-                    {"color": "#0ea5e9", "value": 0.5}
+                    {
+                      "color": "#1e3a8a",
+                      "value": null
+                    },
+                    {
+                      "color": "#3b82f6",
+                      "value": 0.3
+                    },
+                    {
+                      "color": "#0ea5e9",
+                      "value": 0.5
+                    }
                   ]
                 }
               }

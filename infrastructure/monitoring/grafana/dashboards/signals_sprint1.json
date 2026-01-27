@@ -510,7 +510,8 @@
   "tags": [
     "signals",
     "observability",
-    "sprint1"
+    "sprint1",
+    "legacy"
   ],
   "templating": {
     "list": []
@@ -521,8 +522,9 @@
   },
   "timepicker": {},
   "timezone": "browser",
-  "title": "Signals - Observability (Sprint 1)",
+  "title": "[LEGACY] [LEGACY] Signals - Observability (Sprint 1)",
   "uid": "signals-sprint1",
   "version": 1,
-  "weekStart": ""
+  "weekStart": "",
+  "description": "ARCHIVED (legacy dashboard)."
 }

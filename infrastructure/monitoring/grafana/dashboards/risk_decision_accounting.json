@@ -2,7 +2,7 @@
   "annotations": {
     "list": []
   },
-  "description": "Risk Manager - Complete decision accounting with signals_received, approved, blocked, skipped metrics",
+  "description": "ARCHIVED (legacy dashboard). Risk Manager - Complete decision accounting with signals_received, approved, blocked, skipped metrics",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
@@ -512,7 +512,8 @@
   "tags": [
     "claire",
     "risk",
-    "accounting"
+    "accounting",
+    "legacy"
   ],
   "templating": {
     "list": []
