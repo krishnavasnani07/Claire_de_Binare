@@ -152,7 +152,7 @@ def init_services():
         # Initialize executor - LIVE DATA CONVERSION
         if config.MOCK_TRADING:
             executor = MockExecutor()
-            logger.info("🟢 Using MockExecutor (Paper Trading Mode)")
+            logger.info(" Using MockExecutor (Paper Trading Mode)")
         else:
             dry_run = config.DRY_RUN if hasattr(config, "DRY_RUN") else True
             testnet = config.MEXC_TESTNET if hasattr(config, "MEXC_TESTNET") else False
@@ -169,11 +169,11 @@ def init_services():
 
             if dry_run:
                 logger.warning(
-                    "🔶 Live Executor in DRY RUN mode - orders logged but not executed"
+                    " Live Executor in DRY RUN mode - orders logged but not executed"
                 )
             else:
                 mode = "TESTNET" if testnet else "LIVE"
-                logger.warning(f"🔴 Live Executor in {mode} mode - REAL MONEY!")
+                logger.warning(f" Live Executor in {mode} mode - REAL MONEY!")
 
         # Initialize database
         db = _init_with_retry(
