@@ -9,11 +9,10 @@ from pathlib import Path
 from urllib.parse import urlencode
 from urllib.request import urlopen, Request
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
-
-from core.utils.clock import utcnow
+def _bootstrap_repo_root() -> None:
+    repo_root = Path(__file__).resolve().parents[4]
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
 DEFAULT_QUERIES = {
     "up_cdb": 'up{job=~"cdb_.*"}',
     "signals_received_total": "signals_received_total",
@@ -38,6 +37,9 @@ def _query_prom(base_url: str, query: str) -> dict:
 
 
 def main() -> int:
+    _bootstrap_repo_root()
+    from core.utils.clock import utcnow
+
     ap = argparse.ArgumentParser(description="Prometheus snapshot for chaos drills")
     ap.add_argument("--prom-url", default="http://127.0.0.1:19090")
     ap.add_argument("--out", required=True)

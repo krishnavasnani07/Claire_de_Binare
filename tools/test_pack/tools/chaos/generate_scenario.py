@@ -11,11 +11,11 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
-from core.utils.seed import SeedManager
+def _bootstrap_repo_root() -> None:
+    repo_root = Path(__file__).resolve().parents[4]
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
 
 
 @dataclass(frozen=True)
@@ -38,6 +38,9 @@ def gen_regime(mode: str, step: int) -> str:
 
 
 def main() -> int:
+    _bootstrap_repo_root()
+    from core.utils.seed import SeedManager
+
     ap = argparse.ArgumentParser(description="Generate deterministic chaos scenario (JSONL)")
     ap.add_argument("--seed", type=int, default=1337)
     ap.add_argument("--minutes", type=int, default=180, help="Scenario length in minutes")
