@@ -1,8 +1,14 @@
 {
   "uid": "claire_system_v1",
   "title": "Claire - System Performance",
-  "description": "Complete system monitoring - CPU, Memory, Services, Health - Yellow/Orange/Black theme",
-  "tags": ["claire", "system", "performance", "monitoring"],
+  "description": "ARCHIVED (legacy dashboard). Complete system monitoring - CPU, Memory, Services, Health - Yellow/Orange/Black theme",
+  "tags": [
+    "claire",
+    "system",
+    "performance",
+    "monitoring",
+    "legacy"
+  ],
   "timezone": "browser",
   "editable": true,
   "graphTooltip": 1,
@@ -11,7 +17,12 @@
     "to": "now"
   },
   "timepicker": {
-    "refresh_intervals": ["5s", "10s", "30s", "1m"]
+    "refresh_intervals": [
+      "5s",
+      "10s",
+      "30s",
+      "1m"
+    ]
   },
   "style": "dark",
   "panels": [
@@ -19,7 +30,12 @@
       "id": 1,
       "type": "stat",
       "title": "SERVICES UP",
-      "gridPos": {"h": 5, "w": 4, "x": 0, "y": 0},
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 0,
+        "y": 0
+      },
       "datasource": "Prometheus",
       "targets": [
         {
@@ -29,14 +45,28 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "thresholds"},
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {"color": "#0a0a0a", "value": null},
-              {"color": "#ea580c", "value": 1},
-              {"color": "#d97706", "value": 3},
-              {"color": "#f59e0b", "value": 4}
+              {
+                "color": "#0a0a0a",
+                "value": null
+              },
+              {
+                "color": "#ea580c",
+                "value": 1
+              },
+              {
+                "color": "#d97706",
+                "value": 3
+              },
+              {
+                "color": "#f59e0b",
+                "value": 4
+              }
             ]
           }
         }
@@ -51,7 +81,12 @@
       "id": 2,
       "type": "stat",
       "title": "SIGNAL ENGINE",
-      "gridPos": {"h": 5, "w": 5, "x": 4, "y": 0},
+      "gridPos": {
+        "h": 5,
+        "w": 5,
+        "x": 4,
+        "y": 0
+      },
       "datasource": "Prometheus",
       "targets": [
         {
@@ -61,21 +96,37 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "thresholds"},
+          "color": {
+            "mode": "thresholds"
+          },
           "mappings": [
             {
               "type": "value",
               "options": {
-                "0": {"color": "#0a0a0a", "index": 0, "text": "DOWN"},
-                "1": {"color": "#d97706", "index": 1, "text": "UP"}
+                "0": {
+                  "color": "#0a0a0a",
+                  "index": 0,
+                  "text": "DOWN"
+                },
+                "1": {
+                  "color": "#d97706",
+                  "index": 1,
+                  "text": "UP"
+                }
               }
             }
           ],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {"color": "#0a0a0a", "value": null},
-              {"color": "#d97706", "value": 1}
+              {
+                "color": "#0a0a0a",
+                "value": null
+              },
+              {
+                "color": "#d97706",
+                "value": 1
+              }
             ]
           }
         }
@@ -90,7 +141,12 @@
       "id": 3,
       "type": "stat",
       "title": "RISK MANAGER",
-      "gridPos": {"h": 5, "w": 5, "x": 9, "y": 0},
+      "gridPos": {
+        "h": 5,
+        "w": 5,
+        "x": 9,
+        "y": 0
+      },
       "datasource": "Prometheus",
       "targets": [
         {
@@ -100,21 +156,37 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "thresholds"},
+          "color": {
+            "mode": "thresholds"
+          },
           "mappings": [
             {
               "type": "value",
               "options": {
-                "0": {"color": "#0a0a0a", "index": 0, "text": "DOWN"},
-                "1": {"color": "#d97706", "index": 1, "text": "UP"}
+                "0": {
+                  "color": "#0a0a0a",
+                  "index": 0,
+                  "text": "DOWN"
+                },
+                "1": {
+                  "color": "#d97706",
+                  "index": 1,
+                  "text": "UP"
+                }
               }
             }
           ],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {"color": "#0a0a0a", "value": null},
-              {"color": "#d97706", "value": 1}
+              {
+                "color": "#0a0a0a",
+                "value": null
+              },
+              {
+                "color": "#d97706",
+                "value": 1
+              }
             ]
           }
         }
@@ -129,7 +201,12 @@
       "id": 4,
       "type": "stat",
       "title": "EXECUTION",
-      "gridPos": {"h": 5, "w": 5, "x": 14, "y": 0},
+      "gridPos": {
+        "h": 5,
+        "w": 5,
+        "x": 14,
+        "y": 0
+      },
       "datasource": "Prometheus",
       "targets": [
         {
@@ -139,21 +216,37 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "thresholds"},
+          "color": {
+            "mode": "thresholds"
+          },
           "mappings": [
             {
               "type": "value",
               "options": {
-                "0": {"color": "#0a0a0a", "index": 0, "text": "DOWN"},
-                "1": {"color": "#d97706", "index": 1, "text": "UP"}
+                "0": {
+                  "color": "#0a0a0a",
+                  "index": 0,
+                  "text": "DOWN"
+                },
+                "1": {
+                  "color": "#d97706",
+                  "index": 1,
+                  "text": "UP"
+                }
               }
             }
           ],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {"color": "#0a0a0a", "value": null},
-              {"color": "#d97706", "value": 1}
+              {
+                "color": "#0a0a0a",
+                "value": null
+              },
+              {
+                "color": "#d97706",
+                "value": 1
+              }
             ]
           }
         }
@@ -168,7 +261,12 @@
       "id": 5,
       "type": "stat",
       "title": "PROMETHEUS",
-      "gridPos": {"h": 5, "w": 5, "x": 19, "y": 0},
+      "gridPos": {
+        "h": 5,
+        "w": 5,
+        "x": 19,
+        "y": 0
+      },
       "datasource": "Prometheus",
       "targets": [
         {
@@ -178,21 +276,37 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "thresholds"},
+          "color": {
+            "mode": "thresholds"
+          },
           "mappings": [
             {
               "type": "value",
               "options": {
-                "0": {"color": "#0a0a0a", "index": 0, "text": "DOWN"},
-                "1": {"color": "#d97706", "index": 1, "text": "UP"}
+                "0": {
+                  "color": "#0a0a0a",
+                  "index": 0,
+                  "text": "DOWN"
+                },
+                "1": {
+                  "color": "#d97706",
+                  "index": 1,
+                  "text": "UP"
+                }
               }
             }
           ],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {"color": "#0a0a0a", "value": null},
-              {"color": "#d97706", "value": 1}
+              {
+                "color": "#0a0a0a",
+                "value": null
+              },
+              {
+                "color": "#d97706",
+                "value": 1
+              }
             ]
           }
         }
@@ -207,7 +321,12 @@
       "id": 6,
       "type": "timeseries",
       "title": "CPU USAGE (Go Runtime)",
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 5},
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 5
+      },
       "datasource": "Prometheus",
       "targets": [
         {
@@ -218,7 +337,9 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "palette-classic"},
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
             "drawStyle": "line",
             "lineInterpolation": "smooth",
@@ -234,15 +355,26 @@
         },
         "overrides": [
           {
-            "matcher": {"id": "byRegexp", "options": "/cdb_.*/"},
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/cdb_.*/"
+            },
             "properties": [
-              {"id": "color", "value": {"mode": "fixed", "fixedColor": "#f59e0b"}}
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#f59e0b"
+                }
+              }
             ]
           }
         ]
       },
       "options": {
-        "tooltip": {"mode": "multi"},
+        "tooltip": {
+          "mode": "multi"
+        },
         "legend": {
           "displayMode": "list",
           "placement": "bottom"
@@ -253,7 +385,12 @@
       "id": 7,
       "type": "timeseries",
       "title": "MEMORY USAGE (RSS)",
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 5},
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 5
+      },
       "datasource": "Prometheus",
       "targets": [
         {
@@ -264,7 +401,9 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "palette-classic"},
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
             "drawStyle": "line",
             "lineInterpolation": "smooth",
@@ -278,15 +417,26 @@
         },
         "overrides": [
           {
-            "matcher": {"id": "byRegexp", "options": "/cdb_.*/"},
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/cdb_.*/"
+            },
             "properties": [
-              {"id": "color", "value": {"mode": "fixed", "fixedColor": "#fbbf24"}}
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#fbbf24"
+                }
+              }
             ]
           }
         ]
       },
       "options": {
-        "tooltip": {"mode": "multi"},
+        "tooltip": {
+          "mode": "multi"
+        },
         "legend": {
           "displayMode": "list",
           "placement": "bottom"
@@ -297,7 +447,12 @@
       "id": 8,
       "type": "timeseries",
       "title": "GOROUTINES (Concurrency Load)",
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 13},
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 13
+      },
       "datasource": "Prometheus",
       "targets": [
         {
@@ -308,7 +463,9 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "palette-classic"},
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
             "drawStyle": "line",
             "lineInterpolation": "smooth",
@@ -323,29 +480,58 @@
           {
             "matcher": {"id": "byName", "options": "cdb_signal"},
             "properties": [
-              {"id": "color", "value": {"mode": "fixed", "fixedColor": "#d97706"}}
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#d97706"
+                }
+              }
             ]
           },
           {
-            "matcher": {"id": "byName", "options": "cdb_risk"},
+            "matcher": {
+              "id": "byName",
+              "options": "cdb_risk"
+            },
             "properties": [
-              {"id": "color", "value": {"mode": "fixed", "fixedColor": "#f59e0b"}}
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#f59e0b"
+                }
+              }
             ]
           },
           {
-            "matcher": {"id": "byName", "options": "cdb_execution"},
+            "matcher": {
+              "id": "byName",
+              "options": "cdb_execution"
+            },
             "properties": [
-              {"id": "color", "value": {"mode": "fixed", "fixedColor": "#fbbf24"}}
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#fbbf24"
+                }
+              }
             ]
           }
         ]
       },
       "options": {
-        "tooltip": {"mode": "multi"},
+        "tooltip": {
+          "mode": "multi"
+        },
         "legend": {
           "displayMode": "table",
           "placement": "bottom",
-          "calcs": ["last", "max"]
+          "calcs": [
+            "last",
+            "max"
+          ]
         }
       }
     },
@@ -353,7 +539,12 @@
       "id": 9,
       "type": "timeseries",
       "title": "HTTP REQUEST RATE",
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 13},
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 13
+      },
       "datasource": "Prometheus",
       "targets": [
         {
@@ -364,7 +555,9 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "palette-classic"},
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
             "drawStyle": "bars",
             "barAlignment": 0,
@@ -376,15 +569,26 @@
         },
         "overrides": [
           {
-            "matcher": {"id": "byRegexp", "options": "/cdb_.*/"},
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/cdb_.*/"
+            },
             "properties": [
-              {"id": "color", "value": {"mode": "fixed", "fixedColor": "#ea580c"}}
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#ea580c"
+                }
+              }
             ]
           }
         ]
       },
       "options": {
-        "tooltip": {"mode": "multi"},
+        "tooltip": {
+          "mode": "multi"
+        },
         "legend": {
           "displayMode": "list",
           "placement": "bottom"
@@ -395,7 +599,12 @@
       "id": 10,
       "type": "bargauge",
       "title": "SERVICE UPTIME",
-      "gridPos": {"h": 10, "w": 12, "x": 0, "y": 21},
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 0,
+        "y": 21
+      },
       "datasource": "Prometheus",
       "targets": [
         {
@@ -406,16 +615,33 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "thresholds"},
+          "color": {
+            "mode": "thresholds"
+          },
           "unit": "s",
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {"color": "#0a0a0a", "value": null},
-              {"color": "#ea580c", "value": 60},
-              {"color": "#d97706", "value": 300},
-              {"color": "#f59e0b", "value": 3600},
-              {"color": "#fbbf24", "value": 86400}
+              {
+                "color": "#0a0a0a",
+                "value": null
+              },
+              {
+                "color": "#ea580c",
+                "value": 60
+              },
+              {
+                "color": "#d97706",
+                "value": 300
+              },
+              {
+                "color": "#f59e0b",
+                "value": 3600
+              },
+              {
+                "color": "#fbbf24",
+                "value": 86400
+              }
             ]
           }
         }
@@ -430,7 +656,12 @@
       "id": 11,
       "type": "stat",
       "title": "TOTAL METRICS SCRAPED",
-      "gridPos": {"h": 10, "w": 12, "x": 12, "y": 21},
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 12,
+        "y": 21
+      },
       "datasource": "Prometheus",
       "targets": [
         {
@@ -440,12 +671,20 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "thresholds"},
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {"color": "#0a0a0a", "value": null},
-              {"color": "#d97706", "value": 1}
+              {
+                "color": "#0a0a0a",
+                "value": null
+              },
+              {
+                "color": "#d97706",
+                "value": 1
+              }
             ]
           }
         }
@@ -461,7 +700,12 @@
       "id": 12,
       "type": "table",
       "title": "SERVICE HEALTH OVERVIEW",
-      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 31},
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 31
+      },
       "datasource": "Prometheus",
       "targets": [
         {
@@ -480,7 +724,10 @@
         },
         "overrides": [
           {
-            "matcher": {"id": "byName", "options": "Value"},
+            "matcher": {
+              "id": "byName",
+              "options": "Value"
+            },
             "properties": [
               {
                 "id": "custom.displayMode",
@@ -492,8 +739,16 @@
                   {
                     "type": "value",
                     "options": {
-                      "0": {"color": "#0a0a0a", "index": 0, "text": "DOWN"},
-                      "1": {"color": "#d97706", "index": 1, "text": "UP"}
+                      "0": {
+                        "color": "#0a0a0a",
+                        "index": 0,
+                        "text": "DOWN"
+                      },
+                      "1": {
+                        "color": "#d97706",
+                        "index": 1,
+                        "text": "UP"
+                      }
                     }
                   }
                 ]

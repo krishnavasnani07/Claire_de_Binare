@@ -1,8 +1,14 @@
 {
   "uid": "claire_signal_engine_v1",
   "title": "Claire - Signal Engine",
-  "description": "Real-time signal generation and analysis dashboard",
-  "tags": ["claire", "signals", "engine", "dark"],
+  "description": "ARCHIVED (legacy dashboard). Real-time signal generation and analysis dashboard",
+  "tags": [
+    "claire",
+    "signals",
+    "engine",
+    "dark",
+    "legacy"
+  ],
   "timezone": "browser",
   "editable": true,
   "graphTooltip": 1,
@@ -11,7 +17,12 @@
     "to": "now"
   },
   "timepicker": {
-    "refresh_intervals": ["5s", "10s", "30s", "1m"]
+    "refresh_intervals": [
+      "5s",
+      "10s",
+      "30s",
+      "1m"
+    ]
   },
   "style": "dark",
   "panels": [
@@ -19,7 +30,12 @@
       "id": 1,
       "type": "stat",
       "title": "SIGNALS GENERATED",
-      "gridPos": {"h": 6, "w": 6, "x": 0, "y": 0},
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
       "datasource": "PostgreSQL",
       "targets": [
         {
@@ -30,14 +46,28 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "thresholds"},
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {"color": "#1a1a1a", "value": null},
-              {"color": "#4d0000", "value": 10},
-              {"color": "#8b0000", "value": 50},
-              {"color": "#ff0000", "value": 100}
+              {
+                "color": "#1a1a1a",
+                "value": null
+              },
+              {
+                "color": "#4d0000",
+                "value": 10
+              },
+              {
+                "color": "#8b0000",
+                "value": 50
+              },
+              {
+                "color": "#ff0000",
+                "value": 100
+              }
             ]
           }
         }
@@ -52,7 +82,12 @@
       "id": 2,
       "type": "stat",
       "title": "BUY SIGNALS",
-      "gridPos": {"h": 6, "w": 6, "x": 6, "y": 0},
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
       "datasource": "PostgreSQL",
       "targets": [
         {
@@ -63,12 +98,20 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "thresholds"},
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {"color": "#1a1a1a", "value": null},
-              {"color": "#8b0000", "value": 1}
+              {
+                "color": "#1a1a1a",
+                "value": null
+              },
+              {
+                "color": "#8b0000",
+                "value": 1
+              }
             ]
           }
         }
@@ -83,7 +126,12 @@
       "id": 3,
       "type": "stat",
       "title": "SELL SIGNALS",
-      "gridPos": {"h": 6, "w": 6, "x": 12, "y": 0},
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
       "datasource": "PostgreSQL",
       "targets": [
         {
@@ -94,12 +142,20 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "thresholds"},
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {"color": "#1a1a1a", "value": null},
-              {"color": "#4d0000", "value": 1}
+              {
+                "color": "#1a1a1a",
+                "value": null
+              },
+              {
+                "color": "#4d0000",
+                "value": 1
+              }
             ]
           }
         }
@@ -114,7 +170,12 @@
       "id": 4,
       "type": "stat",
       "title": "AVG CONFIDENCE",
-      "gridPos": {"h": 6, "w": 6, "x": 18, "y": 0},
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
       "datasource": "PostgreSQL",
       "targets": [
         {
@@ -125,14 +186,25 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "thresholds"},
+          "color": {
+            "mode": "thresholds"
+          },
           "unit": "percentunit",
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {"color": "#4d0000", "value": null},
-              {"color": "#8b0000", "value": 0.3},
-              {"color": "#ff0000", "value": 0.6}
+              {
+                "color": "#4d0000",
+                "value": null
+              },
+              {
+                "color": "#8b0000",
+                "value": 0.3
+              },
+              {
+                "color": "#ff0000",
+                "value": 0.6
+              }
             ]
           }
         }
@@ -147,7 +219,12 @@
       "id": 5,
       "type": "timeseries",
       "title": "SIGNAL GENERATION RATE",
-      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 6},
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 6
+      },
       "datasource": "PostgreSQL",
       "targets": [
         {
@@ -158,7 +235,9 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "palette-classic"},
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
             "drawStyle": "bars",
             "lineInterpolation": "linear",
@@ -173,21 +252,35 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {"color": "transparent", "value": null}
+              {
+                "color": "transparent",
+                "value": null
+              }
             ]
           }
         },
         "overrides": [
           {
-            "matcher": {"id": "byName", "options": "value"},
+            "matcher": {
+              "id": "byName",
+              "options": "value"
+            },
             "properties": [
-              {"id": "color", "value": {"mode": "fixed", "fixedColor": "#8b0000"}}
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#8b0000"
+                }
+              }
             ]
           }
         ]
       },
       "options": {
-        "tooltip": {"mode": "single"},
+        "tooltip": {
+          "mode": "single"
+        },
         "legend": {
           "displayMode": "hidden"
         }
@@ -197,7 +290,12 @@
       "id": 6,
       "type": "bargauge",
       "title": "TOP SYMBOLS (Last Hour)",
-      "gridPos": {"h": 10, "w": 12, "x": 0, "y": 16},
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
       "datasource": "PostgreSQL",
       "targets": [
         {
@@ -208,14 +306,28 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "thresholds"},
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {"color": "#1a1a1a", "value": null},
-              {"color": "#4d0000", "value": 5},
-              {"color": "#8b0000", "value": 10},
-              {"color": "#ff0000", "value": 20}
+              {
+                "color": "#1a1a1a",
+                "value": null
+              },
+              {
+                "color": "#4d0000",
+                "value": 5
+              },
+              {
+                "color": "#8b0000",
+                "value": 10
+              },
+              {
+                "color": "#ff0000",
+                "value": 20
+              }
             ]
           }
         }
@@ -225,7 +337,9 @@
         "orientation": "horizontal",
         "reduceOptions": {
           "values": false,
-          "calcs": ["lastNotNull"]
+          "calcs": [
+            "lastNotNull"
+          ]
         },
         "showUnfilled": true
       }
@@ -234,7 +348,12 @@
       "id": 7,
       "type": "piechart",
       "title": "SIGNAL TYPE DISTRIBUTION",
-      "gridPos": {"h": 10, "w": 12, "x": 12, "y": 16},
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
       "datasource": "PostgreSQL",
       "targets": [
         {
@@ -245,30 +364,55 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "palette-classic"}
+          "color": {
+            "mode": "palette-classic"
+          }
         },
         "overrides": [
           {
-            "matcher": {"id": "byName", "options": "buy"},
+            "matcher": {
+              "id": "byName",
+              "options": "buy"
+            },
             "properties": [
-              {"id": "color", "value": {"mode": "fixed", "fixedColor": "#8b0000"}}
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#8b0000"
+                }
+              }
             ]
           },
           {
-            "matcher": {"id": "byName", "options": "sell"},
+            "matcher": {
+              "id": "byName",
+              "options": "sell"
+            },
             "properties": [
-              {"id": "color", "value": {"mode": "fixed", "fixedColor": "#ff0000"}}
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#ff0000"
+                }
+              }
             ]
           }
         ]
       },
       "options": {
         "pieType": "donut",
-        "displayLabels": ["name", "percent"],
+        "displayLabels": [
+          "name",
+          "percent"
+        ],
         "legend": {
           "displayMode": "table",
           "placement": "right",
-          "calcs": ["sum"]
+          "calcs": [
+            "sum"
+          ]
         }
       }
     },
@@ -276,7 +420,12 @@
       "id": 8,
       "type": "table",
       "title": "RECENT SIGNALS (Live Feed)",
-      "gridPos": {"h": 12, "w": 24, "x": 0, "y": 26},
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 26
+      },
       "datasource": "PostgreSQL",
       "targets": [
         {
@@ -294,7 +443,10 @@
         },
         "overrides": [
           {
-            "matcher": {"id": "byName", "options": "signal_type"},
+            "matcher": {
+              "id": "byName",
+              "options": "signal_type"
+            },
             "properties": [
               {
                 "id": "custom.displayMode",
@@ -306,8 +458,14 @@
                   {
                     "type": "value",
                     "options": {
-                      "buy": {"color": "#8b0000", "index": 0},
-                      "sell": {"color": "#ff0000", "index": 1}
+                      "buy": {
+                        "color": "#8b0000",
+                        "index": 0
+                      },
+                      "sell": {
+                        "color": "#ff0000",
+                        "index": 1
+                      }
                     }
                   }
                 ]
@@ -315,7 +473,10 @@
             ]
           },
           {
-            "matcher": {"id": "byName", "options": "confidence"},
+            "matcher": {
+              "id": "byName",
+              "options": "confidence"
+            },
             "properties": [
               {
                 "id": "custom.displayMode",
@@ -326,19 +487,40 @@
                 "value": {
                   "mode": "absolute",
                   "steps": [
-                    {"color": "#1a1a1a", "value": null},
-                    {"color": "#4d0000", "value": 0.3},
-                    {"color": "#8b0000", "value": 0.5},
-                    {"color": "#ff0000", "value": 0.7}
+                    {
+                      "color": "#1a1a1a",
+                      "value": null
+                    },
+                    {
+                      "color": "#4d0000",
+                      "value": 0.3
+                    },
+                    {
+                      "color": "#8b0000",
+                      "value": 0.5
+                    },
+                    {
+                      "color": "#ff0000",
+                      "value": 0.7
+                    }
                   ]
                 }
               },
-              {"id": "max", "value": 1},
-              {"id": "min", "value": 0}
+              {
+                "id": "max",
+                "value": 1
+              },
+              {
+                "id": "min",
+                "value": 0
+              }
             ]
           },
           {
-            "matcher": {"id": "byName", "options": "pct_change"},
+            "matcher": {
+              "id": "byName",
+              "options": "pct_change"
+            },
             "properties": [
               {
                 "id": "custom.displayMode",
@@ -349,9 +531,18 @@
                 "value": {
                   "mode": "absolute",
                   "steps": [
-                    {"color": "#1a1a1a", "value": null},
-                    {"color": "#8b0000", "value": 3},
-                    {"color": "#ff0000", "value": 5}
+                    {
+                      "color": "#1a1a1a",
+                      "value": null
+                    },
+                    {
+                      "color": "#8b0000",
+                      "value": 3
+                    },
+                    {
+                      "color": "#ff0000",
+                      "value": 5
+                    }
                   ]
                 }
               }
