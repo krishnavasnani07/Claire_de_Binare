@@ -78,7 +78,7 @@ scrape_configs:
     metrics_path: '/metrics'
 
   # PostgreSQL Exporter
-  - job_name: 'cdb_postgres_exporter'
+  - job_name: 'cdb_postgres'
     static_configs:
       - targets: ['cdb_postgres_exporter:9187']
         labels:
@@ -87,10 +87,28 @@ scrape_configs:
     metrics_path: '/metrics'
 
   # Redis Exporter
-  - job_name: 'cdb_redis_exporter'
+  - job_name: 'cdb_redis'
     static_configs:
       - targets: ['cdb_redis_exporter:9121']
         labels:
           instance: 'cdb_redis'
           service: 'cache'
+    metrics_path: '/metrics'
+
+  # cAdvisor (container metrics)
+  - job_name: 'cdb_cadvisor'
+    static_configs:
+      - targets: ['cdb_cadvisor:8080']
+        labels:
+          instance: 'cdb_cadvisor'
+          service: 'infra'
+    metrics_path: '/metrics'
+
+  # Node Exporter (host metrics)
+  - job_name: 'cdb_node_exporter'
+    static_configs:
+      - targets: ['cdb_node_exporter:9100']
+        labels:
+          instance: 'cdb_node_exporter'
+          service: 'infra'
     metrics_path: '/metrics'

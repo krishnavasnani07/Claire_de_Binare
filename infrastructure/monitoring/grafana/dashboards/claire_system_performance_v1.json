@@ -55,7 +55,7 @@
       "datasource": "Prometheus",
       "targets": [
         {
-          "expr": "up{job=\"cdb_core\"}",
+          "expr": "up{job=\"cdb_signal\"}",
           "refId": "A"
         }
       ],
@@ -321,7 +321,7 @@
         },
         "overrides": [
           {
-            "matcher": {"id": "byName", "options": "cdb_core"},
+            "matcher": {"id": "byName", "options": "cdb_signal"},
             "properties": [
               {"id": "color", "value": {"mode": "fixed", "fixedColor": "#d97706"}}
             ]
