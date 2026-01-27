@@ -230,7 +230,7 @@ groups:
           runbook_url: "docs/operations/72H_SOAK_TEST_RUNBOOK.md#abort-triggers"
 
       - alert: SoakTest_NoOrdersGenerated
-        expr: rate(orders_created_total[1h]) == 0
+        expr: rate(execution_orders_received_total[1h]) == 0
         for: 1h
         labels:
           severity: high

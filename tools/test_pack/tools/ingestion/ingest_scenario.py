@@ -12,12 +12,10 @@ from typing import Dict, Any
 
 import redis
 
-# Ensure repo root is on sys.path for shared utils
-REPO_ROOT = Path(__file__).resolve().parents[4]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
-
-from core.utils.redis_payload import sanitize_market_data
+def _bootstrap_repo_root() -> None:
+    repo_root = Path(__file__).resolve().parents[4]
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
 
 
 def _iso_to_ms(ts: str) -> int:
@@ -39,6 +37,9 @@ def _load_redis_password() -> str | None:
 
 
 def main() -> int:
+    _bootstrap_repo_root()
+    from core.utils.redis_payload import sanitize_market_data
+
     ap = argparse.ArgumentParser(description="Ingest chaos scenario JSONL into Redis market_data")
     ap.add_argument("--scenario", required=True, help="Path to scenario JSONL")
     ap.add_argument("--out", required=True, help="Output report JSON path")

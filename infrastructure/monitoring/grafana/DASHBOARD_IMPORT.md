@@ -98,6 +98,13 @@ orders_approved_total
 
 ## Troubleshooting
 
+### 5-Step "No Data" Checklist
+1. **Datasource**: Panel uses correct datasource (Prometheus vs. PostgreSQL).
+2. **Targets UP**: Prometheus targets show `UP=1` for the job/service.
+3. **Metric exists**: Query returns data in Prometheus (Graph tab).
+4. **Service exports**: `/metrics` (or SQL table) is present and reachable.
+5. **Time/vars**: Time range + dashboard variables include real data windows.
+
 **Problem: "No data points"**
 - Check: Prometheus scraping läuft (`http://localhost:19090/targets`)
 - Check: Services exportieren Metriken (`curl localhost:8001/metrics`)

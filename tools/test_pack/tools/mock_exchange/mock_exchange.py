@@ -21,11 +21,18 @@ from typing import Dict, Any, Optional
 
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
-from core.utils.uuid_gen import generate_uuid
+def _bootstrap_repo_root() -> None:
+    repo_root = Path(__file__).resolve().parents[4]
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
+
+
+def _generate_uuid() -> str:
+    _bootstrap_repo_root()
+    from core.utils.uuid_gen import generate_uuid
+
+    return generate_uuid()
 STATE: Dict[str, Any] = {
     "started_ts": time.time(),
     "orders": {},  # order_id -> dict
@@ -83,7 +90,7 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 return _json(self, 400, {"ok": False, "error": "bad_order_payload"})
 
-            oid = generate_uuid()
+            oid = _generate_uuid()
             order = Order(order_id=oid, symbol=symbol, side=side, qty=qty, price=price, status="NEW", ts=time.time())
             STATE["orders"][oid] = asdict(order)
 

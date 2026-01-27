@@ -505,7 +505,7 @@
       "datasource": "Prometheus",
       "targets": [
         {
-          "expr": "rate(orders_created_total[1h]) * 3600",
+          "expr": "rate(execution_orders_received_total[1h]) * 3600",
           "refId": "A",
           "legendFormat": "Orders/hour"
         }

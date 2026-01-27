@@ -8,11 +8,10 @@ import sys
 from pathlib import Path
 from typing import Any
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
-
-from core.utils.clock import utcnow
+def _bootstrap_repo_root() -> None:
+    repo_root = Path(__file__).resolve().parents[4]
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
 
 
 def _extract_values(result_payload: dict) -> list[float]:
@@ -30,6 +29,9 @@ def _extract_values(result_payload: dict) -> list[float]:
 
 
 def main() -> int:
+    _bootstrap_repo_root()
+    from core.utils.clock import utcnow
+
     ap = argparse.ArgumentParser(description="Evaluate chaos drill assertions")
     ap.add_argument("--snapshot", required=True, help="Path to metrics_snapshot.json")
     ap.add_argument("--out", required=True, help="Path to assertions_result.json")
