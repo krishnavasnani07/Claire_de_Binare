@@ -116,16 +116,6 @@ jobs:
             cdb_risk
             cdb_execution
           )
-          optional_services=(
-            cdb_postgres_exporter
-            cdb_redis_exporter
-            cdb_candles
-            cdb_allocation
-            cdb_regime
-            cdb_db_writer
-            cdb_paper_runner
-            cdb_reports
-          )
           deadline=$((SECONDS + 300))
           while true; do
             all_ok=1
