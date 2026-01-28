@@ -233,23 +233,90 @@ git ls-files | grep -E "(.env.runtime|.rotation_state.json)"
 
 ---
 
-## 10. Sign-Off
+## 10. Gitleaks False-Positive Elimination (2026-01-28)
 
-**Status:** ✅ **PRODUCTION READY** (pending PR approval)
+**Context**: CI security gate (Gitleaks) intermittently failed due to legacy commits/test fixtures, NOT from secret-rotator code.
+
+**Findings (5 false-positives identified)**:
+1. `tests/unit/surrealdb/test_ledger_importer.py:26`
+   - Pattern: `token=ghp_[REDACTED]` (fake GitHub token)
+   - Rule: generic-api-key
+   - Type: Test fixture (not real secret)
+
+2-5. `reports/shadow_mode/ALERTING_DIGEST_EVIDENCE.md` (Lines 48, 61, 238, 357)
+   - Pattern: `curl -u admin:[REDACTED]`
+   - Rule: curl-auth-user
+   - Type: Documentation examples (not real credentials)
+
+**Fix Applied (Option A: Fixture Refactor)**:
+1. Test fixture: `ghp_[REDACTED]` → `FAKE_TEST_TOKEN_NOT_REAL`
+   - Breaks entropy/pattern matcher
+   - Test semantics preserved
+
+2-4. Documentation: `admin:[REDACTED]` → `admin:$GRAFANA_PASSWORD`
+   - Environment variable placeholder
+   - Standard practice for documentation
+
+**Validation**:
+```bash
+# Before fix
+gitleaks detect --no-git --source .
+# Result: 5 findings
+
+# After fix (current tree)
+gitleaks detect --no-git --source .
+# Result: 0 findings (clean)
+
+# History scan (CI scans with git history)
+gitleaks detect
+# Result: 5 findings in legacy commits (before ea4be33)
+```
+
+**History Handling**:
+Since CI scans git history (not just working tree), legacy commits still trigger findings even though current files are clean.
+
+**Solution:** Fingerprint-based allowlist in `.gitleaksignore` for specific legacy commits:
+```gitignore
+# Legacy commits (before fixture refactor PR #714)
+e12f529094591f848d39a427bb21b3d95d12ae9c:tests/unit/surrealdb/test_ledger_importer.py:generic-api-key:26
+5ae1df7eea9eb92b7ce0443ab44bd6dbb0a4c97a:reports/shadow_mode/ALERTING_DIGEST_EVIDENCE.md:curl-auth-user:48
+5ae1df7eea9eb92b7ce0443ab44bd6dbb0a4c97a:reports/shadow_mode/ALERTING_DIGEST_EVIDENCE.md:curl-auth-user:61
+5ae1df7eea9eb92b7ce0443ab44bd6dbb0a4c97a:reports/shadow_mode/ALERTING_DIGEST_EVIDENCE.md:curl-auth-user:238
+5ae1df7eea9eb92b7ce0443ab44bd6dbb0a4c97a:reports/shadow_mode/ALERTING_DIGEST_EVIDENCE.md:curl-auth-user:357
+```
+
+This approach:
+- ✅ Scoped to specific commit SHA + file + line (narrow, auditable)
+- ✅ No broad pattern ignores (scanning remains strict)
+- ✅ Documents exactly which legacy commits contain fixtures
+
+**Impact**:
+- ✅ CI security gate now consistently green
+- ✅ No weakening of scanning (narrow fingerprint-based allowlist only)
+- ✅ No real secrets in repo (was never an issue, only pattern matches)
+- ✅ Tests remain functional (validated post-fix)
+- ✅ Legacy commits explicitly documented in .gitleaksignore
+
+---
+
+## 11. Sign-Off
+
+**Status:** ✅ **PRODUCTION READY**
 
 **Blockers Resolved:**
 1. ✅ Skip logic fixed (state-based, not length-based)
 2. ✅ Evidence documented (this file)
+3. ✅ Gitleaks false-positives eliminated (fixture refactor)
 
-**Next Steps:**
-1. Create PR in Working Repo (Working → main)
-2. Create PR in Docs Hub (governance/ + runbooks/)
-3. Merge after review
+**Deployment Status:**
+- ✅ PR #711: Secret rotator v1.1 (MERGED)
+- ✅ PR #712: `apply -ExportAfter` (MERGED)
+- ✅ PR #59 (Docs Hub): Policy + Runbook (MERGED)
 
 ---
 
 **Generated:** 2026-01-28
-**Tool Version:** Rotate-Secrets.ps1 v1.1
-**Evidence Level:** High (automated scans + manual verification)
+**Tool Version:** Rotate-Secrets.ps1 v1.1 + apply -ExportAfter
+**Evidence Level:** High (automated scans + manual verification + CI validation)
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
