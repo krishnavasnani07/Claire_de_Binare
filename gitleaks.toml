@@ -11,6 +11,12 @@ useDefault = true
 
 # Additional custom rules for trading/crypto context
 [[rules]]
+id = "grafana-service-account-token"
+description = "Grafana Service Account Token"
+regex = '''glsa_[a-zA-Z0-9]{32,}'''
+keywords = ["glsa_"]
+
+[[rules]]
 id = "mexc-api-key"
 description = "MEXC Exchange API Key"
 regex = '''(?i)(mexc|mx)[_-]?(api)?[_-]?(key|secret)['":\s=]+[a-zA-Z0-9]{32,}'''
