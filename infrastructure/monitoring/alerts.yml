@@ -22,7 +22,7 @@ groups:
   - name: critical_alerts
     rules:
       - alert: ServiceDown
-        expr: up{job=~"cdb_(execution|signal|db_writer|candles|allocation|regime|risk|ws|paper_runner|reports|alertmanager|prometheus|grafana|loki|promtail|redis|postgres|redis_exporter|postgres_exporter)"} == 0
+        expr: up{job=~"cdb_.*", job!="cadvisor", job!="node_exporter"} == 0
         for: 1m
         labels:
           severity: critical
