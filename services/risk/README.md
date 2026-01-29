@@ -47,6 +47,12 @@ curl http://localhost:8002/health
 - Order-Trimming: reduziert Positionsgröße statt kompletter Ablehnung
 - Alerts je Level (`INFO`, `WARNING`, `CRITICAL`) auf Redis Topic `alerts`
 
+### Decision Contract 0/1 v1 (deterministisch)
+- Default: **BLOCK**. Allow nur bei A ∧ B ∧ C.
+- First-Fail Reihenfolge: Safety/Anomaly → Data Freshness → Regime → Signal → Portfolio/Execution
+- Reason Codes (exakt): RC_002, RC_003, RC_004, RC_001, RC_010, RC_020, RC_021, RC_022
+- **Confidence ist kein Gate** (keine Scores/Probabilistik)
+
 ## 🧾 Konfiguration
 
 | Variable                 | Default | Beschreibung                      |
