@@ -1,0 +1,256 @@
+# CDB RED Stack - Signal Generation + Monitoring
+# Optional Services: Can be stopped/restarted without affecting BLUE core
+#
+# Architecture: Blue/Red Split
+# - RED = Signal generation (ws, signal) + Monitoring (prometheus, grafana, exporters, reports)
+# - BLUE = Core trading (separate compose.blue.yml, must be running first)
+#
+# Prerequisites:
+#   1. Network: docker network create cdb_network
+#   2. BLUE stack: docker compose -f compose.blue.yml up -d
+#
+# Usage:
+#   docker compose -f compose.red.yml up -d
+
+name: cdb-red
+
+services:
+  # ==================== SIGNAL GENERATION ====================
+
+  cdb_ws:
+    build:
+      context: ../..
+      dockerfile: services/ws/Dockerfile
+    container_name: cdb_ws
+    restart: unless-stopped
+    secrets:
+      - redis_password
+      - postgres_password
+    environment:
+      ENV: "development"
+      LOG_LEVEL: "DEBUG"  # Keep DEBUG for signal troubleshooting
+      REDIS_HOST: cdb_redis
+      POSTGRES_HOST: cdb_postgres
+      POSTGRES_USER: ${POSTGRES_USER:-claire_user}
+      WS_SOURCE: mexc_pb
+      MEXC_SYMBOL: BTCUSDT
+      MEXC_INTERVAL: 100ms
+    entrypoint: ["sh", "-c", "export REDIS_PASSWORD=$(cat /run/secrets/redis_password) && export POSTGRES_PASSWORD=$(cat /run/secrets/postgres_password) && exec python -u service.py"]
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ../../logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - cdb_network
+
+  cdb_signal:
+    build:
+      context: ../..
+      dockerfile: services/signal/Dockerfile
+    container_name: cdb_signal
+    restart: unless-stopped
+    secrets:
+      - redis_password
+      - postgres_password
+    environment:
+      ENV: "development"
+      LOG_LEVEL: "DEBUG"
+      REDIS_HOST: cdb_redis
+      POSTGRES_HOST: cdb_postgres
+      POSTGRES_USER: ${POSTGRES_USER:-claire_user}
+      SIGNAL_STRATEGY_ID: ${SIGNAL_STRATEGY_ID:-paper}
+      SIGNAL_PORT: "8005"
+      SIGNAL_THRESHOLD_PCT: "0.005"
+      SIGNAL_MIN_VOLUME: "0"
+    entrypoint: ["sh", "-c", "export REDIS_PASSWORD=$(cat /run/secrets/redis_password) && export POSTGRES_PASSWORD=$(cat /run/secrets/postgres_password) && exec python -m services.signal.service"]
+    ports:
+      - "127.0.0.1:8005:8005"
+    volumes:
+      - ../../logs:/app/logs
+    depends_on:
+      cdb_ws:
+        condition: service_started  # Not service_healthy to avoid blocking RED start
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8005/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - cdb_network
+
+  # ==================== MONITORING ====================
+
+  cdb_prometheus:
+    image: prom/prometheus:v2.55.0
+    container_name: cdb_prometheus
+    restart: unless-stopped
+    volumes:
+      - ../../infrastructure/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../../infrastructure/monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prom_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9090/-/healthy > /dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    ports:
+      - "127.0.0.1:19090:9090"
+    networks:
+      - cdb_network
+
+  cdb_grafana:
+    image: grafana/grafana:11.4.0
+    container_name: cdb_grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_password
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SMTP_ENABLED: "true"
+      GF_SMTP_HOST: smtp.gmail.com:587
+      GF_SMTP_USER__FILE: /run/secrets/smtp_user
+      GF_SMTP_PASSWORD__FILE: /run/secrets/smtp_password
+      GF_SMTP_FROM_ADDRESS__FILE: /run/secrets/smtp_from
+      GF_SMTP_FROM_NAME: "CDB Alerts"
+      GF_SMTP_STARTTLS_POLICY: MandatoryStartTLS
+    secrets:
+      - grafana_password
+      - smtp_user
+      - smtp_password
+      - smtp_from
+      - alert_email_to
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ../../infrastructure/monitoring/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ../../infrastructure/monitoring/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ../../infrastructure/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      cdb_prometheus:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    ports:
+      - "127.0.0.1:3000:3000"
+    networks:
+      - cdb_network
+
+  cdb_postgres_exporter:
+    image: prometheuscommunity/postgres-exporter:latest
+    container_name: cdb_postgres_exporter
+    restart: unless-stopped
+    secrets:
+      - postgres_password_dsn
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["DATA_SOURCE_NAME=$$(cat /run/secrets/postgres_password_dsn) exec /bin/postgres_exporter"]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9187/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    ports:
+      - "127.0.0.1:9187:9187"
+    networks:
+      - cdb_network
+
+  cdb_redis_exporter:
+    image: bitnami/redis-exporter:latest
+    container_name: cdb_redis_exporter
+    restart: unless-stopped
+    secrets:
+      - redis_password
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["exec redis_exporter --redis.addr=redis://cdb_redis:6379 --redis.password=$$(cat /run/secrets/redis_password | tr -d '\\n')"]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9121/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    ports:
+      - "127.0.0.1:9121:9121"
+    networks:
+      - cdb_network
+
+  cdb_cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.2
+    container_name: cdb_cadvisor
+    restart: unless-stopped
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    networks:
+      - cdb_network
+
+  # ==================== REPORTS ====================
+
+  cdb_reports:
+    build:
+      context: ../../services/reports
+      dockerfile: Dockerfile
+    container_name: cdb_reports
+    restart: unless-stopped
+    secrets:
+      - postgres_password_dsn
+      - postgres_password
+      - smtp_user
+      - smtp_password
+      - smtp_from
+      - alert_email_to
+    environment:
+      ENV: "development"
+      LOG_LEVEL: "INFO"
+      TZ: UTC
+      POSTGRES_HOST: cdb_postgres
+      POSTGRES_DB: claire_de_binare
+      POSTGRES_USER: ${POSTGRES_USER:-claire_user}
+      POSTGRES_DSN_FILE: /run/secrets/postgres_password_dsn
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "daily_orders_summary.py"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+    networks:
+      - cdb_network
+
+# ==================== SECRETS ====================
+secrets:
+  redis_password:
+    file: ${SECRETS_PATH:-C:/Users/janne/Documents/.secrets/.cdb}/REDIS_PASSWORD
+  postgres_password:
+    file: ${SECRETS_PATH:-C:/Users/janne/Documents/.secrets/.cdb}/POSTGRES_PASSWORD
+  postgres_password_dsn:
+    file: ${SECRETS_PATH:-C:/Users/janne/Documents/.secrets/.cdb}/POSTGRES_PASSWORD_DSN
+  grafana_password:
+    file: ${SECRETS_PATH:-C:/Users/janne/Documents/.secrets/.cdb}/GRAFANA_PASSWORD
+  smtp_user:
+    file: ${SECRETS_PATH:-C:/Users/janne/Documents/.secrets/.cdb}/SMTP_USER
+  smtp_password:
+    file: ${SECRETS_PATH:-C:/Users/janne/Documents/.secrets/.cdb}/SMTP_PASSWORD
+  smtp_from:
+    file: ${SECRETS_PATH:-C:/Users/janne/Documents/.secrets/.cdb}/SMTP_FROM
+  alert_email_to:
+    file: ${SECRETS_PATH:-C:/Users/janne/Documents/.secrets/.cdb}/ALERT_EMAIL_TO
+
+# ==================== VOLUMES ====================
+volumes:
+  prom_data:
+  grafana_data:
+
+# ==================== NETWORK ====================
+# Shared with BLUE stack
+networks:
+  cdb_network:
+    external: true
+    name: cdb_network
