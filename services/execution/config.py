@@ -4,6 +4,7 @@ Claire de Binare Trading Bot
 """
 
 import os
+from urllib.parse import quote_plus
 from dotenv import load_dotenv
 from core.secrets import read_secret
 
@@ -39,7 +40,7 @@ POSTGRES_DB = os.getenv("POSTGRES_DB", "claire_de_binare")
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}",
+    f"postgresql://{POSTGRES_USER}:{quote_plus(POSTGRES_PASSWORD)}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}",
 )
 
 # Topics
