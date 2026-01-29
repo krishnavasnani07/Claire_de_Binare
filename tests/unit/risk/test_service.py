@@ -181,15 +181,18 @@ def test_exposure_limit_bypassed_for_reduce_only_sell(mock_redis, mock_postgres)
                 return_value=(False, "Max Exposure erreicht")
             )
 
-            with patch.object(
-                risk_service,
-                "decide_trade",
-                return_value=(
-                    risk_service.DECISION_ALLOW,
-                    None,
-                    {"contract_version": risk_service.DECISION_CONTRACT_VERSION},
+            with (
+                patch.object(
+                    risk_service,
+                    "decide_trade",
+                    return_value=(
+                        risk_service.DECISION_ALLOW,
+                        None,
+                        {"contract_version": risk_service.DECISION_CONTRACT_VERSION},
+                    ),
                 ),
-            ), patch.object(manager, "_emit_risk_event", MagicMock()):
+                patch.object(manager, "_emit_risk_event", MagicMock()),
+            ):
                 order = manager.process_signal(signal)
             assert order is not None
             assert order.side == "SELL"
@@ -266,15 +269,18 @@ def test_proactive_unwind_triggers_on_blocked_buy(mock_redis, mock_postgres):
             )
 
             # Process signal - should be blocked but trigger proactive unwind
-            with patch.object(
-                risk_service,
-                "decide_trade",
-                return_value=(
-                    risk_service.DECISION_ALLOW,
-                    None,
-                    {"contract_version": risk_service.DECISION_CONTRACT_VERSION},
+            with (
+                patch.object(
+                    risk_service,
+                    "decide_trade",
+                    return_value=(
+                        risk_service.DECISION_ALLOW,
+                        None,
+                        {"contract_version": risk_service.DECISION_CONTRACT_VERSION},
+                    ),
                 ),
-            ), patch.object(manager, "_emit_risk_event", MagicMock()):
+                patch.object(manager, "_emit_risk_event", MagicMock()),
+            ):
                 order = manager.process_signal(signal)
 
             # Verify: BUY signal was blocked
@@ -347,15 +353,18 @@ def test_proactive_unwind_no_trigger_when_auto_unwind_disabled(
                 timestamp=1,
             )
 
-            with patch.object(
-                risk_service,
-                "decide_trade",
-                return_value=(
-                    risk_service.DECISION_ALLOW,
-                    None,
-                    {"contract_version": risk_service.DECISION_CONTRACT_VERSION},
+            with (
+                patch.object(
+                    risk_service,
+                    "decide_trade",
+                    return_value=(
+                        risk_service.DECISION_ALLOW,
+                        None,
+                        {"contract_version": risk_service.DECISION_CONTRACT_VERSION},
+                    ),
                 ),
-            ), patch.object(manager, "_emit_risk_event", MagicMock()):
+                patch.object(manager, "_emit_risk_event", MagicMock()),
+            ):
                 order = manager.process_signal(signal)
 
             # Verify: BUY blocked
@@ -415,15 +424,18 @@ def test_proactive_unwind_no_trigger_when_no_open_positions(mock_redis, mock_pos
                 timestamp=1,
             )
 
-            with patch.object(
-                risk_service,
-                "decide_trade",
-                return_value=(
-                    risk_service.DECISION_ALLOW,
-                    None,
-                    {"contract_version": risk_service.DECISION_CONTRACT_VERSION},
+            with (
+                patch.object(
+                    risk_service,
+                    "decide_trade",
+                    return_value=(
+                        risk_service.DECISION_ALLOW,
+                        None,
+                        {"contract_version": risk_service.DECISION_CONTRACT_VERSION},
+                    ),
                 ),
-            ), patch.object(manager, "_emit_risk_event", MagicMock()):
+                patch.object(manager, "_emit_risk_event", MagicMock()),
+            ):
                 order = manager.process_signal(signal)
 
             # Verify: BUY might be blocked by other checks, but no unwind triggered
@@ -442,34 +454,26 @@ def test_check_position_limit_enforcement(mock_redis, mock_postgres):
     """
     test_config = RiskConfig(
         max_position_pct=0.10,  # 10%
-        test_balance=1000.0,    # Max 100 USD pro Position
+        test_balance=1000.0,  # Max 100 USD pro Position
     )
 
     with patch.object(risk_service, "config", test_config):
         manager = RiskManager()
-        
+
         # Setup: Symbol am Limit
-        risk_service.risk_state.positions = {"BTCUSDT": 0.002}  # 0.002 * 50000 = 100 USD
+        risk_service.risk_state.positions = {
+            "BTCUSDT": 0.002
+        }  # 0.002 * 50000 = 100 USD
         risk_service.risk_state.last_prices = {"BTCUSDT": 50000.0}
-        
-        signal = Signal(
-            symbol="BTCUSDT",
-            side="BUY",
-            price=50000.0,
-            timestamp=1
-        )
-        
+
+        signal = Signal(symbol="BTCUSDT", side="BUY", price=50000.0, timestamp=1)
+
         # Check: Sollte blockieren
         ok, reason = manager.check_position_limit(signal)
         assert ok is False
         assert "am Limit" in reason
-        
+
         # Setup: Anderes Symbol nicht am Limit
-        signal_2 = Signal(
-            symbol="ETHUSDT",
-            side="BUY",
-            price=3000.0,
-            timestamp=1
-        )
+        signal_2 = Signal(symbol="ETHUSDT", side="BUY", price=3000.0, timestamp=1)
         ok, reason = manager.check_position_limit(signal_2)
         assert ok is True

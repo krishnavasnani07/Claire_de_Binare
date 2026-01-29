@@ -23,7 +23,9 @@ MEXC_TESTNET = os.getenv("MEXC_TESTNET", "true").lower() == "true"
 
 # Trading Mode
 MOCK_TRADING = os.getenv("MOCK_TRADING", "true").lower() == "true"
-DRY_RUN = os.getenv("DRY_RUN", "true").lower() == "true"  # Safety: log orders without executing
+DRY_RUN = (
+    os.getenv("DRY_RUN", "true").lower() == "true"
+)  # Safety: log orders without executing
 
 # Redis Configuration
 REDIS_HOST = os.getenv("REDIS_HOST", "redis")
@@ -35,7 +37,9 @@ REDIS_PASSWORD = os.getenv("REDIS_PASSWORD")
 POSTGRES_HOST = os.getenv("POSTGRES_HOST", "cdb_postgres")
 POSTGRES_PORT = int(os.getenv("POSTGRES_PORT", "5432"))
 POSTGRES_USER = os.getenv("POSTGRES_USER", "cdb_user")
-POSTGRES_PASSWORD = read_secret("postgres_password", "POSTGRES_PASSWORD")  # No hardcoded default!
+POSTGRES_PASSWORD = read_secret(
+    "postgres_password", "POSTGRES_PASSWORD"
+)  # No hardcoded default!
 POSTGRES_DB = os.getenv("POSTGRES_DB", "claire_de_binare")
 
 DATABASE_URL = os.getenv(

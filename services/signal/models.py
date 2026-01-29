@@ -99,7 +99,9 @@ class MarketData:
         if trade_qty_raw is None:
             trade_qty_raw = data.get("qty")
         trade_qty = (
-            float(trade_qty_raw) if trade_qty_raw is not None and trade_qty_raw != "" else None
+            float(trade_qty_raw)
+            if trade_qty_raw is not None and trade_qty_raw != ""
+            else None
         )
 
         volume_raw = data.get("volume")
@@ -110,7 +112,11 @@ class MarketData:
         else:
             volume = 0.0
 
-        symbol = data["symbol"].upper() if isinstance(data.get("symbol"), str) else data["symbol"]
+        symbol = (
+            data["symbol"].upper()
+            if isinstance(data.get("symbol"), str)
+            else data["symbol"]
+        )
         timestamp = data.get("timestamp")
         if timestamp is None:
             timestamp = data.get("ts_ms", 0)

@@ -252,12 +252,7 @@ def decide_trade(
         return DECISION_BLOCK, "RC_001", evidence
 
     # 4) Signal
-    if (
-        symbol is None
-        or symbol == ""
-        or pct_change_15m is None
-        or volume_15m is None
-    ):
+    if symbol is None or symbol == "" or pct_change_15m is None or volume_15m is None:
         return DECISION_BLOCK, "RC_010", evidence
     if (
         pct_change_15m < DECISION_THRESHOLDS["signal_pct_change_15m_min"]
@@ -390,7 +385,9 @@ class RiskManager:
                 pass
             self._pg_conn = None
 
-    def _emit_risk_event(self, decision: str, reason_code: str | None, evidence: dict) -> None:
+    def _emit_risk_event(
+        self, decision: str, reason_code: str | None, evidence: dict
+    ) -> None:
         event = {**evidence, "decision": decision, "reason_code": reason_code}
         self._persist_risk_event(event)
 
@@ -486,9 +483,13 @@ class RiskManager:
                     logger.critical(error_msg)
                     cursor.close()
                     conn.close()
-                    raise RuntimeError("State mismatch: positions table empty but orders show open position")
+                    raise RuntimeError(
+                        "State mismatch: positions table empty but orders show open position"
+                    )
 
-                logger.info("✅ Risk state bootstrap: No open positions in DB (clean state)")
+                logger.info(
+                    "✅ Risk state bootstrap: No open positions in DB (clean state)"
+                )
                 cursor.close()
                 conn.close()
                 return
@@ -534,11 +535,15 @@ class RiskManager:
 
         except psycopg2.Error as e:
             logger.error(f"❌ Failed to bootstrap risk state from DB: {e}")
-            logger.warning("⚠️ Risk manager starting with EMPTY state (no reconciliation)")
+            logger.warning(
+                "⚠️ Risk manager starting with EMPTY state (no reconciliation)"
+            )
             # Continue startup with empty state rather than crashing
         except Exception as e:
             logger.error(f"❌ Unexpected error during risk state bootstrap: {e}")
-            logger.warning("⚠️ Risk manager starting with EMPTY state (no reconciliation)")
+            logger.warning(
+                "⚠️ Risk manager starting with EMPTY state (no reconciliation)"
+            )
 
     @staticmethod
     def _parse_timestamp(value) -> int | None:
@@ -747,7 +752,9 @@ class RiskManager:
         max_exposure = current_balance * self.config.max_total_exposure_pct
 
         # PR #XXX: Include pending reserved exposure to prevent race condition
-        effective_exposure = risk_state.total_exposure + risk_state.pending_exposure_usdt
+        effective_exposure = (
+            risk_state.total_exposure + risk_state.pending_exposure_usdt
+        )
 
         if effective_exposure >= max_exposure:
             return (
@@ -780,7 +787,9 @@ class RiskManager:
 
         return True, "Drawdown OK"
 
-    def process_signal(self, signal: Signal, raw_payload: dict | None = None) -> Optional[Order]:
+    def process_signal(
+        self, signal: Signal, raw_payload: dict | None = None
+    ) -> Optional[Order]:
         """Prüft Signal gegen alle Risk-Layers"""
         payload = raw_payload or {}
         market_state = payload.get("market_state")
