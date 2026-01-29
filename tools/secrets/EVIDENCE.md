@@ -239,7 +239,7 @@ git ls-files | grep -E "(.env.runtime|.rotation_state.json)"
 
 **Findings (5 false-positives identified)**:
 1. `tests/unit/surrealdb/test_ledger_importer.py:26`
-   - Pattern: `token=ghp_[REDACTED]` (fake GitHub token)
+   - Pattern: `token_placeholder: FAKE_TEST_TOKEN_NOT_REAL` (fake GitHub token)
    - Rule: generic-api-key
    - Type: Test fixture (not real secret)
 
