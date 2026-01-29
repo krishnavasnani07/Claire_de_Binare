@@ -145,14 +145,18 @@ class SignalEngine:
 
 
                 # Signal generieren
+                now_ms = int(time.time() * 1000)
                 signal = Signal(
                     signal_id=f"sig-{generate_uuid_hex(length=32)}",
                     symbol=market_data.symbol,
                     side="BUY",
                     reason=f"Momentum: {market_data.pct_change:+.4f}% > {self.config.threshold_pct}%",
-                    timestamp=int(time.time()),
+                    timestamp=now_ms // 1000,
+                    ts_ms=now_ms,
                     price=market_data.price,
                     pct_change=market_data.pct_change,
+                    pct_change_15m=market_data.pct_change,
+                    volume_15m=market_data.volume,
                     strategy_id=self.config.strategy_id,
                     bot_id=self.config.bot_id,
                 )
