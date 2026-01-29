@@ -19,7 +19,7 @@ on:
 
 jobs:
   gitleaks:
-    name: Secret Scanning
+    name: gitleaks (Secrets-Alarm)
     runs-on: ubuntu-latest
 
     steps:

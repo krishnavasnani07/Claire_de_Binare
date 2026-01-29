@@ -7,6 +7,8 @@ on:
       - "Dockerfile"
       - "infrastructure/**"
       - "services/**"
+  pull_request:
+    branches: ["main"]
   schedule:
     - cron: '0 6 * * 0'
 
@@ -23,7 +25,7 @@ concurrency:
 
 jobs:
   trivy-image:
-    name: Trivy (Container Image)
+    name: trivy (kritische CVEs/Supply-Chain)
     runs-on: ubuntu-latest
     permissions:
       contents: read
