@@ -3,6 +3,11 @@
 -- Usage: Applied before each E2E test to ensure deterministic state
 
 -- Truncate tables in reverse dependency order to avoid FK violations
+TRUNCATE TABLE security_policy_refs RESTART IDENTITY CASCADE;
+TRUNCATE TABLE deployment_approvals_mirror RESTART IDENTITY CASCADE;
+TRUNCATE TABLE governance_events RESTART IDENTITY CASCADE;
+TRUNCATE TABLE audit_trail RESTART IDENTITY CASCADE;
+TRUNCATE TABLE core_secrets_metadata RESTART IDENTITY CASCADE;
 TRUNCATE TABLE portfolio_snapshots RESTART IDENTITY CASCADE;
 TRUNCATE TABLE positions RESTART IDENTITY CASCADE;
 TRUNCATE TABLE trades RESTART IDENTITY CASCADE;
