@@ -45,6 +45,11 @@ paths = [
     # Metadata produced by agent tooling (not sensitive)
     '''.mcp.json''',
     '''.worktrees_backup/.*''',
+    # Agent SDK stubs and mocks
+    '''cdb_agent_sdk/.*''',
+    # Infrastructure configs that use env var placeholders
+    '''infrastructure/.*\.yml''',
+    '''infrastructure/.*\.yaml''',
     # All tests that may include simulated secrets
     '''tests/.*''',
 ]
