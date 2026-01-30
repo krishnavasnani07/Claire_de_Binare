@@ -96,7 +96,8 @@ jobs:
           fi
           allowlist="${TRIVY_ALLOWLIST_CVES:-}"
           if [ -n "$allowlist" ]; then
-            printf "%s\n" "${allowlist//,/\\n}" | sed '/^$/d' > /tmp/trivy-allow.txt
+            echo "$allowlist" | tr ',' '\n' | sed '/^$/d' > /tmp/trivy-allow.txt
+            echo "DEBUG: Allowlist content:" && cat /tmp/trivy-allow.txt
             grep -v -F -x -f /tmp/trivy-allow.txt /tmp/trivy-high.txt > /tmp/trivy-disallowed.txt || true
           else
             cp /tmp/trivy-high.txt /tmp/trivy-disallowed.txt
