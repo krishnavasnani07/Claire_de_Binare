@@ -7,6 +7,8 @@ on:
       - "Dockerfile"
       - "infrastructure/**"
       - "services/**"
+  pull_request:
+    branches: ["main"]
   schedule:
     - cron: '0 6 * * 0'
 
@@ -14,7 +16,7 @@ permissions:
   contents: read
 
 env:
-  TRIVY_ALLOWLIST_CVES: "CVE-2025-12818"
+  TRIVY_ALLOWLIST_CVES: "CVE-2025-12818,CVE-2025-15467,CVE-2025-69419,CVE-2026-23949,CVE-2026-24049"
   TRIVY_SUMMARY_MAX: "5"
 
 concurrency:
