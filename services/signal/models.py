@@ -24,6 +24,9 @@ class Signal:
     reason: str | None = None
     price: float | None = None
     pct_change: float | None = None
+    pct_change_15m: float | None = None
+    volume_15m: float | None = None
+    ts_ms: int | None = None
     type: Literal["signal"] = "signal"  # Type-safe event type
 
     def __post_init__(self):
@@ -52,6 +55,9 @@ class Signal:
                 "reason": self.reason,
                 "price": self.price,
                 "pct_change": self.pct_change,
+                "pct_change_15m": self.pct_change_15m,
+                "volume_15m": self.volume_15m,
+                "ts_ms": int(self.ts_ms) if self.ts_ms is not None else None,
             }.items()
             if v is not None
         }
@@ -93,7 +99,9 @@ class MarketData:
         if trade_qty_raw is None:
             trade_qty_raw = data.get("qty")
         trade_qty = (
-            float(trade_qty_raw) if trade_qty_raw is not None and trade_qty_raw != "" else None
+            float(trade_qty_raw)
+            if trade_qty_raw is not None and trade_qty_raw != ""
+            else None
         )
 
         volume_raw = data.get("volume")
@@ -104,7 +112,11 @@ class MarketData:
         else:
             volume = 0.0
 
-        symbol = data["symbol"].upper() if isinstance(data.get("symbol"), str) else data["symbol"]
+        symbol = (
+            data["symbol"].upper()
+            if isinstance(data.get("symbol"), str)
+            else data["symbol"]
+        )
         timestamp = data.get("timestamp")
         if timestamp is None:
             timestamp = data.get("ts_ms", 0)

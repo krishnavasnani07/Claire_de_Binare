@@ -24,6 +24,9 @@ class Signal:
     reason: str | None = None
     price: float | None = None
     pct_change: float | None = None
+    pct_change_15m: float | None = None
+    volume_15m: float | None = None
+    ts_ms: int | None = None
     type: Literal["signal"] = "signal"  # Type-safe event type
 
     def __post_init__(self):
@@ -47,11 +50,34 @@ class Signal:
             "reason": self.reason,
             "price": self.price,
             "pct_change": self.pct_change,
+            "pct_change_15m": self.pct_change_15m,
+            "volume_15m": self.volume_15m,
+            "ts_ms": self.ts_ms,
         }
 
     @classmethod
     def from_dict(cls, data: dict) -> "Signal":
         """Create Signal from dictionary (inverse of to_dict)."""
+        pct_change_15m_raw = data.get("pct_change_15m")
+        try:
+            pct_change_15m = (
+                float(pct_change_15m_raw) if pct_change_15m_raw is not None else None
+            )
+        except (TypeError, ValueError):
+            pct_change_15m = None
+
+        volume_15m_raw = data.get("volume_15m")
+        try:
+            volume_15m = float(volume_15m_raw) if volume_15m_raw is not None else None
+        except (TypeError, ValueError):
+            volume_15m = None
+
+        ts_ms_raw = data.get("ts_ms")
+        try:
+            ts_ms = int(ts_ms_raw) if ts_ms_raw is not None else None
+        except (TypeError, ValueError):
+            ts_ms = None
+
         return cls(
             signal_id=data.get("signal_id"),
             strategy_id=data.get("strategy_id"),
@@ -73,6 +99,9 @@ class Signal:
                 if data.get("pct_change") is not None
                 else None
             ),
+            pct_change_15m=pct_change_15m,
+            volume_15m=volume_15m,
+            ts_ms=ts_ms,
         )
 
 

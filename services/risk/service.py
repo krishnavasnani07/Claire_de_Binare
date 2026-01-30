@@ -3,21 +3,23 @@ Risk Manager - Main Service
 Multi-Layer Risk Management
 """
 
-import os
-import sys
 import json
-import time
-import signal
 import logging
 import logging.config
-import redis
-import psycopg2
-from flask import Flask, jsonify, Response
+import math
+import os
+import signal
+import sys
+import time
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
 from pathlib import Path
 from threading import Thread
+from typing import Optional
+
+import psycopg2
+import redis
+from flask import Flask, jsonify, Response
 
 from core.utils.clock import utcnow
 from core.utils.redis_payload import sanitize_payload
@@ -86,6 +88,195 @@ class AllocationState:
     cooldown_until: int | None = None
 
 
+DECISION_CONTRACT_VERSION = "decision_contract_v1"
+DECISION_ALLOW = "ALLOW"
+DECISION_BLOCK = "BLOCK"
+
+DECISION_THRESHOLDS = {
+    "return_1m_min": -2.0,
+    "return_5m_min": -5.0,
+    "price_change_5m_abs_max": 10.0,
+    "staleness_s_max": 5.0,
+    "data_silence_s_max": 30.0,
+    "signal_pct_change_15m_min": 3.0,
+    "signal_volume_15m_min": 100000.0,
+    "daily_drawdown_pct_max": 5.0,
+    "total_exposure_pct_max": 50.0,
+    "slippage_pct_max": 1.0,
+    "allowed_regimes": [0, 1],
+    "blocked_regimes": [2, 3],
+}
+
+
+def _get_value(obj: object | None, key: str):
+    if obj is None:
+        return None
+    if isinstance(obj, dict):
+        return obj.get(key)
+    return getattr(obj, key, None)
+
+
+def _parse_number(value) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        parsed = float(value)
+        if not math.isfinite(parsed):
+            return None
+        return parsed
+    if isinstance(value, str):
+        raw = value.strip()
+        if not raw:
+            return None
+        try:
+            parsed = float(raw)
+        except ValueError:
+            return None
+        if not math.isfinite(parsed):
+            return None
+        return parsed
+    return None
+
+
+def _parse_int(value) -> int | None:
+    parsed = _parse_number(value)
+    if parsed is None:
+        return None
+    if not float(parsed).is_integer():
+        return None
+    return int(parsed)
+
+
+def decide_trade(
+    signal,
+    market_state,
+    account_state,
+    market_health,
+    now_ms,
+) -> tuple[str, str | None, dict]:
+    now_ms_value = _parse_int(now_ms)
+    symbol = _get_value(signal, "symbol")
+
+    pct_change_15m = _parse_number(_get_value(signal, "pct_change_15m"))
+    volume_15m = _parse_number(_get_value(signal, "volume_15m"))
+    signal_ts_ms = _parse_int(_get_value(signal, "ts_ms"))
+
+    regime_id = _parse_int(_get_value(market_state, "regime_id"))
+    return_1m = _parse_number(_get_value(market_state, "return_1m"))
+    return_5m = _parse_number(_get_value(market_state, "return_5m"))
+    price_change_5m = _parse_number(_get_value(market_state, "price_change_5m"))
+    market_state_ts_ms = _parse_int(_get_value(market_state, "ts_ms"))
+    last_tick_ts_ms = _parse_int(_get_value(market_state, "last_tick_ts_ms"))
+
+    daily_drawdown_pct = _parse_number(_get_value(account_state, "daily_drawdown_pct"))
+    total_exposure_pct = _parse_number(_get_value(account_state, "total_exposure_pct"))
+    account_state_ts_ms = _parse_int(_get_value(account_state, "ts_ms"))
+
+    slippage_pct = _parse_number(_get_value(market_health, "slippage_pct"))
+    market_health_ts_ms = _parse_int(_get_value(market_health, "ts_ms"))
+
+    max_ts_ms = None
+    staleness_s = None
+    if (
+        now_ms_value is not None
+        and signal_ts_ms is not None
+        and market_state_ts_ms is not None
+        and account_state_ts_ms is not None
+        and market_health_ts_ms is not None
+    ):
+        max_ts_ms = max(
+            signal_ts_ms,
+            market_state_ts_ms,
+            account_state_ts_ms,
+            market_health_ts_ms,
+        )
+        staleness_s = (now_ms_value - max_ts_ms) / 1000.0
+
+    data_silence_s = None
+    if now_ms_value is not None and last_tick_ts_ms is not None:
+        data_silence_s = (now_ms_value - last_tick_ts_ms) / 1000.0
+
+    evidence = {
+        "contract_version": DECISION_CONTRACT_VERSION,
+        "timestamp_ms": now_ms_value,
+        "symbol": symbol,
+        "regime_id": regime_id,
+        "return_1m": return_1m,
+        "return_5m": return_5m,
+        "price_change_5m": price_change_5m,
+        "pct_change_15m": pct_change_15m,
+        "volume_15m": volume_15m,
+        "daily_drawdown_pct": daily_drawdown_pct,
+        "total_exposure_pct": total_exposure_pct,
+        "slippage_pct": slippage_pct,
+        "staleness_s": staleness_s,
+        "data_silence_s": data_silence_s,
+        "thresholds": DECISION_THRESHOLDS.copy(),
+        "timestamps_ms": {
+            "now_ms": now_ms_value,
+            "signal_ts_ms": signal_ts_ms,
+            "market_state_ts_ms": market_state_ts_ms,
+            "account_state_ts_ms": account_state_ts_ms,
+            "market_health_ts_ms": market_health_ts_ms,
+            "last_tick_ts_ms": last_tick_ts_ms,
+            "max_ts_ms": max_ts_ms,
+        },
+    }
+
+    # 1) Safety/Anomaly
+    if return_1m is None or return_5m is None or price_change_5m is None:
+        return DECISION_BLOCK, "RC_002", evidence
+    if (
+        return_1m <= DECISION_THRESHOLDS["return_1m_min"]
+        or return_5m <= DECISION_THRESHOLDS["return_5m_min"]
+        or abs(price_change_5m) > DECISION_THRESHOLDS["price_change_5m_abs_max"]
+    ):
+        return DECISION_BLOCK, "RC_002", evidence
+
+    # 2) Data Freshness
+    if staleness_s is None:
+        return DECISION_BLOCK, "RC_003", evidence
+    if staleness_s > DECISION_THRESHOLDS["staleness_s_max"]:
+        return DECISION_BLOCK, "RC_003", evidence
+    if data_silence_s is None:
+        return DECISION_BLOCK, "RC_004", evidence
+    if data_silence_s > DECISION_THRESHOLDS["data_silence_s_max"]:
+        return DECISION_BLOCK, "RC_004", evidence
+
+    # 3) Regime
+    if regime_id is None or regime_id not in {0, 1, 2, 3}:
+        return DECISION_BLOCK, "RC_001", evidence
+    if regime_id in {2, 3}:
+        return DECISION_BLOCK, "RC_001", evidence
+
+    # 4) Signal
+    if symbol is None or symbol == "" or pct_change_15m is None or volume_15m is None:
+        return DECISION_BLOCK, "RC_010", evidence
+    if (
+        pct_change_15m < DECISION_THRESHOLDS["signal_pct_change_15m_min"]
+        or volume_15m < DECISION_THRESHOLDS["signal_volume_15m_min"]
+    ):
+        return DECISION_BLOCK, "RC_010", evidence
+
+    # 5) Portfolio/Execution
+    if daily_drawdown_pct is None:
+        return DECISION_BLOCK, "RC_020", evidence
+    if daily_drawdown_pct >= DECISION_THRESHOLDS["daily_drawdown_pct_max"]:
+        return DECISION_BLOCK, "RC_020", evidence
+    if total_exposure_pct is None:
+        return DECISION_BLOCK, "RC_021", evidence
+    if total_exposure_pct >= DECISION_THRESHOLDS["total_exposure_pct_max"]:
+        return DECISION_BLOCK, "RC_021", evidence
+    if slippage_pct is None:
+        return DECISION_BLOCK, "RC_022", evidence
+    if slippage_pct > DECISION_THRESHOLDS["slippage_pct_max"]:
+        return DECISION_BLOCK, "RC_022", evidence
+
+    return DECISION_ALLOW, None, evidence
+
+
 class RiskManager:
     """Multi-Layer Risk-Management"""
 
@@ -108,6 +299,7 @@ class RiskManager:
         self.running = False
         self.allocation_state: dict[str, AllocationState] = {}
         self._circuit_shutdown_emitted = False
+        self._pg_conn: Optional[psycopg2.extensions.connection] = None
 
         # Validiere Config
         try:
@@ -145,6 +337,59 @@ class RiskManager:
         except redis.ConnectionError as e:
             logger.error(f"Redis-Verbindung fehlgeschlagen: {e}")
             sys.exit(1)
+
+    def _get_postgres_conn(self) -> Optional[psycopg2.extensions.connection]:
+        try:
+            if self._pg_conn is None or self._pg_conn.closed:
+                self._pg_conn = psycopg2.connect(
+                    host=self.config.postgres_host,
+                    port=self.config.postgres_port,
+                    database=self.config.postgres_db,
+                    user=self.config.postgres_user,
+                    password=self.config.postgres_password,
+                )
+                self._pg_conn.autocommit = True
+            return self._pg_conn
+        except Exception as e:
+            logger.error(f"❌ Failed to connect Postgres for risk events: {e}")
+            self._pg_conn = None
+            return None
+
+    def _persist_risk_event(self, event: dict) -> None:
+        conn = self._get_postgres_conn()
+        if conn is None:
+            return
+        try:
+            payload = json.dumps(event, allow_nan=False)
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO risk_events
+                    (timestamp_ms, symbol, decision, reason_code, contract_version, payload)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    event.get("timestamp_ms"),
+                    event.get("symbol"),
+                    event.get("decision"),
+                    event.get("reason_code"),
+                    event.get("contract_version"),
+                    payload,
+                ),
+            )
+        except Exception as e:
+            logger.error(f"❌ Failed to persist risk_event: {e}")
+            try:
+                conn.close()
+            except Exception:  # noqa: BLE001
+                pass
+            self._pg_conn = None
+
+    def _emit_risk_event(
+        self, decision: str, reason_code: str | None, evidence: dict
+    ) -> None:
+        event = {**evidence, "decision": decision, "reason_code": reason_code}
+        self._persist_risk_event(event)
 
     def bootstrap_state_from_db(self):
         """
@@ -238,9 +483,13 @@ class RiskManager:
                     logger.critical(error_msg)
                     cursor.close()
                     conn.close()
-                    raise RuntimeError("State mismatch: positions table empty but orders show open position")
+                    raise RuntimeError(
+                        "State mismatch: positions table empty but orders show open position"
+                    )
 
-                logger.info("✅ Risk state bootstrap: No open positions in DB (clean state)")
+                logger.info(
+                    "✅ Risk state bootstrap: No open positions in DB (clean state)"
+                )
                 cursor.close()
                 conn.close()
                 return
@@ -286,11 +535,15 @@ class RiskManager:
 
         except psycopg2.Error as e:
             logger.error(f"❌ Failed to bootstrap risk state from DB: {e}")
-            logger.warning("⚠️ Risk manager starting with EMPTY state (no reconciliation)")
+            logger.warning(
+                "⚠️ Risk manager starting with EMPTY state (no reconciliation)"
+            )
             # Continue startup with empty state rather than crashing
         except Exception as e:
             logger.error(f"❌ Unexpected error during risk state bootstrap: {e}")
-            logger.warning("⚠️ Risk manager starting with EMPTY state (no reconciliation)")
+            logger.warning(
+                "⚠️ Risk manager starting with EMPTY state (no reconciliation)"
+            )
 
     @staticmethod
     def _parse_timestamp(value) -> int | None:
@@ -499,7 +752,9 @@ class RiskManager:
         max_exposure = current_balance * self.config.max_total_exposure_pct
 
         # PR #XXX: Include pending reserved exposure to prevent race condition
-        effective_exposure = risk_state.total_exposure + risk_state.pending_exposure_usdt
+        effective_exposure = (
+            risk_state.total_exposure + risk_state.pending_exposure_usdt
+        )
 
         if effective_exposure >= max_exposure:
             return (
@@ -532,8 +787,29 @@ class RiskManager:
 
         return True, "Drawdown OK"
 
-    def process_signal(self, signal: Signal) -> Optional[Order]:
+    def process_signal(
+        self, signal: Signal, raw_payload: dict | None = None
+    ) -> Optional[Order]:
         """Prüft Signal gegen alle Risk-Layers"""
+        payload = raw_payload or {}
+        market_state = payload.get("market_state")
+        account_state = payload.get("account_state")
+        market_health = payload.get("market_health")
+        now_ms = int(time.time() * 1000)
+
+        decision, reason_code, evidence = decide_trade(
+            signal=signal,
+            market_state=market_state,
+            account_state=account_state,
+            market_health=market_health,
+            now_ms=now_ms,
+        )
+        self._emit_risk_event(decision, reason_code, evidence)
+        if decision == DECISION_BLOCK:
+            logger.warning("Decision contract BLOCK: %s", reason_code)
+            stats["orders_blocked"] += 1
+            risk_state.signals_blocked += 1
+            return None
 
         if not signal.strategy_id:
             self.send_alert(
@@ -1091,7 +1367,7 @@ class RiskManager:
                         )
 
                         # Risk-Checks durchführen
-                        order = self.process_signal(signal)
+                        order = self.process_signal(signal, raw_payload=data)
 
                         # Falls approved, Order senden
                         if order:
@@ -1125,6 +1401,8 @@ class RiskManager:
             self._order_result_thread.join(timeout=2)
         if self.redis_client:
             self.redis_client.close()
+        if self._pg_conn and not self._pg_conn.closed:
+            self._pg_conn.close()
 
         logger.info("Risk-Manager gestoppt ✓")
 

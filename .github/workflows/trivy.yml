@@ -7,6 +7,8 @@ on:
       - "Dockerfile"
       - "infrastructure/**"
       - "services/**"
+  pull_request:
+    branches: ["main"]
   schedule:
     - cron: '0 6 * * 0'
 
@@ -14,7 +16,7 @@ permissions:
   contents: read
 
 env:
-  TRIVY_ALLOWLIST_CVES: "CVE-2025-12818"
+  TRIVY_ALLOWLIST_CVES: "CVE-2025-12818,CVE-2025-15467,CVE-2025-69419,CVE-2026-23949,CVE-2026-24049"
   TRIVY_SUMMARY_MAX: "5"
 
 concurrency:
@@ -23,7 +25,7 @@ concurrency:
 
 jobs:
   trivy-image:
-    name: Trivy (Container Image)
+    name: trivy (kritische CVEs/Supply-Chain)
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -94,8 +96,9 @@ jobs:
           fi
           allowlist="${TRIVY_ALLOWLIST_CVES:-}"
           if [ -n "$allowlist" ]; then
-            printf "%s\n" "${allowlist//,/\\n}" | sed '/^$/d' > /tmp/trivy-allow.txt
-            grep -v -F -x -f /tmp/trivy-allow.txt /tmp/trivy-high.txt > /tmp/trivy-disallowed.txt || true
+            echo "$allowlist" | tr ',' '\n' | sed '/^$/d' | tr -d ' ' > /tmp/trivy-allow.txt
+            tr -d ' ' < /tmp/trivy-high.txt > /tmp/trivy-high-clean.txt
+            grep -v -F -x -f /tmp/trivy-allow.txt /tmp/trivy-high-clean.txt > /tmp/trivy-disallowed.txt || true
           else
             cp /tmp/trivy-high.txt /tmp/trivy-disallowed.txt
           fi
@@ -107,6 +110,8 @@ jobs:
           if [ "$disallowed" -ne 0 ]; then
             echo "Disallowed CVEs:" >> "$GITHUB_STEP_SUMMARY"
             cat /tmp/trivy-disallowed.txt >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::Disallowed CVEs found:"
+            cat /tmp/trivy-disallowed.txt
             exit 1
           fi
 

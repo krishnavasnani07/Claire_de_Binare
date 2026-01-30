@@ -2,14 +2,7 @@ name: ci
 
 on:
   pull_request:
-    paths:
-      - 'core/**'
-      - 'services/**'
-      - 'tests/**'
-      - 'infrastructure/**'
-      - '.github/workflows/**'
-      - 'requirements*.txt'
-      - 'pyproject.toml'
+    branches: [ main ]
   push:
     branches: [ main ]
     paths:
@@ -30,7 +23,7 @@ permissions:
 
 jobs:
   ci:
-    name: ci
+    name: ci (Unit/Integration + Lint gesammelt)
     runs-on: ubuntu-latest
 
     steps:

@@ -35,6 +35,9 @@ class Signal:
     reason: str | None = None
     price: float | None = None
     pct_change: float | None = None
+    pct_change_15m: float | None = None
+    volume_15m: float | None = None
+    ts_ms: int | None = None
     type: Literal["signal"] = "signal"  # Type-safe event type
 
     def __post_init__(self):
@@ -58,6 +61,9 @@ class Signal:
             reason=data.get("reason"),
             price=data.get("price"),
             pct_change=data.get("pct_change"),
+            pct_change_15m=data.get("pct_change_15m"),
+            volume_15m=data.get("volume_15m"),
+            ts_ms=data.get("ts_ms"),
         )
 
     def to_dict(self) -> dict:
@@ -76,6 +82,9 @@ class Signal:
             "reason": self.reason,
             "price": self.price,
             "pct_change": self.pct_change,
+            "pct_change_15m": self.pct_change_15m,
+            "volume_15m": self.volume_15m,
+            "ts_ms": self.ts_ms,
         }
 
 

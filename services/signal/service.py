@@ -18,6 +18,7 @@ from pathlib import Path
 from core.utils.clock import utcnow
 from core.utils.redis_payload import sanitize_signal
 from core.utils.uuid_gen import generate_uuid_hex
+
 try:
     from .config import config
     from .models import MarketData, Signal
@@ -75,7 +76,9 @@ class SignalEngine:
         self.redis_client: Optional[redis.Redis] = None
         self.pubsub: Optional[redis.client.PubSub] = None
         self.running = False
-        self.price_buffer = PriceBuffer()  # Stateful pct_change calculation (Issue #345)
+        self.price_buffer = (
+            PriceBuffer()
+        )  # Stateful pct_change calculation (Issue #345)
 
         # Validiere Config
         try:
@@ -143,16 +146,19 @@ class SignalEngine:
                     )
                     return None
 
-
                 # Signal generieren
+                now_ms = int(time.time() * 1000)
                 signal = Signal(
                     signal_id=f"sig-{generate_uuid_hex(length=32)}",
                     symbol=market_data.symbol,
                     side="BUY",
                     reason=f"Momentum: {market_data.pct_change:+.4f}% > {self.config.threshold_pct}%",
-                    timestamp=int(time.time()),
+                    timestamp=now_ms // 1000,
+                    ts_ms=now_ms,
                     price=market_data.price,
                     pct_change=market_data.pct_change,
+                    pct_change_15m=market_data.pct_change,
+                    volume_15m=market_data.volume,
                     strategy_id=self.config.strategy_id,
                     bot_id=self.config.bot_id,
                 )
@@ -331,16 +337,20 @@ def metrics():
         else:
             cumulative += latency_buckets[bucket]
         histogram_lines.append(
-            f"signal_processing_latency_ms_bucket{{le=\"{bucket}\"}} {cumulative}"
+            f'signal_processing_latency_ms_bucket{{le="{bucket}"}} {cumulative}'
         )
 
-    histogram_lines.append(f"signal_processing_latency_ms_sum {stats['latency_sum_ms']}")
-    histogram_lines.append(f"signal_processing_latency_ms_count {stats['latency_count']}")
+    histogram_lines.append(
+        f"signal_processing_latency_ms_sum {stats['latency_sum_ms']}"
+    )
+    histogram_lines.append(
+        f"signal_processing_latency_ms_count {stats['latency_count']}"
+    )
 
     # Build error counter with labels
     error_lines = []
     for error_type, count in stats["errors_by_type"].items():
-        error_lines.append(f"signal_errors_total{{error_type=\"{error_type}\"}} {count}")
+        error_lines.append(f'signal_errors_total{{error_type="{error_type}"}} {count}')
 
     body = (
         "# HELP signals_generated_total Anzahl generierter Signale\n"
@@ -351,10 +361,12 @@ def metrics():
         f"signal_engine_status {1 if stats['status'] == 'running' else 0}\n\n"
         "# HELP signal_processing_latency_ms Signal processing latency in milliseconds\n"
         "# TYPE signal_processing_latency_ms histogram\n"
-        + "\n".join(histogram_lines) + "\n\n"
+        + "\n".join(histogram_lines)
+        + "\n\n"
         "# HELP signal_errors_total Total signal processing errors\n"
         "# TYPE signal_errors_total counter\n"
-        + ("\n".join(error_lines) if error_lines else "signal_errors_total 0") + "\n"
+        + ("\n".join(error_lines) if error_lines else "signal_errors_total 0")
+        + "\n"
     )
     return Response(body, mimetype="text/plain")
 
