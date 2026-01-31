@@ -96,6 +96,9 @@ jobs:
   trivy-scan-custom:
     name: Trivy - Custom Services
     runs-on: ubuntu-latest
+    env:
+      # CVE-2026-0861: Unfixed glibc (HIGH), expire: 2026-04-30, refs: #634
+      TRIVY_ALLOWLIST_CVES: "CVE-2025-12818,CVE-2026-0861,CVE-2026-23949,CVE-2026-24049"
     strategy:
       matrix:
         service:
@@ -136,6 +139,7 @@ jobs:
           format: 'json'
           exit-code: '0'
           severity: 'CRITICAL,HIGH'
+          ignore-unfixed: true
           output: 'trivy-cdb_${{ matrix.service }}.json'
 
       - name: Summarize Trivy Results

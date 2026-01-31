@@ -3,12 +3,14 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Base deps
-RUN apt-get update && apt-get install -y \
+# Upgrade packages to fix OS-level CVEs (e.g. libssl3, libc6)
+RUN apt-get update && apt-get upgrade -y && apt-get install -y \
     curl \
   && rm -rf /var/lib/apt/lists/*
 
 # Python deps
-RUN pip install --upgrade pip==25.3
+# Upgrade pip & setuptools to fix CVE-2025-8869 and vendor vulnerabilities (jaraco.context, wheel)
+RUN pip install --upgrade pip==25.3 setuptools>=70.0.0 wheel>=0.46.3
 COPY services/signal/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
