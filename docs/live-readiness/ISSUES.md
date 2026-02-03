@@ -15,3 +15,5 @@ LR-031 – Shadow Metrics Comparison
 LR-040 – 72h Soak Test
 LR-041 – Chaos: Redis/Postgres Failure
 LR-042 – Chaos: Network Latency + Packet Loss
+
+LR-050 – P5 Canary Execution Checklist

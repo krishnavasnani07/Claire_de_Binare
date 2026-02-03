@@ -31,3 +31,4 @@ phases:
     name: Canary Echtgeld
     gated: true
     requires: [explicit_human_approval]
+    issues: [LR-050]
