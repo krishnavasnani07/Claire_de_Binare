@@ -1,0 +1,33 @@
+goal: "Echtgeld Go/No-Go Entscheidung"
+mode: governance-first
+rules:
+  - no_real_trades_without_human_gate
+  - no_merge_without_required_checks
+  - evidence_over_assumptions
+
+phases:
+  - id: P0
+    name: Preconditions
+    blocking: true
+    issues: [LR-001, LR-002, LR-003]
+
+  - id: P1
+    name: Deterministic Tests
+    issues: [LR-010, LR-011, LR-012]
+
+  - id: P2
+    name: E2E + Replay
+    issues: [LR-020, LR-021]
+
+  - id: P3
+    name: Shadow Mode
+    issues: [LR-030, LR-031]
+
+  - id: P4
+    name: Soak + Chaos
+    issues: [LR-040, LR-041, LR-042]
+
+  - id: P5
+    name: Canary Echtgeld
+    gated: true
+    requires: [explicit_human_approval]
