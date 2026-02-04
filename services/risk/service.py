@@ -28,6 +28,7 @@ from core.auth import validate_all_auth
 try:
     from .config import config
     from .models import Order, Alert, RiskState, OrderResult
+    from .reason_codes import RC_001, RC_002, RC_003, RC_004, RC_010, RC_020, RC_021, RC_022
     from .balance_fetcher import RealBalanceFetcher
 except ImportError:
     # Fallback for script/importlib execution: ensure repo root is on sys.path.
@@ -227,52 +228,52 @@ def decide_trade(
 
     # 1) Safety/Anomaly
     if return_1m is None or return_5m is None or price_change_5m is None:
-        return DECISION_BLOCK, "RC_002", evidence
+        return DECISION_BLOCK, RC_002, evidence
     if (
         return_1m <= DECISION_THRESHOLDS["return_1m_min"]
         or return_5m <= DECISION_THRESHOLDS["return_5m_min"]
         or abs(price_change_5m) > DECISION_THRESHOLDS["price_change_5m_abs_max"]
     ):
-        return DECISION_BLOCK, "RC_002", evidence
+        return DECISION_BLOCK, RC_002, evidence
 
     # 2) Data Freshness
     if staleness_s is None:
-        return DECISION_BLOCK, "RC_003", evidence
+        return DECISION_BLOCK, RC_003, evidence
     if staleness_s > DECISION_THRESHOLDS["staleness_s_max"]:
-        return DECISION_BLOCK, "RC_003", evidence
+        return DECISION_BLOCK, RC_003, evidence
     if data_silence_s is None:
-        return DECISION_BLOCK, "RC_004", evidence
+        return DECISION_BLOCK, RC_004, evidence
     if data_silence_s > DECISION_THRESHOLDS["data_silence_s_max"]:
-        return DECISION_BLOCK, "RC_004", evidence
+        return DECISION_BLOCK, RC_004, evidence
 
     # 3) Regime
     if regime_id is None or regime_id not in {0, 1, 2, 3}:
-        return DECISION_BLOCK, "RC_001", evidence
+        return DECISION_BLOCK, RC_001, evidence
     if regime_id in {2, 3}:
-        return DECISION_BLOCK, "RC_001", evidence
+        return DECISION_BLOCK, RC_001, evidence
 
     # 4) Signal
     if symbol is None or symbol == "" or pct_change_15m is None or volume_15m is None:
-        return DECISION_BLOCK, "RC_010", evidence
+        return DECISION_BLOCK, RC_010, evidence
     if (
         pct_change_15m < DECISION_THRESHOLDS["signal_pct_change_15m_min"]
         or volume_15m < DECISION_THRESHOLDS["signal_volume_15m_min"]
     ):
-        return DECISION_BLOCK, "RC_010", evidence
+        return DECISION_BLOCK, RC_010, evidence
 
     # 5) Portfolio/Execution
     if daily_drawdown_pct is None:
-        return DECISION_BLOCK, "RC_020", evidence
+        return DECISION_BLOCK, RC_020, evidence
     if daily_drawdown_pct >= DECISION_THRESHOLDS["daily_drawdown_pct_max"]:
-        return DECISION_BLOCK, "RC_020", evidence
+        return DECISION_BLOCK, RC_020, evidence
     if total_exposure_pct is None:
-        return DECISION_BLOCK, "RC_021", evidence
+        return DECISION_BLOCK, RC_021, evidence
     if total_exposure_pct >= DECISION_THRESHOLDS["total_exposure_pct_max"]:
-        return DECISION_BLOCK, "RC_021", evidence
+        return DECISION_BLOCK, RC_021, evidence
     if slippage_pct is None:
-        return DECISION_BLOCK, "RC_022", evidence
+        return DECISION_BLOCK, RC_022, evidence
     if slippage_pct > DECISION_THRESHOLDS["slippage_pct_max"]:
-        return DECISION_BLOCK, "RC_022", evidence
+        return DECISION_BLOCK, RC_022, evidence
 
     return DECISION_ALLOW, None, evidence
 
