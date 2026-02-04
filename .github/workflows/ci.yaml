@@ -313,6 +313,31 @@ jobs:
         run: |
           pytest -m contract -v --tb=short --maxfail=1
 
+  contract-drift-guard:
+    name: Contract Drift Guard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Setup Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.11'
+
+      - name: Run Contract Drift Guard
+        run: |
+          python scripts/lr003_contract_drift_guard.py --check
+
+      - name: Drift detected guidance
+        if: failure()
+        run: |
+          echo "::error::Contract drift detected. Protected files modified."
+          echo "If changes are intentional:"
+          echo "  1. python scripts/lr003_contract_drift_guard.py --generate"
+          echo "  2. Commit updated LR-003-FINGERPRINT.json"
+          echo "  3. Re-push to trigger CI"
+
   # ============================================
   # SECURITY CHECKS
   # ============================================
@@ -443,7 +468,7 @@ jobs:
   build-summary:
     name: Build Summary
     runs-on: ubuntu-latest
-    needs: [core-guard, lint, format-check, type-check, test, e2e_happy_path, contract-tests, secrets-scan, trivy-scan, security-audit, dependency-audit, docs-check]
+    needs: [core-guard, lint, format-check, type-check, test, e2e_happy_path, contract-tests, contract-drift-guard, secrets-scan, trivy-scan, security-audit, dependency-audit, docs-check]
     if: always()
     steps:
       - name: Create summary
@@ -460,6 +485,7 @@ jobs:
           echo "- Tests: ${{ needs.test.result }}" >> $GITHUB_STEP_SUMMARY
           echo "- E2E Happy Path: ${{ needs.e2e_happy_path.result }}" >> $GITHUB_STEP_SUMMARY
           echo "- Contract Tests: ${{ needs.contract-tests.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Contract Drift Guard: ${{ needs.contract-drift-guard.result }}" >> $GITHUB_STEP_SUMMARY
           echo "- Secret Scan: ${{ needs.secrets-scan.result }}" >> $GITHUB_STEP_SUMMARY
           echo "- Trivy Scan: ${{ needs.trivy-scan.result }}" >> $GITHUB_STEP_SUMMARY
           echo "- Security Audit: ${{ needs.security-audit.result }}" >> $GITHUB_STEP_SUMMARY
