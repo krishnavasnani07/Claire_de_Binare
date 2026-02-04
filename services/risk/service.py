@@ -28,7 +28,16 @@ from core.auth import validate_all_auth
 try:
     from .config import config
     from .models import Order, Alert, RiskState, OrderResult
-    from .reason_codes import RC_001, RC_002, RC_003, RC_004, RC_010, RC_020, RC_021, RC_022
+    from .reason_codes import (
+        RC_001,
+        RC_002,
+        RC_003,
+        RC_004,
+        RC_010,
+        RC_020,
+        RC_021,
+        RC_022,
+    )
     from .balance_fetcher import RealBalanceFetcher
 except ImportError:
     # Fallback for script/importlib execution: ensure repo root is on sys.path.
