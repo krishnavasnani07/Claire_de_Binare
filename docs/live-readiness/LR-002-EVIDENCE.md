@@ -98,12 +98,31 @@ tests\unit\risk\test_signal_serialization.py .....                       [100%]
 
 ---
 
-## CI Run Proof
+## CI Run Evidence
 
-**Status:** Pending PR creation
-**Next Step:** Push changes, create PR, verify "Contract Tests" job appears and passes
+**PR:** https://github.com/jannekbuengener/Claire_de_Binare/pull/793
+**CI Run:** https://github.com/jannekbuengener/Claire_de_Binare/actions/runs/21672987067
+**Status:** ✅ ALL PASS
 
-CI URL will be added after PR creation in STOP F.
+### Key Jobs
+- **Contract Tests:** ✅ PASS (24s)
+  - URL: https://github.com/jannekbuengener/Claire_de_Binare/actions/runs/21672987067/job/62485473262
+  - Command: `pytest -m contract -v --tb=short --maxfail=1`
+  - Result: 16 contract tests passed
+
+- **Unit Tests (Python 3.11):** ✅ PASS (36s)
+  - URL: https://github.com/jannekbuengener/Claire_de_Binare/actions/runs/21672987067/job/62485473149
+
+- **Unit Tests (Python 3.12):** ✅ PASS (34s)
+  - URL: https://github.com/jannekbuengener/Claire_de_Binare/actions/runs/21672987067/job/62485473196
+
+- **Format Check (Black):** ✅ PASS (16s)
+  - URL: https://github.com/jannekbuengener/Claire_de_Binare/actions/runs/21672987067/job/62485473163
+
+- **E2E Happy Path:** ✅ PASS (28s)
+  - URL: https://github.com/jannekbuengener/Claire_de_Binare/actions/runs/21672987067/job/62485542055
+
+**Contract Tests Job:** Explicitly visible in CI as first-class check ✅
 
 ---
 
