@@ -30,7 +30,7 @@ def _base_inputs():
     return now_ms, signal, market_state, account_state, market_health
 
 
-@pytest.mark.unit
+@pytest.mark.contract
 def test_decision_allow():
     now_ms, signal, market_state, account_state, market_health = _base_inputs()
     decision, reason_code, _ = risk_service.decide_trade(
@@ -40,7 +40,7 @@ def test_decision_allow():
     assert reason_code is None
 
 
-@pytest.mark.unit
+@pytest.mark.contract
 def test_decision_rc_002_panic_return_1m():
     now_ms, signal, market_state, account_state, market_health = _base_inputs()
     market_state["return_1m"] = -2.0
@@ -51,7 +51,7 @@ def test_decision_rc_002_panic_return_1m():
     assert reason_code == "RC_002"
 
 
-@pytest.mark.unit
+@pytest.mark.contract
 def test_decision_rc_002_panic_return_5m():
     now_ms, signal, market_state, account_state, market_health = _base_inputs()
     market_state["return_5m"] = -5.0
@@ -62,7 +62,7 @@ def test_decision_rc_002_panic_return_5m():
     assert reason_code == "RC_002"
 
 
-@pytest.mark.unit
+@pytest.mark.contract
 def test_decision_rc_002_panic_price_change():
     now_ms, signal, market_state, account_state, market_health = _base_inputs()
     market_state["price_change_5m"] = 10.1
@@ -73,7 +73,7 @@ def test_decision_rc_002_panic_price_change():
     assert reason_code == "RC_002"
 
 
-@pytest.mark.unit
+@pytest.mark.contract
 def test_decision_rc_003_stale():
     now_ms, signal, market_state, account_state, market_health = _base_inputs()
     signal["ts_ms"] = now_ms - 6000
@@ -87,7 +87,7 @@ def test_decision_rc_003_stale():
     assert reason_code == "RC_003"
 
 
-@pytest.mark.unit
+@pytest.mark.contract
 def test_decision_rc_004_data_silence():
     now_ms, signal, market_state, account_state, market_health = _base_inputs()
     market_state["last_tick_ts_ms"] = now_ms - 31000
@@ -98,7 +98,7 @@ def test_decision_rc_004_data_silence():
     assert reason_code == "RC_004"
 
 
-@pytest.mark.unit
+@pytest.mark.contract
 def test_decision_rc_001_regime_block():
     now_ms, signal, market_state, account_state, market_health = _base_inputs()
     market_state["regime_id"] = 2
@@ -109,7 +109,7 @@ def test_decision_rc_001_regime_block():
     assert reason_code == "RC_001"
 
 
-@pytest.mark.unit
+@pytest.mark.contract
 def test_decision_rc_010_signal_thresholds():
     now_ms, signal, market_state, account_state, market_health = _base_inputs()
     signal["pct_change_15m"] = 2.9
@@ -120,7 +120,7 @@ def test_decision_rc_010_signal_thresholds():
     assert reason_code == "RC_010"
 
 
-@pytest.mark.unit
+@pytest.mark.contract
 def test_decision_rc_020_daily_drawdown():
     now_ms, signal, market_state, account_state, market_health = _base_inputs()
     account_state["daily_drawdown_pct"] = 5.0
@@ -131,7 +131,7 @@ def test_decision_rc_020_daily_drawdown():
     assert reason_code == "RC_020"
 
 
-@pytest.mark.unit
+@pytest.mark.contract
 def test_decision_rc_021_exposure():
     now_ms, signal, market_state, account_state, market_health = _base_inputs()
     account_state["total_exposure_pct"] = 50.0
@@ -142,7 +142,7 @@ def test_decision_rc_021_exposure():
     assert reason_code == "RC_021"
 
 
-@pytest.mark.unit
+@pytest.mark.contract
 def test_decision_rc_022_slippage():
     now_ms, signal, market_state, account_state, market_health = _base_inputs()
     market_health["slippage_pct"] = 1.1
@@ -153,7 +153,7 @@ def test_decision_rc_022_slippage():
     assert reason_code == "RC_022"
 
 
-@pytest.mark.unit
+@pytest.mark.contract
 def test_decision_determinism():
     now_ms, signal, market_state, account_state, market_health = _base_inputs()
     first = risk_service.decide_trade(
@@ -167,7 +167,7 @@ def test_decision_determinism():
     assert first[2] == second[2]
 
 
-@pytest.mark.unit
+@pytest.mark.contract
 def test_decision_first_fail_panic_wins():
     now_ms, signal, market_state, account_state, market_health = _base_inputs()
     market_state["return_1m"] = -2.0
@@ -179,7 +179,7 @@ def test_decision_first_fail_panic_wins():
     assert reason_code == "RC_002"
 
 
-@pytest.mark.unit
+@pytest.mark.contract
 def test_decision_first_fail_stale_wins_over_regime():
     now_ms, signal, market_state, account_state, market_health = _base_inputs()
     market_state["regime_id"] = 2
@@ -194,7 +194,7 @@ def test_decision_first_fail_stale_wins_over_regime():
     assert reason_code == "RC_003"
 
 
-@pytest.mark.unit
+@pytest.mark.contract
 def test_decision_first_fail_regime_wins_over_signal():
     now_ms, signal, market_state, account_state, market_health = _base_inputs()
     market_state["regime_id"] = 2
@@ -206,7 +206,7 @@ def test_decision_first_fail_regime_wins_over_signal():
     assert reason_code == "RC_001"
 
 
-@pytest.mark.unit
+@pytest.mark.contract
 def test_decision_first_fail_drawdown_wins_over_exposure():
     now_ms, signal, market_state, account_state, market_health = _base_inputs()
     account_state["daily_drawdown_pct"] = 5.0
