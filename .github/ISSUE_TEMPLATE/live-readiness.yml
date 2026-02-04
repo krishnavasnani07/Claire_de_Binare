@@ -1,0 +1,30 @@
+name: Live Readiness Issue
+description: Echtgeld Live Readiness Task
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Ziel
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope / Nicht-Ziel
+  - type: textarea
+    id: pass
+    attributes:
+      label: Pass-Kriterien
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence (Links, Logs, Metrics)
+    validations:
+      required: true
+  - type: dropdown
+    id: go
+    attributes:
+      label: Go/No-Go Relevanz
+      options: [GO, NO-GO, BLOCKER]
