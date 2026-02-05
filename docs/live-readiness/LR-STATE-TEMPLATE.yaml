@@ -1,0 +1,32 @@
+# LR-STATE-TEMPLATE.yaml
+#
+# Template for creating new LR-*-STATE.yaml files
+# Copy this file to LR-NNN-STATE.yaml and fill in the values
+#
+# Usage:
+#   cp docs/live-readiness/LR-STATE-TEMPLATE.yaml \
+#      docs/live-readiness/LR-NNN-STATE.yaml
+#
+# See: docs/live-readiness/LR-004-SPEC.md for full specification
+
+spec_version: "1.0"
+
+# Task identification (must match manifest entry and filename)
+task_id: "LR-NNN"  # Replace NNN with 3-digit task number (e.g., LR-042)
+task_title: "Task Title Here"  # Must match entry in LR-TASKS.yaml
+
+# Terminal state: DONE or BLOCKED
+status: "BLOCKED"  # One of: DONE | BLOCKED
+
+# DONE state fields (required if status==DONE, null if status==BLOCKED)
+completion_timestamp: null  # ISO 8601 UTC (e.g., "2026-02-05T13:30:00Z")
+completion_author: null  # Git user.name (e.g., "jannekbuengener")
+
+# Evidence reference (required for all states)
+evidence_file: "docs/live-readiness/LR-NNN-EVIDENCE.md"  # Relative path to evidence file
+evidence_commit: "abc1234"  # 7-40 hex chars (Git SHA of evidence)
+
+# BLOCKED state fields (required if status==BLOCKED, null if status==DONE)
+blocked_reason_code: "RC_B400"  # See LR-004-SPEC.md §5.2 for taxonomy
+blocked_reason_text: "Requirements clarification needed"  # Human-readable explanation
+blocked_since: null  # ISO 8601 UTC (e.g., "2026-02-05T13:30:00Z")

@@ -1,0 +1,26 @@
+# LR-TASKS.yaml - Live Readiness Task Manifest
+#
+# Purpose: Single source of truth for which LR tasks exist
+# Rules:
+#   - task_id is immutable (never changed, never removed)
+#   - task_title may be updated (with STATE file update + explanatory commit)
+#   - Append-only: new tasks added to end
+#   - Ordering: task_id ascending (LR-001, LR-002, ...)
+#
+# Validator uses this manifest to detect missing/orphan STATE files
+
+spec_version: "1.0"
+tasks:
+  - task_id: "LR-001"
+    task_title: "P0 Governance CI/CD Shield"
+
+  - task_id: "LR-002"
+    task_title: "P0 Contract Tests"
+
+  - task_id: "LR-003"
+    task_title: "P0 Contract Drift Guard"
+
+  - task_id: "LR-004"
+    task_title: "P0 Deterministic Completion Mechanism"
+
+  # Future tasks appended here (maintain task_id ascending order)
