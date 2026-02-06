@@ -1,5 +1,9 @@
 # Go / No-Go Entscheidung
 
+**Canonical State Source:** `LR-TASKS.yaml` (manifest) + `LR-*-STATE.yaml` (per-task state)
+**Validation:** `python scripts/lr004_completion_guard.py --check` (CI-enforced)
+**Spec:** `LR-004-SPEC.md`
+
 | Phase | Bereich | Status | Blocker | Evidence | Owner |
 |-------|---------|--------|---------|----------|-------|
 | P0 | CI Required Checks | | YES | | |

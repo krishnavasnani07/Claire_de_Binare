@@ -1,0 +1,12 @@
+spec_version: "1.0"
+task_id: "LR-001"
+task_title: "P0 Governance CI/CD Shield"
+status: "DONE"
+completion_timestamp: "2026-01-28T14:32:00Z"
+completion_author: "jannekbuengener"
+evidence_file: "docs/live-readiness/LR-001-EVIDENCE.md"
+evidence_commit: "928d33f"
+
+blocked_reason_code: null
+blocked_reason_text: null
+blocked_since: null

@@ -1,0 +1,12 @@
+spec_version: "1.0"
+task_id: "LR-002"
+task_title: "P0 Contract Tests"
+status: "DONE"
+completion_timestamp: "2026-01-30T10:15:00Z"
+completion_author: "jannekbuengener"
+evidence_file: "docs/live-readiness/LR-002-EVIDENCE.md"
+evidence_commit: "1ec79a1"
+
+blocked_reason_code: null
+blocked_reason_text: null
+blocked_since: null

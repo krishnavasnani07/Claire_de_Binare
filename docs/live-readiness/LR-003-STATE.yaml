@@ -1,0 +1,12 @@
+spec_version: "1.0"
+task_id: "LR-003"
+task_title: "P0 Contract Drift Guard"
+status: "DONE"
+completion_timestamp: "2026-02-04T16:42:00Z"
+completion_author: "jannekbuengener"
+evidence_file: "docs/live-readiness/LR-003-EVIDENCE.md"
+evidence_commit: "928d33f"
+
+blocked_reason_code: null
+blocked_reason_text: null
+blocked_since: null

@@ -1,0 +1,26 @@
+# Git attributes for Claire de Binare
+
+# Auto-detect text files and normalize to LF on checkin
+* text=auto
+
+# Canonical line endings for contract-relevant files (LR-003)
+# These files are fingerprinted by SHA256 and must have consistent line endings
+services/risk/reason_codes.py text eol=lf
+tests/contract/test_decision_contract.py text eol=lf
+docs/contracts/*.json text eol=lf
+
+# Shell scripts should use LF
+*.sh text eol=lf
+
+# Windows scripts should use CRLF
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# Binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
