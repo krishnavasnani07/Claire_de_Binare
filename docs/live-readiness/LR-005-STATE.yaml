@@ -1,12 +1,12 @@
 spec_version: "1.0"
 task_id: "LR-005"
 task_title: "Deterministic Completion Reporting & State Visibility"
-status: "BLOCKED"
-completion_timestamp: null
-completion_author: null
+status: "DONE"
+completion_timestamp: "2026-02-06T19:08:37Z"
+completion_author: "jannekbuengener"
 evidence_file: "docs/live-readiness/LR-005-SPEC.md"
-evidence_commit: "2262139"
+evidence_commit: "e727373"
 
-blocked_reason_code: "RC_B400"
-blocked_reason_text: "Phase A complete, Phase B/C pending approval (spec accepted)"
-blocked_since: "2026-02-06T13:30:00Z"
+blocked_reason_code: null
+blocked_reason_text: null
+blocked_since: null
