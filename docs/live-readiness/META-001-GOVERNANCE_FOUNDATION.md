@@ -57,7 +57,7 @@ Alle Artefakte sind in `docs/live-readiness/` versioniert, Git-basiert auditierb
 Das System kann jetzt:
 
 - **CI-Enforcement:** Protected-Branch-Merges blockieren bei fehlenden Required Checks, weil `.github/workflows/governance-drift-guard.yml` (LR-001) STUB/MOCK-Gates prüft.
-- **Contract Stability:** Breaking Changes automatisch erkennen, weil `LR-003-FINGERPRINT.json` Contract-Hashes versioniert und CI-Drift-Guard bei Abweichungen failed.
+- **Contract Stability:** Breaking Changes automatisch erkennen, weil `LR-003-FINGERPRINT.json` Contract-Hashes versioniert und CI-Drift-Guard bei Abweichungen fails.
 - **Deterministic Completion State:** LR-Task-Status ohne GitHub-Issue-Sync verwalten, weil `LR-TASKS.yaml` + `LR-*-STATE.yaml` (LR-004) als Single-Source-of-Truth dienen.
 - **Audit-Fähige Snapshots:** Completion-Stand zu beliebigem Git-SHA reproduzieren, weil LR-005-Reporter deterministisch ist (keine `now()`-Calls, nur Artefakt-basiert).
 - **Replay-Fähige Decisions:** Order-Rejections/Approvals ohne Code-Re-Execution rekonstruieren, weil Decision-Traces (LR-006A) Input-Sets, Version-Sets und Artefakt-Referenzen enthalten.
