@@ -1,20 +1,14 @@
 spec_version: "1.0"
 task_id: "LR-007"
 task_title: "Shadow Mode Validation Gate"
-status: "IN_PROGRESS"
+status: "BLOCKED"
 completion_timestamp: null
 completion_author: null
 evidence_file: "docs/live-readiness/LR-007-SPEC.md"
 evidence_commit: null
 
-blocked_reason_code: null
-blocked_reason_text: null
-blocked_since: null
+blocked_reason_code: "RC_B400"
+blocked_reason_text: "Shadow Mode validation in progress (30 days). Started 2026-02-07T12:30:00Z, target completion 2026-03-09."
+blocked_since: "2026-02-07T12:30:00Z"
 
-shadow_mode:
-  start_timestamp: "2026-02-07T12:30:00Z"
-  end_timestamp: null
-  runtime_days: 0
-  verdict: "IN_PROGRESS"
-
-note: "Shadow Mode intentionally started. No code/CI changes. LR-007 tracking only."
+note: "Shadow Mode intentionally started at 2026-02-07T12:30:00Z. Runtime tracked externally. LR-004 schema uses BLOCKED for non-terminal states."
