@@ -154,4 +154,4 @@ See **[DEVELOPER_ONBOARDING.md](DEVELOPER_ONBOARDING.md)** for detailed troubles
 - **Setup Guide**: [DEVELOPER_ONBOARDING.md](DEVELOPER_ONBOARDING.md) - Comprehensive onboarding
 - **Service Status**: [PROJECT_STATUS.md](PROJECT_STATUS.md) - Service implementation audit
 - **Governance**: [Governance Audit](governance-audit-2026-01-15.md) - Governance compliance
-- **Policies**: `governance/` - Project governance and policies
+- **Policies**: `governance/` - Project governance and policies# Trigger E2E for PR 806
