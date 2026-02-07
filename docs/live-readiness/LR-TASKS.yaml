@@ -26,4 +26,10 @@ tasks:
   - task_id: "LR-005"
     task_title: "Deterministic Completion Reporting & State Visibility"
 
+  - task_id: "LR-006A"
+    task_title: "P0 Deterministic Decision Traceability Contract"
+
+  - task_id: "LR-007"
+    task_title: "Shadow Mode Validation Gate"
+
   # Future tasks appended here (maintain task_id ascending order)
