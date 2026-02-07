@@ -303,10 +303,10 @@ uncertainty:
 - **Example 2:** Issue Close (Agent Lifecycle) ✅
 - **Example 3:** Parameter Selection (Signal Engine) ✅
 
-### AC14: No Secrets, No Tresor-Zone References ✅
+### AC14: No Confidential Data, No Tresor-Zone References ✅
 
 - **Input Sets:** No API keys, no passwords, no account credentials (balance shown as USDT amounts only, no account IDs)
-- **Evidence:** No Tresor-zone paths (`~/.secrets/`, Tresor-Policy references)
+- **Evidence:** No Tresor-zone paths (`~/.private/`, Tresor-Policy references)
 - **Config Hashes:** Used instead of inline configs (sensitive data abstracted)
 
 ### AC8-AC9: Artefact Reference Format (§6.6) ✅
@@ -328,7 +328,7 @@ LR-006A Evidence file demonstrates:
 1. Three diverse example traces (order decision, lifecycle decision, parameter selection)
 2. Strict adherence to artefact reference format (§6.6)
 3. Replay verification walkthrough (deterministic reconstruction)
-4. No secrets or Tresor-zone leaks
+4. No confidential data or Tresor-zone leaks
 5. Uncertainty transparency (Example 3 flags trade-off decision)
 
 **All acceptance criteria (AC8, AC9, AC13, AC14) satisfied.**
