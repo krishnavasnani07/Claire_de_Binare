@@ -174,3 +174,4 @@ tools/secrets/.env.*
 !tools/secrets/README.md
 !tools/secrets/evidence/**
 # Note: .rotation_state.json now lives in $SECRETS_PATH (outside repo) since v1.2
+# Trigger E2E
