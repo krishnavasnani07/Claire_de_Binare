@@ -104,12 +104,43 @@
 
 ---
 
+
+## Infrastructure Evidence (2026-02-09)
+
+### PR #815: E2E Happy Path Deadlock Fix
+- **Problem:** Docs-only PRs blocked by missing required "E2E Happy Path" check
+- **Solution:** Dedicated workflow (`.github/workflows/e2e-happy-path.yaml`) always runs, skips for docs-only
+- **Merge SHA:** `8dc06f7`
+- **Merged At:** 2026-02-09T18:06:37Z
+- **Merged By:** plaketten-ingo
+- **Outcome:** E2E Happy Path always-present (docs-only PRs report SUCCESS)
+- **Impact:** Unblocks governance/docs PRs without weakening code testing
+- **Evidence:** E2E check now runs for ALL PRs, deterministic docs-only detection via file paths
+
+### PR #814: Governance Documentation Bridge
+- **Purpose:** Link Working Repo → DocsHub canonical SYSTEM_INVARIANTS.md
+- **Merge SHA:** `b10e7bc`
+- **Merged At:** 2026-02-09T18:09:37Z
+- **Merged By:** jannekbuengener
+- **Outcome:** Governance pointer live, pinned to DocsHub commit `95b3a3c`
+- **Evidence:** `docs/governance/README.md` created with cross-repo reference pattern
+- **Impact:** Makes system invariants (INV-001 through INV-020) discoverable in Working Repo
+
+**Significance for LR-007:**
+- ✅ CI/CD improvements maintain deterministic behavior (INV-002)
+- ✅ No trading logic changes (Shadow Mode validation integrity preserved)
+- ✅ Governance framework now visible for Shadow Mode evidence review
+- ✅ E2E testing preserved for all code-changing PRs
+
+---
+
 ## References
 
 - **Spec:** `docs/live-readiness/LR-007-SPEC.md`
 - **PR:** #806 (merged 2026-02-07)
 - **Commits:** 9ba22c0 (merge), 70b5439 (start), 67e4c27 (spec)
 - **Related:** LR-001 to LR-006A (completed prerequisites)
+- **Infrastructure:** PR #815 (E2E fix), PR #814 (governance bridge)
 
 ---
 
