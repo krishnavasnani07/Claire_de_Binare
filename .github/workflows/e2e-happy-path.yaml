@@ -1,0 +1,109 @@
+name: E2E Happy Path
+
+# CRITICAL: This workflow must ALWAYS run to satisfy branch protection requirements
+# even for docs-only PRs. It will skip actual E2E execution for docs-only changes
+# but still produce a SUCCESS status check.
+
+on:
+  pull_request:
+    # No paths-ignore - always run
+  push:
+    branches: [ main ]
+    # No paths-ignore - always run
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: '3.12'
+  E2E_MISMATCH_BUDGET: '3'
+
+concurrency:
+  group: e2e-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e_happy_path:
+    name: E2E Happy Path
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0  # Need full history to detect file changes
+
+      - name: Detect docs-only changes
+        id: detect
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            # Fetch base branch for comparison
+            git fetch origin ${{ github.base_ref }}
+
+            # Get all changed files
+            changed_files=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
+
+            # Check if ALL changes are docs-only (*.md or docs/**)
+            docs_only=true
+            while IFS= read -r file; do
+              # Skip if file matches docs/** or *.md
+              if [[ ! "$file" =~ ^docs/ ]] && [[ ! "$file" =~ \.md$ ]]; then
+                docs_only=false
+                break
+              fi
+            done <<< "$changed_files"
+
+            if [ "$docs_only" = true ]; then
+              echo "docs_only=true" >> "$GITHUB_OUTPUT"
+              echo "::notice::Docs-only PR detected - E2E tests will be skipped"
+            else
+              echo "docs_only=false" >> "$GITHUB_OUTPUT"
+              echo "::notice::Code changes detected - E2E tests will run"
+            fi
+          else
+            # For push events, always run E2E
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Push to main - E2E tests will run"
+          fi
+
+          # Log detected files for audit trail
+          echo "Changed files:"
+          echo "$changed_files"
+
+      - name: Skip E2E for docs-only
+        if: steps.detect.outputs.docs_only == 'true'
+        run: |
+          echo "✅ E2E Happy Path: SKIPPED (docs-only PR)"
+          echo "This PR only modifies documentation files (*.md or docs/**)"
+          echo "No code changes detected - E2E testing not required"
+          echo "Status: SUCCESS (skip reason: docs-only)"
+          exit 0
+
+      - name: Setup Python
+        if: steps.detect.outputs.docs_only != 'true'
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        if: steps.detect.outputs.docs_only != 'true'
+        run: |
+          if [ -f "requirements-dev.txt" ]; then
+            pip install -r requirements-dev.txt
+          else
+            pip install pytest
+          fi
+          pip install -r requirements-mcp.txt
+
+      - name: MCP Validation
+        if: steps.detect.outputs.docs_only != 'true'
+        run: make mcp-config-validate MCP_CONFIG_PATHS="tests/fixtures/mcp_smoke_config.json"
+
+      - name: Log E2E mismatch budget
+        if: steps.detect.outputs.docs_only != 'true'
+        run: |
+          echo "E2E_MISMATCH_BUDGET=$E2E_MISMATCH_BUDGET"
+
+      - name: Run E2E happy path
+        if: steps.detect.outputs.docs_only != 'true'
+        run: |
+          pytest -q tests/e2e/test_smoke_pipeline.py
+          echo "✅ E2E Happy Path: PASSED (real E2E execution)"
