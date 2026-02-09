@@ -4,7 +4,7 @@ This directory contains governance artifacts for the Claire de Binare (CDB) trad
 
 ## System Invariants (Canonical)
 
-**Location**: [DocsHub → knowledge/governance/SYSTEM_INVARIANTS.md](https://github.com/jannekbuengener/Claire_de_Binare_Docs/blob/main/knowledge/governance/SYSTEM_INVARIANTS.md)
+**Location**: [DocsHub → knowledge/governance/SYSTEM_INVARIANTS.md](https://github.com/jannekbuengener/Claire_de_Binare_Docs/blob/95b3a3cc342866f70b4f25b4ea46e6873fa48f6c/knowledge/governance/SYSTEM_INVARIANTS.md) (pinned to merge commit 95b3a3c)
 
 **Purpose**: Defines the 20 non-negotiable system contracts that govern CDB's behavior. All service logic, tests, schemas, and CI enforcement must conform to these invariants.
 
@@ -36,6 +36,6 @@ This directory contains governance artifacts for the Claire de Binare (CDB) trad
 ### risk_events.schema.yaml
 Schema specification for risk events stored in PostgreSQL. Enforced by:
 - `scripts/governance/check_risk_events_schema_contract.py`
-- this repository's CI workflow (see `.github/workflows/`)
+- `.github/workflows/core-guard.yml`
 
 See INV-019 in SYSTEM_INVARIANTS.md for canonical statement.
