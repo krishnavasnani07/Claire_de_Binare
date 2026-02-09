@@ -36,6 +36,6 @@ This directory contains governance artifacts for the Claire de Binare (CDB) trad
 ### risk_events.schema.yaml
 Schema specification for risk events stored in PostgreSQL. Enforced by:
 - `scripts/governance/check_risk_events_schema_contract.py`
-- `.github/workflows/governance-drift-guard.yml`
+- this repository's CI workflow (see `.github/workflows/`)
 
 See INV-019 in SYSTEM_INVARIANTS.md for canonical statement.
