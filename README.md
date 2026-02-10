@@ -53,6 +53,17 @@ This repository contains all the necessary components to run and develop Claire 
 - **Governance:** A comprehensive set of documents defining the project's constitution, policies, and operational guidelines.
 - **Tooling:** A collection of scripts and tools to aid in development, deployment, and maintenance.
 
+## Tooling & Helper Scripts (Cheat Sheet)
+
+| Script | Zweck | Hinweis zur Nutzung |
+| --- | --- | --- |
+| `scripts/lr004_completion_guard.py` | Validiert deterministisch den Abschluss von LR-001 bis LR-007 und sichert das Live-Readiness-Gate ab. | Wird manuell zum Reporten eingesetzt und läuft automatisiert als Gate-Check. |
+| `scripts/lr003_contract_drift_guard.py` | Überwacht Contract-Drift-Indikatoren und schlägt Alarm bei Abweichungen. | Teil der Live-Readiness-Toolchain; bei Verdacht auf Drift einsetzen. |
+| `scripts/manage_secrets.ps1` | Erstellt, rotiert und validiert Produktions-Geheimnisse mit restriktiven Berechtigungen. | Ops-only: Use the secrets rotator/init tooling to generate/rotate/validate secrets; do not hardcode paths in docs—if unsure, run the validate/rotate command and follow its output. |
+| `scripts/setup_testnet.ps1` | Führt die MEXC-Testnet-Vorbereitung inklusive Credential-Validierung durch. | Sicherer Test-Setup-Flow; keine Änderungen am Live-Stack. |
+| `scripts/smart_health_check.py` | Fragt Health-Endpunkte lokaler Services ab und liefert Diagnose-Summary. | Read-only-Diagnose: nur GET-Requests gegen /health ausführen. |
+| `scripts/activate_live_data.ps1` | Schaltet das System auf Live Data (echte APIs und echtes Kapital) um und startet die Container neu. | Ops-only und mit höchster Vorsicht: echtes Geld, reale Märkte. |
+
 ## 📊 Projektstatus
 
 ### Gesamtfortschritt
