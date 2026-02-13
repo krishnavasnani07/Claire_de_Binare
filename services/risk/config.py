@@ -45,6 +45,9 @@ class RiskConfig:
     output_topic_orders: str = "orders"
     output_topic_alerts: str = "alerts"
     orders_stream: str = os.getenv("RISK_ORDERS_STREAM", "stream.orders")
+    orders_blocked_stream: str = os.getenv(
+        "RISK_ORDERS_BLOCKED_STREAM", "stream.orders_blocked"
+    )  # Separate stream for blocked order artifacts
     regime_stream: str = os.getenv("RISK_REGIME_STREAM", "stream.regime_signals")
     allocation_stream: str = os.getenv(
         "RISK_ALLOCATION_STREAM", "stream.allocation_decisions"
@@ -60,7 +63,9 @@ class RiskConfig:
 
     # MEXC API (for live balance fetching) - Docker secrets with fallback
     mexc_api_key: Optional[str] = read_secret("mexc_api_key", "MEXC_API_KEY") or None
-    mexc_api_secret: Optional[str] = read_secret("mexc_api_secret", "MEXC_API_SECRET") or None
+    mexc_api_secret: Optional[str] = (
+        read_secret("mexc_api_secret", "MEXC_API_SECRET") or None
+    )
     mexc_testnet: bool = os.getenv("MEXC_TESTNET", "true").lower() == "true"
 
     def validate(self) -> bool:

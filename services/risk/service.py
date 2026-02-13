@@ -17,6 +17,8 @@ from pathlib import Path
 from threading import Thread
 from typing import Optional
 
+from core.utils.uuid_gen import generate_uuid
+
 import psycopg2
 import redis
 from flask import Flask, jsonify, Response
@@ -108,8 +110,10 @@ DECISION_THRESHOLDS = {
     "price_change_5m_abs_max": 10.0,
     "staleness_s_max": 5.0,
     "data_silence_s_max": 30.0,
-    "signal_pct_change_15m_min": 3.0,
-    "signal_volume_15m_min": 100000.0,
+    # P90-calibrated thresholds (see RISK_RC002_CALIBRATION_EVIDENCE.md)
+    # Data arrives as fractions (0.01 = 1%), not percentages
+    "signal_pct_change_15m_min": 0.03,  # ~10% pass rate (P90 = 0.034)
+    "signal_volume_15m_min": 0.165,  # ~10% pass rate (P90 = 0.166)
     "daily_drawdown_pct_max": 5.0,
     "total_exposure_pct_max": 50.0,
     "slippage_pct_max": 1.0,
@@ -166,6 +170,11 @@ def decide_trade(
     market_health,
     now_ms,
 ) -> tuple[str, str | None, dict]:
+    # Generate correlation IDs for replay/audit (Correlation Backbone)
+    decision_id = generate_uuid()
+    trace_id = generate_uuid()
+    signal_id = _get_value(signal, "signal_id")  # Preserve from Signal service
+
     now_ms_value = _parse_int(now_ms)
     symbol = _get_value(signal, "symbol")
 
@@ -210,6 +219,10 @@ def decide_trade(
 
     evidence = {
         "contract_version": DECISION_CONTRACT_VERSION,
+        # Correlation IDs for replay/audit (Correlation Backbone)
+        "signal_id": signal_id,
+        "decision_id": decision_id,
+        "trace_id": trace_id,
         "timestamp_ms": now_ms_value,
         "symbol": symbol,
         "regime_id": regime_id,
@@ -819,6 +832,26 @@ class RiskManager:
             logger.warning("Decision contract BLOCK: %s", reason_code)
             stats["orders_blocked"] += 1
             risk_state.signals_blocked += 1
+            # Persist blocked_order artifact for audit/replay (Correlation Backbone)
+            blocked_order = {
+                "type": "blocked_order",
+                "order_id": generate_uuid(),
+                "decision_id": evidence.get("decision_id"),
+                "signal_id": evidence.get("signal_id"),
+                "trace_id": evidence.get("trace_id"),
+                "symbol": signal.symbol,
+                "side": signal.side,
+                "reason_code": reason_code,
+                "timestamp_ms": int(time.time() * 1000),
+            }
+            try:
+                self.redis_client.xadd(
+                    self.config.orders_blocked_stream,
+                    sanitize_payload(blocked_order),
+                    maxlen=10000,
+                )
+            except Exception:
+                logger.exception("Failed to persist blocked_order artifact")
             return None
 
         if not signal.strategy_id:
@@ -938,13 +971,17 @@ class RiskManager:
             side=signal.side,
             quantity=quantity,
             stop_loss_pct=self.config.stop_loss_pct,
-            signal_id=signal.timestamp,
+            signal_id=signal.signal_id or "",  # BUG-FIX: was signal.timestamp
             reason=reason,
             timestamp=int(time.time()),
             client_id=f"{signal.symbol}-{signal.timestamp}",
             strategy_id=signal.strategy_id,
             bot_id=signal.bot_id,
             price=price_used,
+            # Correlation IDs from decide_trade evidence
+            order_id=generate_uuid(),
+            decision_id=evidence.get("decision_id"),
+            trace_id=evidence.get("trace_id"),
         )
 
         # PR #619: HARD EXPOSURE GATE - Block order if projected exposure exceeds limit
