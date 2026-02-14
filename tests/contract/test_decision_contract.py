@@ -295,3 +295,33 @@ def test_decision_rc_022_skipped_when_market_health_none():
     assert reason_code != "RC_022", (
         f"RC_022 should be skipped when market_health is None. Got: {reason_code}"
     )
+
+
+@pytest.mark.contract
+def test_decision_rc_004_when_last_tick_ts_ms_missing():
+    """RC_004 should block when last_tick_ts_ms is missing (fail-closed)."""
+    now_ms, signal, market_state, account_state, market_health = _base_inputs()
+    # Remove last_tick_ts_ms from market_state
+    del market_state["last_tick_ts_ms"]
+    decision, reason_code, evidence = risk_service.decide_trade(
+        signal, market_state, account_state, market_health, now_ms
+    )
+    assert decision == risk_service.DECISION_BLOCK
+    assert reason_code == "RC_004"
+    assert evidence.get("data_silence_s") is None
+
+
+@pytest.mark.contract
+def test_decision_rc_004_when_data_silence_exceeds_threshold():
+    """RC_004 should block when data_silence_s exceeds threshold (30s)."""
+    now_ms, signal, market_state, account_state, market_health = _base_inputs()
+    # Set last_tick_ts_ms to 31 seconds ago (> 30s threshold)
+    market_state["last_tick_ts_ms"] = now_ms - 31000
+    decision, reason_code, evidence = risk_service.decide_trade(
+        signal, market_state, account_state, market_health, now_ms
+    )
+    assert decision == risk_service.DECISION_BLOCK
+    assert reason_code == "RC_004"
+    # data_silence_s should be computed as ~31 seconds
+    assert evidence.get("data_silence_s") is not None
+    assert evidence.get("data_silence_s") > 30.0

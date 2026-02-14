@@ -163,6 +163,8 @@ class CandleService:
 
             # Build market_state payload
             ts_ms = int(time.time() * 1000)
+            # Get last_tick_ts_ms from aggregator (updated on each trade)
+            last_tick_ts_ms = self.aggregator.last_tick_ts_ms.get(symbol)
             market_state = {
                 "symbol": symbol,
                 "return_1m": return_1m,
@@ -172,6 +174,7 @@ class CandleService:
                 "close_now": close_now,
                 "close_1m_ago": close_1m_ago,
                 "close_5m_ago": close_5m_ago,
+                "last_tick_ts_ms": last_tick_ts_ms,
             }
 
             # Persist to Redis with TTL
