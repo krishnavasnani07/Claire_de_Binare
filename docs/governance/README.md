@@ -33,6 +33,13 @@ This directory contains governance artifacts for the Claire de Binare (CDB) trad
 
 ## Local Governance Files
 
+### MARKET_STATE_CONTRACT_V1.md
+Input contract defining the `market_state` object that BLUE services must provide to Risk (BLACK) for trade decisions. Enforces fail-closed behavior: missing required fields (`return_1m`, `return_5m`, `price_change_5m`) result in `RC_002` block.
+
+See: [MARKET_STATE_CONTRACT_V1.md](MARKET_STATE_CONTRACT_V1.md)
+
+**Runtime Evidence**: `P1_RUNTIME_DOD_REPORT.md`, `runtime_evidence_bundle_P1.json`
+
 ### risk_events.schema.yaml
 Schema specification for risk events stored in PostgreSQL. Enforced by:
 - `scripts/governance/check_risk_events_schema_contract.py`
