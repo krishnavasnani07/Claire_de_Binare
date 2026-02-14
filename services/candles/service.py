@@ -98,6 +98,91 @@ class CandleService:
         if symbol:
             self._update_market_state(symbol)
 
+    def _lookup_regime_id(self, symbol: str) -> int | None:
+        """
+        Lookup regime_id from stream.regime_signals (deterministic mapping).
+
+        Mapping (from Regime Service output):
+        - TREND → 0
+        - RANGE → 1
+        - HIGH_VOL_* (startswith) → 2
+        - CRISIS → 3
+        - UNKNOWN, missing, stale → None (fail-closed)
+
+        Fail-closed:
+        - No regime signal found → None → RC_001 blocks
+        - Regime signal stale (> regime_staleness_seconds) → None → RC_001 blocks
+        - Regime ts invalid or in future → None → RC_001 blocks
+        - Regime string not in mapping → None → RC_001 blocks
+        """
+        try:
+            # Read latest regime signal for this symbol
+            raw_entries = self.redis_client.xrevrange(
+                self.config.regime_stream, "+", "-", count=50
+            )
+
+            # Find latest entry for this symbol
+            regime_entry = None
+            for entry_id, payload in raw_entries:
+                if payload.get("symbol") == symbol:
+                    regime_entry = payload
+                    break
+
+            if regime_entry is None:
+                logger.debug("regime_id skip: %s no signal found", symbol)
+                return None
+
+            # Parse and validate ts (must be seconds, not ms)
+            ts_raw = regime_entry.get("ts")
+            if ts_raw is None:
+                logger.debug("regime_id skip: %s ts missing", symbol)
+                return None
+            try:
+                regime_ts = int(ts_raw)
+            except (ValueError, TypeError):
+                logger.debug("regime_id skip: %s ts not parseable", symbol)
+                return None
+
+            # Plausibility: must be seconds (not ms), not too old, not in future
+            if regime_ts < 1_000_000_000 or regime_ts > 4_000_000_000:
+                logger.debug("regime_id skip: %s ts out of range %d", symbol, regime_ts)
+                return None
+
+            now_s = int(time.time())
+            age = now_s - regime_ts
+            if age < 0:
+                logger.debug("regime_id skip: %s ts in future", symbol)
+                return None
+
+            # Check staleness
+            if age > self.config.regime_staleness_seconds:
+                logger.debug(
+                    "regime_id skip: %s signal stale (%ds old, max %ds)",
+                    symbol,
+                    age,
+                    self.config.regime_staleness_seconds,
+                )
+                return None
+
+            # Deterministic mapping: regime string → regime_id
+            regime_str = (regime_entry.get("regime") or "").upper()
+
+            if regime_str == "TREND":
+                return 0
+            elif regime_str == "RANGE":
+                return 1
+            elif regime_str.startswith("HIGH_VOL"):
+                return 2
+            elif regime_str == "CRISIS":
+                return 3
+            else:
+                logger.debug("regime_id skip: %s unknown regime '%s'", symbol, regime_str)
+                return None
+
+        except Exception as e:
+            logger.warning("regime_id error for %s: %s", symbol, e)
+            return None
+
     def _update_market_state(self, symbol: str) -> None:
         """
         Compute market_state V1 returns from candle history and persist to Redis.
@@ -161,6 +246,9 @@ class CandleService:
             return_5m = (close_now - close_5m_ago) / close_5m_ago
             price_change_5m = abs(return_5m)
 
+            # Lookup regime_id from stream.regime_signals (fail-closed)
+            regime_id = self._lookup_regime_id(symbol)
+
             # Build market_state payload
             ts_ms = int(time.time() * 1000)
             # Get last_tick_ts_ms from aggregator (updated on each trade)
@@ -176,6 +264,9 @@ class CandleService:
                 "close_5m_ago": close_5m_ago,
                 "last_tick_ts_ms": last_tick_ts_ms,
             }
+            # Only set regime_id if valid (fail-closed: missing key → RC_001 blocks)
+            if regime_id is not None:
+                market_state["regime_id"] = regime_id
 
             # Persist to Redis with TTL
             key = f"{self.config.market_state_key_prefix}:{symbol}"

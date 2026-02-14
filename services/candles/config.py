@@ -40,6 +40,12 @@ class CandleConfig:
         os.getenv("CANDLE_MARKET_STATE_TTL_SECONDS", "120")
     )  # 2 minutes TTL
 
+    # Regime V1: Stream source + staleness threshold
+    regime_stream: str = os.getenv("CANDLE_REGIME_STREAM", "stream.regime_signals")
+    regime_staleness_seconds: int = int(
+        os.getenv("CANDLE_REGIME_STALENESS_SECONDS", "300")
+    )  # 5 minutes max age
+
     source_version: str = os.getenv("CANDLE_SOURCE_VERSION", "1")
     schema_version: str = "1"
 

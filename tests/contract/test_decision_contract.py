@@ -325,3 +325,42 @@ def test_decision_rc_004_when_data_silence_exceeds_threshold():
     # data_silence_s should be computed as ~31 seconds
     assert evidence.get("data_silence_s") is not None
     assert evidence.get("data_silence_s") > 30.0
+
+
+@pytest.mark.contract
+def test_decision_rc_001_when_regime_id_missing():
+    """RC_001 should block when regime_id is missing (fail-closed)."""
+    now_ms, signal, market_state, account_state, market_health = _base_inputs()
+    market_state.pop("regime_id", None)
+    decision, reason_code, evidence = risk_service.decide_trade(
+        signal, market_state, account_state, market_health, now_ms
+    )
+    assert decision == risk_service.DECISION_BLOCK
+    assert reason_code == "RC_001"
+    assert evidence.get("regime_id") is None
+
+
+@pytest.mark.contract
+def test_decision_rc_001_blocks_regime_2_volatile():
+    """RC_001 should block regime_id=2 (HIGH_VOL/volatile)."""
+    now_ms, signal, market_state, account_state, market_health = _base_inputs()
+    market_state["regime_id"] = 2  # HIGH_VOL
+    decision, reason_code, evidence = risk_service.decide_trade(
+        signal, market_state, account_state, market_health, now_ms
+    )
+    assert decision == risk_service.DECISION_BLOCK
+    assert reason_code == "RC_001"
+    assert evidence.get("regime_id") == 2
+
+
+@pytest.mark.contract
+def test_decision_rc_001_blocks_regime_3_crisis():
+    """RC_001 should block regime_id=3 (CRISIS)."""
+    now_ms, signal, market_state, account_state, market_health = _base_inputs()
+    market_state["regime_id"] = 3  # CRISIS
+    decision, reason_code, evidence = risk_service.decide_trade(
+        signal, market_state, account_state, market_health, now_ms
+    )
+    assert decision == risk_service.DECISION_BLOCK
+    assert reason_code == "RC_001"
+    assert evidence.get("regime_id") == 3
