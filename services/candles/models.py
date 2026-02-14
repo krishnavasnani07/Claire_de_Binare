@@ -73,6 +73,8 @@ class CandleAggregator:
         self.interval_seconds = interval_seconds
         # Active windows: {symbol: CandleWindow}
         self.windows: dict[str, CandleWindow] = {}
+        # Track last tick timestamp per symbol (monotonic, ms)
+        self.last_tick_ts_ms: dict[str, int] = {}
 
     def _align_timestamp(self, ts: int) -> int:
         """Align timestamp to interval boundary (floor)"""
@@ -124,6 +126,12 @@ class CandleAggregator:
 
             # Update window
             self.windows[symbol].update_trade(price, qty, ts_ms)
+
+            # Track last tick timestamp (monotonic guard: only update if newer)
+            ts_ms_int = int(ts_ms)
+            prev_ts = self.last_tick_ts_ms.get(symbol, 0)
+            if ts_ms_int > prev_ts:
+                self.last_tick_ts_ms[symbol] = ts_ms_int
 
             return completed
 

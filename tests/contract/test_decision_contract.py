@@ -232,3 +232,135 @@ def test_decision_first_fail_drawdown_wins_over_exposure():
     )
     assert decision == risk_service.DECISION_BLOCK
     assert reason_code == "RC_020"
+
+
+@pytest.mark.contract
+def test_decision_rc_003_staleness_computed_without_market_health():
+    """RC_003 should NOT block when market_health is missing but other timestamps are fresh."""
+    now_ms, signal, market_state, account_state, _ = _base_inputs()
+    # No market_health at all
+    decision, reason_code, evidence = risk_service.decide_trade(
+        signal, market_state, account_state, None, now_ms
+    )
+    # Should NOT be RC_003 (staleness_s should be computed from available timestamps)
+    assert evidence.get("staleness_s") is not None
+    # staleness_sources should not include market_health
+    assert "market_health" not in evidence.get("staleness_sources", [])
+    # May be blocked by other gates but NOT RC_003
+    if reason_code == "RC_003":
+        pytest.fail(
+            f"RC_003 should not trigger when timestamps are fresh. "
+            f"staleness_s={evidence.get('staleness_s')}"
+        )
+
+
+@pytest.mark.contract
+def test_decision_rc_003_all_timestamps_none():
+    """RC_003 should block when ALL timestamps are None (fail-closed)."""
+    now_ms = 1_700_000_000_000
+    signal = {
+        "signal_id": "sig-test",
+        "symbol": "BTCUSDT",
+        "pct_change_15m": 3.5,
+        "volume_15m": 200000.0,
+    }
+    # No ts_ms in any input
+    market_state = {
+        "regime_id": 0,
+        "return_1m": -1.0,
+        "return_5m": -1.0,
+        "price_change_5m": 5.0,
+    }
+    account_state = {"daily_drawdown_pct": 1.0, "total_exposure_pct": 10.0}
+    decision, reason_code, evidence = risk_service.decide_trade(
+        signal, market_state, account_state, None, now_ms
+    )
+    assert decision == risk_service.DECISION_BLOCK
+    assert reason_code == "RC_003"
+    assert evidence.get("staleness_s") is None
+    assert evidence.get("staleness_sources") == []
+
+
+@pytest.mark.contract
+def test_decision_rc_022_skipped_when_market_health_none():
+    """RC_022 should be skipped (not block) when market_health is None."""
+    now_ms, signal, market_state, account_state, _ = _base_inputs()
+    # No market_health → slippage_pct = None → RC_022 should NOT block
+    decision, reason_code, evidence = risk_service.decide_trade(
+        signal, market_state, account_state, None, now_ms
+    )
+    # slippage_pct should be None
+    assert evidence.get("slippage_pct") is None
+    # Should pass through RC_022 without blocking
+    assert reason_code != "RC_022", (
+        f"RC_022 should be skipped when market_health is None. Got: {reason_code}"
+    )
+
+
+@pytest.mark.contract
+def test_decision_rc_004_when_last_tick_ts_ms_missing():
+    """RC_004 should block when last_tick_ts_ms is missing (fail-closed)."""
+    now_ms, signal, market_state, account_state, market_health = _base_inputs()
+    # Remove last_tick_ts_ms from market_state
+    del market_state["last_tick_ts_ms"]
+    decision, reason_code, evidence = risk_service.decide_trade(
+        signal, market_state, account_state, market_health, now_ms
+    )
+    assert decision == risk_service.DECISION_BLOCK
+    assert reason_code == "RC_004"
+    assert evidence.get("data_silence_s") is None
+
+
+@pytest.mark.contract
+def test_decision_rc_004_when_data_silence_exceeds_threshold():
+    """RC_004 should block when data_silence_s exceeds threshold (30s)."""
+    now_ms, signal, market_state, account_state, market_health = _base_inputs()
+    # Set last_tick_ts_ms to 31 seconds ago (> 30s threshold)
+    market_state["last_tick_ts_ms"] = now_ms - 31000
+    decision, reason_code, evidence = risk_service.decide_trade(
+        signal, market_state, account_state, market_health, now_ms
+    )
+    assert decision == risk_service.DECISION_BLOCK
+    assert reason_code == "RC_004"
+    # data_silence_s should be computed as ~31 seconds
+    assert evidence.get("data_silence_s") is not None
+    assert evidence.get("data_silence_s") > 30.0
+
+
+@pytest.mark.contract
+def test_decision_rc_001_when_regime_id_missing():
+    """RC_001 should block when regime_id is missing (fail-closed)."""
+    now_ms, signal, market_state, account_state, market_health = _base_inputs()
+    market_state.pop("regime_id", None)
+    decision, reason_code, evidence = risk_service.decide_trade(
+        signal, market_state, account_state, market_health, now_ms
+    )
+    assert decision == risk_service.DECISION_BLOCK
+    assert reason_code == "RC_001"
+    assert evidence.get("regime_id") is None
+
+
+@pytest.mark.contract
+def test_decision_rc_001_blocks_regime_2_volatile():
+    """RC_001 should block regime_id=2 (HIGH_VOL/volatile)."""
+    now_ms, signal, market_state, account_state, market_health = _base_inputs()
+    market_state["regime_id"] = 2  # HIGH_VOL
+    decision, reason_code, evidence = risk_service.decide_trade(
+        signal, market_state, account_state, market_health, now_ms
+    )
+    assert decision == risk_service.DECISION_BLOCK
+    assert reason_code == "RC_001"
+    assert evidence.get("regime_id") == 2
+
+
+@pytest.mark.contract
+def test_decision_rc_001_blocks_regime_3_crisis():
+    """RC_001 should block regime_id=3 (CRISIS)."""
+    now_ms, signal, market_state, account_state, market_health = _base_inputs()
+    market_state["regime_id"] = 3  # CRISIS
+    decision, reason_code, evidence = risk_service.decide_trade(
+        signal, market_state, account_state, market_health, now_ms
+    )
+    assert decision == risk_service.DECISION_BLOCK
+    assert reason_code == "RC_001"
+    assert evidence.get("regime_id") == 3

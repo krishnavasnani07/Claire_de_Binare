@@ -44,6 +44,8 @@ stats = {
     "started_at": None,
     "trades_processed": 0,
     "candles_emitted": 0,
+    "market_state_updates": 0,
+    "market_state_skipped": 0,
     "status": "initializing",
 }
 
@@ -90,6 +92,201 @@ class CandleService:
             candle.get("close"),
             candle.get("volume"),
         )
+
+        # Market State V1: Compute and persist returns after each candle
+        symbol = candle.get("symbol")
+        if symbol:
+            self._update_market_state(symbol)
+
+    def _lookup_regime_id(self, symbol: str) -> int | None:
+        """
+        Lookup regime_id from stream.regime_signals (deterministic mapping).
+
+        Mapping (from Regime Service output):
+        - TREND → 0
+        - RANGE → 1
+        - HIGH_VOL_* (startswith) → 2
+        - CRISIS → 3
+        - UNKNOWN, missing, stale → None (fail-closed)
+
+        Fail-closed:
+        - No regime signal found → None → RC_001 blocks
+        - Regime signal stale (> regime_staleness_seconds) → None → RC_001 blocks
+        - Regime ts invalid or in future → None → RC_001 blocks
+        - Regime string not in mapping → None → RC_001 blocks
+        """
+        try:
+            # Read latest regime signal for this symbol
+            raw_entries = self.redis_client.xrevrange(
+                self.config.regime_stream, "+", "-", count=50
+            )
+
+            # Find latest entry for this symbol
+            regime_entry = None
+            for entry_id, payload in raw_entries:
+                if payload.get("symbol") == symbol:
+                    regime_entry = payload
+                    break
+
+            if regime_entry is None:
+                logger.debug("regime_id skip: %s no signal found", symbol)
+                return None
+
+            # Parse and validate ts (must be seconds, not ms)
+            ts_raw = regime_entry.get("ts")
+            if ts_raw is None:
+                logger.debug("regime_id skip: %s ts missing", symbol)
+                return None
+            try:
+                regime_ts = int(ts_raw)
+            except (ValueError, TypeError):
+                logger.debug("regime_id skip: %s ts not parseable", symbol)
+                return None
+
+            # Plausibility: must be seconds (not ms), not too old, not in future
+            if regime_ts < 1_000_000_000 or regime_ts > 4_000_000_000:
+                logger.debug("regime_id skip: %s ts out of range %d", symbol, regime_ts)
+                return None
+
+            now_s = int(time.time())
+            age = now_s - regime_ts
+            if age < 0:
+                logger.debug("regime_id skip: %s ts in future", symbol)
+                return None
+
+            # Check staleness
+            if age > self.config.regime_staleness_seconds:
+                logger.debug(
+                    "regime_id skip: %s signal stale (%ds old, max %ds)",
+                    symbol,
+                    age,
+                    self.config.regime_staleness_seconds,
+                )
+                return None
+
+            # Deterministic mapping: regime string → regime_id
+            regime_str = (regime_entry.get("regime") or "").upper()
+
+            if regime_str == "TREND":
+                return 0
+            elif regime_str == "RANGE":
+                return 1
+            elif regime_str.startswith("HIGH_VOL"):
+                return 2
+            elif regime_str == "CRISIS":
+                return 3
+            else:
+                logger.debug("regime_id skip: %s unknown regime '%s'", symbol, regime_str)
+                return None
+
+        except Exception as e:
+            logger.warning("regime_id error for %s: %s", symbol, e)
+            return None
+
+    def _update_market_state(self, symbol: str) -> None:
+        """
+        Compute market_state V1 returns from candle history and persist to Redis.
+
+        Source: stream.candles_1m (last 6 candles via XREVRANGE)
+        Output: market_state:{symbol} Redis key with TTL
+
+        Fail-closed:
+        - If history < 6 candles → no update (Risk blocks with RC_002)
+        - If any close == 0 → no update
+        - No defaults, no fallbacks
+
+        Index semantics (XREVRANGE returns newest first):
+        - candles[0] = latest (now)
+        - candles[1] = 1 minute ago
+        - candles[5] = 5 minutes ago
+        """
+        try:
+            # Read last 6 candles for this symbol from stream
+            # XREVRANGE returns newest first: [0]=now, [1]=1m ago, ..., [5]=5m ago
+            raw_entries = self.redis_client.xrevrange(
+                self.config.output_stream, "+", "-", count=100
+            )
+
+            # Filter for this symbol only
+            candles = []
+            for entry_id, payload in raw_entries:
+                if payload.get("symbol") == symbol:
+                    candles.append(payload)
+                    if len(candles) >= 6:
+                        break
+
+            # Fail-closed: Need at least 6 candles for 5-minute return
+            if len(candles) < 6:
+                stats["market_state_skipped"] += 1
+                logger.debug(
+                    "market_state skip: %s has only %d candles (need 6)",
+                    symbol,
+                    len(candles),
+                )
+                return
+
+            # Extract close prices
+            try:
+                close_now = float(candles[0].get("close", 0))
+                close_1m_ago = float(candles[1].get("close", 0))
+                close_5m_ago = float(candles[5].get("close", 0))
+            except (TypeError, ValueError):
+                stats["market_state_skipped"] += 1
+                logger.warning("market_state skip: %s invalid close values", symbol)
+                return
+
+            # Fail-closed: Division by zero guard
+            if close_1m_ago == 0 or close_5m_ago == 0:
+                stats["market_state_skipped"] += 1
+                logger.warning("market_state skip: %s close=0 in history", symbol)
+                return
+
+            # Compute returns (as fractions, not percentages)
+            return_1m = (close_now - close_1m_ago) / close_1m_ago
+            return_5m = (close_now - close_5m_ago) / close_5m_ago
+            price_change_5m = abs(return_5m)
+
+            # Lookup regime_id from stream.regime_signals (fail-closed)
+            regime_id = self._lookup_regime_id(symbol)
+
+            # Build market_state payload
+            ts_ms = int(time.time() * 1000)
+            # Get last_tick_ts_ms from aggregator (updated on each trade)
+            last_tick_ts_ms = self.aggregator.last_tick_ts_ms.get(symbol)
+            market_state = {
+                "symbol": symbol,
+                "return_1m": return_1m,
+                "return_5m": return_5m,
+                "price_change_5m": price_change_5m,
+                "ts_ms": ts_ms,
+                "close_now": close_now,
+                "close_1m_ago": close_1m_ago,
+                "close_5m_ago": close_5m_ago,
+                "last_tick_ts_ms": last_tick_ts_ms,
+            }
+            # Only set regime_id if valid (fail-closed: missing key → RC_001 blocks)
+            if regime_id is not None:
+                market_state["regime_id"] = regime_id
+
+            # Persist to Redis with TTL
+            key = f"{self.config.market_state_key_prefix}:{symbol}"
+            self.redis_client.setex(
+                key,
+                self.config.market_state_ttl_seconds,
+                json.dumps(market_state),
+            )
+
+            stats["market_state_updates"] += 1
+            logger.debug(
+                "market_state updated: %s return_1m=%.6f return_5m=%.6f",
+                symbol,
+                return_1m,
+                return_5m,
+            )
+
+        except Exception as e:
+            stats["market_state_skipped"] += 1
+            logger.error("market_state error for %s: %s", symbol, e)
 
     def _process_trade(self, trade: dict):
         """Process incoming trade and emit completed candles"""

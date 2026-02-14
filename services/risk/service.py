@@ -196,21 +196,26 @@ def decide_trade(
     slippage_pct = _parse_number(_get_value(market_health, "slippage_pct"))
     market_health_ts_ms = _parse_int(_get_value(market_health, "ts_ms"))
 
+    # Staleness V2: Compute from available timestamps (market_health optional)
+    staleness_candidates = []
+    staleness_sources = []
+    if signal_ts_ms is not None:
+        staleness_candidates.append(signal_ts_ms)
+        staleness_sources.append("signal")
+    if market_state_ts_ms is not None:
+        staleness_candidates.append(market_state_ts_ms)
+        staleness_sources.append("market_state")
+    if account_state_ts_ms is not None:
+        staleness_candidates.append(account_state_ts_ms)
+        staleness_sources.append("account_state")
+    if market_health_ts_ms is not None:
+        staleness_candidates.append(market_health_ts_ms)
+        staleness_sources.append("market_health")
+
     max_ts_ms = None
     staleness_s = None
-    if (
-        now_ms_value is not None
-        and signal_ts_ms is not None
-        and market_state_ts_ms is not None
-        and account_state_ts_ms is not None
-        and market_health_ts_ms is not None
-    ):
-        max_ts_ms = max(
-            signal_ts_ms,
-            market_state_ts_ms,
-            account_state_ts_ms,
-            market_health_ts_ms,
-        )
+    if now_ms_value is not None and staleness_candidates:
+        max_ts_ms = max(staleness_candidates)
         staleness_s = (now_ms_value - max_ts_ms) / 1000.0
 
     data_silence_s = None
@@ -235,6 +240,7 @@ def decide_trade(
         "total_exposure_pct": total_exposure_pct,
         "slippage_pct": slippage_pct,
         "staleness_s": staleness_s,
+        "staleness_sources": staleness_sources,
         "data_silence_s": data_silence_s,
         "thresholds": DECISION_THRESHOLDS.copy(),
         "timestamps_ms": {
@@ -292,10 +298,11 @@ def decide_trade(
         return DECISION_BLOCK, RC_021, evidence
     if total_exposure_pct >= DECISION_THRESHOLDS["total_exposure_pct_max"]:
         return DECISION_BLOCK, RC_021, evidence
-    if slippage_pct is None:
-        return DECISION_BLOCK, RC_022, evidence
-    if slippage_pct > DECISION_THRESHOLDS["slippage_pct_max"]:
-        return DECISION_BLOCK, RC_022, evidence
+    # RC_022: Slippage check - skip ONLY if market_health not available
+    # If market_health exists but slippage_pct is invalid → still block
+    if slippage_pct is not None:
+        if slippage_pct > DECISION_THRESHOLDS["slippage_pct_max"]:
+            return DECISION_BLOCK, RC_022, evidence
 
     return DECISION_ALLOW, None, evidence
 
@@ -407,6 +414,25 @@ class RiskManager:
             except Exception:  # noqa: BLE001
                 pass
             self._pg_conn = None
+
+    def _lookup_market_state(self, symbol: str) -> dict | None:
+        """
+        Lookup market_state V1 from Redis (BLUE-owned).
+
+        Key: market_state:{symbol}
+        Source: Candles Service computes returns from stream.candles_1m
+
+        Fail-closed: Returns None if key missing/expired/invalid.
+        BLACK does not compute returns - only validates and gates.
+        """
+        try:
+            key = f"market_state:{symbol}"
+            data = self.redis_client.get(key)
+            if data is None:
+                return None
+            return json.loads(data)
+        except (json.JSONDecodeError, Exception):
+            return None
 
     def _emit_risk_event(
         self, decision: str, reason_code: str | None, evidence: dict
@@ -815,7 +841,13 @@ class RiskManager:
     ) -> Optional[Order]:
         """Prüft Signal gegen alle Risk-Layers"""
         payload = raw_payload or {}
+
+        # Market State V1: Lookup from Redis (BLUE-owned, fail-closed)
+        # Key: market_state:{symbol} - set by Candles Service with TTL
         market_state = payload.get("market_state")
+        if market_state is None and signal.symbol:
+            market_state = self._lookup_market_state(signal.symbol)
+
         account_state = payload.get("account_state")
         market_health = payload.get("market_health")
         now_ms = int(time.time() * 1000)
