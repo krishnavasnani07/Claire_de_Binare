@@ -17,7 +17,11 @@ from pathlib import Path
 from threading import Thread
 from typing import Optional
 
-from core.utils.uuid_gen import generate_uuid
+from core.utils.uuid_gen import (
+    generate_uuid,
+    generate_decision_pk,
+    compute_input_snapshot_hash,
+)
 
 import psycopg2
 import redis
@@ -385,35 +389,68 @@ class RiskManager:
             self._pg_conn = None
             return None
 
-    def _persist_risk_event(self, event: dict) -> None:
-        conn = self._get_postgres_conn()
-        if conn is None:
-            return
-        try:
-            payload = json.dumps(event, allow_nan=False)
-            cursor = conn.cursor()
-            cursor.execute(
-                """
-                INSERT INTO risk_events
-                    (timestamp_ms, symbol, decision, reason_code, contract_version, payload)
-                VALUES (%s, %s, %s, %s, %s, %s)
-                """,
-                (
-                    event.get("timestamp_ms"),
-                    event.get("symbol"),
-                    event.get("decision"),
-                    event.get("reason_code"),
-                    event.get("contract_version"),
-                    payload,
-                ),
-            )
-        except Exception as e:
-            logger.error(f"❌ Failed to persist risk_event: {e}")
+    def _persist_risk_event(self, event: dict) -> bool:
+        """
+        Persist risk_event to Postgres with idempotency guarantee.
+
+        Returns True if persisted (or already exists), False on failure.
+        Decision logic is independent - persist failure = evidence debt.
+
+        Requires: decision_pk and input_snapshot_hash must be set in event.
+        Gate: Migration 005 must be applied before this code is deployed.
+        """
+        decision_pk = event.get("decision_pk")
+        if not decision_pk:
+            logger.error("❌ risk_event missing decision_pk")
+            return False
+
+        max_retries = 3
+        backoffs_ms = [0, 50, 100]
+
+        for attempt in range(max_retries):
+            if attempt > 0:
+                time.sleep(backoffs_ms[attempt] / 1000.0)
+
+            conn = self._get_postgres_conn()
+            if conn is None:
+                return False
+
             try:
-                conn.close()
-            except Exception:  # noqa: BLE001
-                pass
-            self._pg_conn = None
+                payload = json.dumps(event, allow_nan=False)
+                cursor = conn.cursor()
+                cursor.execute("SET LOCAL statement_timeout = '250ms'")
+                cursor.execute(
+                    """
+                    INSERT INTO risk_events
+                        (timestamp_ms, symbol, decision, reason_code, contract_version,
+                         decision_pk, input_snapshot_hash, payload)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (decision_pk) DO NOTHING
+                    """,
+                    (
+                        event.get("timestamp_ms"),
+                        event.get("symbol"),
+                        event.get("decision"),
+                        event.get("reason_code"),
+                        event.get("contract_version"),
+                        decision_pk,
+                        event.get("input_snapshot_hash"),
+                        payload,
+                    ),
+                )
+                return True
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    logger.warning(f"⚠️ risk_event persist attempt {attempt+1}/{max_retries}: {e}")
+                else:
+                    logger.error(f"❌ risk_event persist FAILED after {max_retries} attempts: {e}")
+                try:
+                    conn.close()
+                except Exception:  # noqa: BLE001
+                    pass
+                self._pg_conn = None
+
+        return False
 
     def _lookup_market_state(self, symbol: str) -> dict | None:
         """
@@ -436,9 +473,21 @@ class RiskManager:
 
     def _emit_risk_event(
         self, decision: str, reason_code: str | None, evidence: dict
-    ) -> None:
-        event = {**evidence, "decision": decision, "reason_code": reason_code}
-        self._persist_risk_event(event)
+    ) -> bool:
+        """Emit risk event with deterministic decision_pk for idempotent persistence."""
+        symbol = evidence.get("symbol", "")
+        ts_ms = evidence.get("timestamp_ms", 0)
+        input_hash = compute_input_snapshot_hash(evidence)
+        decision_pk = generate_decision_pk(symbol, ts_ms, evidence)
+
+        event = {
+            **evidence,
+            "decision": decision,
+            "reason_code": reason_code,
+            "decision_pk": decision_pk,
+            "input_snapshot_hash": input_hash,
+        }
+        return self._persist_risk_event(event)
 
     def bootstrap_state_from_db(self):
         """

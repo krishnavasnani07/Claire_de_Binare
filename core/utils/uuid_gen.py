@@ -14,8 +14,10 @@ relations:
 
 from __future__ import annotations
 
+import hashlib
+import json
 import uuid
-from typing import Optional
+from typing import Any, Optional
 
 
 DEFAULT_NAMESPACE = uuid.UUID("00000000-0000-0000-0000-000000000000")
@@ -60,3 +62,55 @@ def generate_uuid_hex(
     """Generate a deterministic UUID hex string with a specific length."""
     value = generate_uuid(name=name, seed=seed)
     return uuid.UUID(value).hex[:length]
+
+
+# Namespace for decision_pk (Phase 8B)
+DECISION_PK_NAMESPACE = uuid.UUID("a1b2c3d4-e5f6-7890-abcd-ef1234567890")
+
+# Fields included in input snapshot hash (deterministic, immutable)
+DECISION_HASH_FIELDS = (
+    "symbol",
+    "timestamp_ms",
+    "regime_id",
+    "return_1m",
+    "return_5m",
+    "price_change_5m",
+    "pct_change_15m",
+    "volume_15m",
+    "daily_drawdown_pct",
+    "total_exposure_pct",
+    "slippage_pct",
+    "staleness_s",
+    "data_silence_s",
+    "thresholds",
+)
+
+
+def _sanitize_float(value: Any) -> Any:
+    """Sanitize float values for deterministic JSON serialization."""
+    if isinstance(value, float):
+        if value != value or value == float("inf") or value == float("-inf"):
+            return None
+        return round(value, 10)
+    if isinstance(value, dict):
+        return {k: _sanitize_float(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_sanitize_float(v) for v in value]
+    return value
+
+
+def compute_input_snapshot_hash(evidence: dict) -> str:
+    """Compute SHA256 hash of deterministic evidence fields."""
+    snapshot = {}
+    for field in DECISION_HASH_FIELDS:
+        if field in evidence:
+            snapshot[field] = _sanitize_float(evidence[field])
+    canonical = json.dumps(snapshot, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def generate_decision_pk(symbol: str, ts_ms: int, evidence: dict) -> str:
+    """Generate deterministic decision_pk (UUIDv5) for idempotent persistence."""
+    input_hash = compute_input_snapshot_hash(evidence)
+    name = f"{symbol}:{ts_ms}:{input_hash}"
+    return str(uuid.uuid5(DECISION_PK_NAMESPACE, name))
