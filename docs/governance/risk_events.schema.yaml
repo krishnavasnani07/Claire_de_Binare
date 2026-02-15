@@ -1,11 +1,11 @@
-version: 1.0
+version: 1.1
 title: "risk_events Table Schema Contract"
 description: "Canonical schema definition for risk_events audit table. Derived from code contract, not assumed."
 
 source:
   code_file: "services/risk/service.py"
-  code_lines: "377-388"
-  last_verified: "2026-02-09T15:52:00+01:00"
+  code_lines: "392-448"
+  last_verified: "2026-02-15T12:15:00+01:00"
 
 table: "risk_events"
 
@@ -51,6 +51,19 @@ fields:
     nullable: true
     description: "Decision contract version identifier"
 
+  decision_pk:
+    type: "VARCHAR"
+    max_length: 36
+    nullable: true
+    constraints: "UNIQUE"
+    description: "Deterministic idempotency key (UUIDv5 from symbol + ts_ms + input_snapshot_hash)"
+
+  input_snapshot_hash:
+    type: "VARCHAR"
+    max_length: 64
+    nullable: true
+    description: "SHA256 hash of deterministic evidence fields for replay verification"
+
   payload:
     type: "JSONB"
     nullable: true
@@ -77,6 +90,8 @@ insert_columns:
   - decision
   - reason_code
   - contract_version
+  - decision_pk
+  - input_snapshot_hash
   - payload
 
 notes: |
