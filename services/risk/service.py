@@ -441,9 +441,13 @@ class RiskManager:
                 return True
             except Exception as e:
                 if attempt < max_retries - 1:
-                    logger.warning(f"⚠️ risk_event persist attempt {attempt+1}/{max_retries}: {e}")
+                    logger.warning(
+                        f"⚠️ risk_event persist attempt {attempt+1}/{max_retries}: {e}"
+                    )
                 else:
-                    logger.error(f"❌ risk_event persist FAILED after {max_retries} attempts: {e}")
+                    logger.error(
+                        f"❌ risk_event persist FAILED after {max_retries} attempts: {e}"
+                    )
                 try:
                     conn.close()
                 except Exception:  # noqa: BLE001
