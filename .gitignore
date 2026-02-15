@@ -176,3 +176,7 @@ tools/secrets/.env.*
 # Note: .rotation_state.json now lives in $SECRETS_PATH (outside repo) since v1.2
 # Trigger E2E
 # LR-007 Shadow Mode active
+
+# Phase 1 runtime artifacts (local only)
+P1_RUNTIME_DOD_REPORT.md
+runtime_evidence_bundle_P1.json
