@@ -13,6 +13,7 @@
     { "name": "scope:monitoring", "color": "006b75", "description": "Prometheus, Grafana, Alerts" },
     { "name": "scope:data", "color": "336791", "description": "PostgreSQL, Redis, Migrations" },
     { "name": "scope:docs", "color": "0075ca", "description": "Markdown, ADRs, Guides" },
+    { "name": "ci:generated", "color": "0e8a16", "description": "Auto-created by CI" },
 
     { "name": "prio:must", "color": "d73a4a", "description": "Kritisch – Release Blocker" },
     { "name": "prio:should", "color": "ff9800", "description": "Hoch – für nächstes Milestone" },
