@@ -2,7 +2,7 @@
 
 ## Scope / Constraints
 - Read-only Audit: Branch Protection + Required Checks + Promotion-Plan.
-- Keine Aenderung an Repo-Settings, Workflows, Docker/Compose/Dockerfile oder Trading-Logik.
+- Keine Änderung an Repo-Settings, Workflows, Docker/Compose/Dockerfile oder Trading-Logik.
 
 ## Step 0 - Hygiene
 - `git status -sb` -> `## main...origin/main` (clean).
@@ -48,13 +48,13 @@ Evidence (1:1 Check-Name):
 | Check-Name | Workflow-Datei | Jobname | Trigger (PR/push/schedule/dispatch) | Notes (matrix/double) |
 |---|---|---|---|---|
 | `trivy (kritische CVEs/Supply-Chain)` | `.github/workflows/trivy.yml` | Job-ID `trivy-image`, Job-Name `trivy (kritische CVEs/Supply-Chain)` | `push` auf `main`/`release/*` (nur bei `Dockerfile`, `infrastructure/**`, `services/**`), `schedule`, `workflow_dispatch` | Kein PR-Trigger aktuell. Job ist aktuell non-blocking (`continue-on-error: true`, Trivy `exit-code: "0"`). |
-| `E2E Happy Path` | `.github/workflows/e2e-happy-path.yaml` | Job-ID `e2e_happy_path`, Job-Name `E2E Happy Path` | `pull_request` auf `main`, `push` auf `main`, `schedule`, `workflow_dispatch` | Kein Matrix-Job. Step-level Skips (docs-only, fork-PR). Fail-closed Guard fuer protected STUB ist vorhanden. |
+| `E2E Happy Path` | `.github/workflows/e2e-happy-path.yaml` | Job-ID `e2e_happy_path`, Job-Name `E2E Happy Path` | `pull_request` auf `main`, `push` auf `main`, `schedule`, `workflow_dispatch` | Kein Matrix-Job. Step-level Skips (docs-only, fork-PR). Fail-closed Guard für protected STUB ist vorhanden. |
 
 Evidence (1:1 Check-Namen):
 - `gh run view 22191868199 --json workflowName,jobs,event,headBranch,conclusion,url` -> Job `trivy (kritische CVEs/Supply-Chain)`
 - `gh run view 22191851120 --json workflowName,jobs,event,headBranch,conclusion,url` -> Job `E2E Happy Path`
 
-### 2.3 Doppelungen / Ueberschneidungen
+### 2.3 Doppelungen / Überschneidungen
 - Trivy erscheint in zwei Pfaden:
   - Standalone: `.github/workflows/trivy.yml` -> `trivy (kritische CVEs/Supply-Chain)`
   - Zentraler Pipeline-Workflow: `.github/workflows/ci.yaml` -> `Container Scan (Trivy)`
@@ -66,24 +66,24 @@ Evidence (1:1 Check-Namen):
 
 ## Step 3 - Risikoanalyse (determinism/stability)
 
-### A) Flaky / secrets-abhaengig
+### A) Flaky / secrets-abhängig
 - `E2E Happy Path` nutzt required secrets (`SMTP_*`, `ALERT_EMAIL_TO`, `MEXC_*`) im Preflight.
 - Fork-PRs laufen explizit in `NON-BLOCKING / STUB ONLY`-Pfad (Step-Skip mit success); dadurch ist "green" nicht automatisch gleich "REAL E2E".
 - In PR-Kontexten kann docs-only bewusst als success mit Skip enden (deterministisch, aber reduzierte Testabdeckung).
 
 ### B) Heavy checks
-- `trivy` ist DB-/scanner-lastig (Cache, JSON+SARIF, Upload), damit potenziell schwankungsanfaelliger als reines Lint/Test.
-- Separate Trivy-Implementierungen (`trivy.yml` und `ci.yaml`) erzeugen Governance-Komplexitaet.
+- `trivy` ist DB-/scanner-lastig (Cache, JSON+SARIF, Upload), damit potenziell schwankungsanfälliger als reines Lint/Test.
+- Separate Trivy-Implementierungen (`trivy.yml` und `ci.yaml`) erzeugen Governance-Komplexität.
 
 ### C) Skip-/Trigger-Risiken
-- `trivy.yml` hat keinen `pull_request`-Trigger und `push`-path-Filter. Ein required Check muss aber fuer PRs deterministisch lieferbar sein.
-- `ci.yml` hat fuer `push` einen path-filter; fuer PR auf `main` laeuft es immer (gut fuer Required-Check-Stabilitaet).
+- `trivy.yml` hat keinen `pull_request`-Trigger und `push`-path-Filter. Ein required Check muss aber für PRs deterministisch lieferbar sein.
+- `ci.yml` hat für `push` einen path-filter; für PR auf `main` läuft es immer (gut für Required-Check-Stabilität).
 - `E2E Happy Path` ist absichtlich "always run" auf `push main` ohne `paths-ignore`, aber kann Schritt-seitig skippen.
 
 ## Step 4 - Deterministischer Promotion Plan (Trivy + E2E)
 
-### Gate-Definition (fuer jeden Kandidaten-Check)
-Promotion ist nur erlaubt, wenn **alle** Bedingungen erfuellt sind:
+### Gate-Definition (für jeden Kandidaten-Check)
+Promotion ist nur erlaubt, wenn **alle** Bedingungen erfüllt sind:
 
 1. **Main-Stability Gate**
    - Entweder `10` aufeinanderfolgende erfolgreiche Runs auf `main` (Events: `push` oder `workflow_dispatch`)
@@ -93,17 +93,17 @@ Promotion ist nur erlaubt, wenn **alle** Bedingungen erfuellt sind:
    - `3` aufeinanderfolgende erfolgreiche `pull_request`-Runs mit exakt gleichem Check-Namen.
 
 3. **Determinism Gate**
-   - Check muss in allen relevanten Kontexten verlaesslich emitted werden (kein "missing required check").
+   - Check muss in allen relevanten Kontexten verlässlich emitted werden (kein "missing required check").
    - Kein stilles Fail-Open Verhalten.
 
 4. **Rollback Trigger (global)**
-   - `2` Failures innerhalb `24h` ohne Code-Aenderung im betroffenen Bereich (Flake-Indikator), oder
-   - Secrets-/Guard-Regression (z.B. fail-closed nicht wirksam, protected run faellt auf STUB zurueck).
+   - `2` Failures innerhalb `24h` ohne Code-Änderung im betroffenen Bereich (Flake-Indikator), oder
+   - Secrets-/Guard-Regression (z.B. fail-closed nicht wirksam, protected run fällt auf STUB zurück).
 
 ### A) Trivy Promotion Kriterien (`trivy (kritische CVEs/Supply-Chain)`)
 Zusatzkriterien vor Promotion:
-- Der Check muss auf `pull_request` und `main` verfuegbar sein (gleicher Check-Name).
-- Der Check muss policy-wirksam sein (disallowed Findings duerfen nicht dauerhaft durch `continue-on-error` + `exit-code: 0` neutralisiert werden).
+- Der Check muss auf `pull_request` und `main` verfügbar sein (gleicher Check-Name).
+- Der Check muss policy-wirksam sein (disallowed Findings dürfen nicht dauerhaft durch `continue-on-error` + `exit-code: 0` neutralisiert werden).
 
 Aktueller Snapshot-Status:
 - Main-Streak (push/dispatch auf `main`): `1`
@@ -112,7 +112,7 @@ Aktueller Snapshot-Status:
 
 ### B) E2E Promotion Kriterien (`E2E Happy Path`)
 Zusatzkriterien vor Promotion:
-- REQUIRED_SECRETS fuer protected Kontexte vorhanden und stabil:
+- REQUIRED_SECRETS für protected Kontexte vorhanden und stabil:
   - `SMTP_FROM`, `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`, `ALERT_EMAIL_TO`, `MEXC_API_KEY`, `MEXC_API_SECRET`
 - Fail-closed Guard bleibt aktiv (`Fail closed on protected STUB mode`).
 - REAL-Preflight in protected Kontexte konsistent (kein protected STUB-Fall).
@@ -123,8 +123,8 @@ Aktueller Snapshot-Status:
 - Ergebnis: **nahe dran, aber Main-Gate (10) noch nicht erreicht**.
 
 ## Operativer Promotionsablauf (ohne Umsetzung in diesem PR)
-1. Taeglich Gate-Metriken mit `gh run list`/`gh run view` evaluieren.
-2. Erst bei erfuellten Gates Promotion-Change in separatem PR vorbereiten.
+1. Täglich Gate-Metriken mit `gh run list`/`gh run view` evaluieren.
+2. Erst bei erfüllten Gates Promotion-Change in separatem PR vorbereiten.
 3. Branch Protection erst dann erweitern um:
    - `trivy (kritische CVEs/Supply-Chain)`
    - `E2E Happy Path`
@@ -148,12 +148,12 @@ gh run view 22191851170 --json workflowName,jobs,event,headBranch,conclusion,url
 gh run view 22191868199 --json workflowName,jobs,event,headBranch,conclusion,url
 gh run view 22191851120 --json workflowName,jobs,event,headBranch,conclusion,url
 
-# Stabilitaetsdaten
+# Stabilitätsdaten
 gh run list --workflow "E2E Happy Path" --limit 30 --json databaseId,conclusion,event,headBranch,createdAt,displayTitle
 gh run list --workflow "trivy" --limit 30 --json databaseId,conclusion,event,headBranch,createdAt,displayTitle
 ```
 
 ## Step 5 - No-Change Statement
-- In diesem Audit wurden **keine** Repo-Settings/Branch-Protection-Settings geaendert.
-- Keine Workflow-, Docker/Compose-, Dockerfile- oder Trading-Logic-Aenderung.
+- In diesem Audit wurden **keine** Repo-Settings/Branch-Protection-Settings geändert.
+- Keine Workflow-, Docker/Compose-, Dockerfile- oder Trading-Logic-Änderung.
 - Output ist rein dokumentarisch.
