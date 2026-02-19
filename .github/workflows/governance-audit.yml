@@ -11,6 +11,8 @@ jobs:
   governance-audit:
     name: governance-audit
     runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.CDB_GITHUB_TOKEN != '' && secrets.CDB_GITHUB_TOKEN || github.token }}
 
     steps:
       - name: Checkout
@@ -27,8 +29,6 @@ jobs:
           pip install pyyaml==6.0.3
 
       - name: Ensure governance guard files exist
-        env:
-          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
@@ -57,8 +57,6 @@ jobs:
           fetch_from_ref "reports/REQUIRED_CHECK_CONTEXTS_BASELINE_main.json" "governance/required-check-context-drift-guard"
 
       - name: Verify branch protection endpoint access
-        env:
-          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
@@ -69,8 +67,6 @@ jobs:
 
       - name: Run governance checks (read-only)
         id: run_guards
-        env:
-          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set +e
