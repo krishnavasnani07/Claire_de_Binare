@@ -56,21 +56,46 @@ jobs:
           fetch_from_ref "scripts/governance/check_required_check_contexts.py" "governance/required-check-context-drift-guard"
           fetch_from_ref "reports/REQUIRED_CHECK_CONTEXTS_BASELINE_main.json" "governance/required-check-context-drift-guard"
 
-      - name: Verify branch protection endpoint access
+      - name: Select token for branch protection read
+        id: select_token
         env:
-          GH_TOKEN: ${{ secrets.CDB_GITHUB_TOKEN != '' && secrets.CDB_GITHUB_TOKEN || github.token }}
+          TOKEN_CDB: ${{ secrets.CDB_GITHUB_TOKEN }}
+          TOKEN_CLAUDE: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          TOKEN_DEFAULT: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          if ! gh api "repos/${GITHUB_REPOSITORY}/branches/main/protection" > /dev/null 2>&1; then
-            echo "::error::Cannot read branch protection via GITHUB_TOKEN. This manual audit requires repository administration read access."
+
+          can_read_branch_protection() {
+            local token="$1"
+            if [ -z "${token:-}" ]; then
+              return 1
+            fi
+            GH_TOKEN="$token" gh api "repos/${GITHUB_REPOSITORY}/branches/main/protection" > /dev/null 2>&1
+          }
+
+          selected_source=""
+          selected_token=""
+
+          if can_read_branch_protection "$TOKEN_CDB"; then
+            selected_source="CDB_GITHUB_TOKEN"
+            selected_token="$TOKEN_CDB"
+          elif can_read_branch_protection "$TOKEN_CLAUDE"; then
+            selected_source="CLAUDE_CODE_OAUTH_TOKEN"
+            selected_token="$TOKEN_CLAUDE"
+          elif can_read_branch_protection "$TOKEN_DEFAULT"; then
+            selected_source="github.token"
+            selected_token="$TOKEN_DEFAULT"
+          else
+            echo "::error::No available token can read branch protection endpoint (requires repository administration read access)."
             exit 1
           fi
 
+          echo "GH_TOKEN=$selected_token" >> "$GITHUB_ENV"
+          echo "token_source=$selected_source" >> "$GITHUB_OUTPUT"
+
       - name: Run governance checks (read-only)
         id: run_guards
-        env:
-          GH_TOKEN: ${{ secrets.CDB_GITHUB_TOKEN != '' && secrets.CDB_GITHUB_TOKEN || github.token }}
         shell: bash
         run: |
           set +e
@@ -113,13 +138,16 @@ jobs:
         run: |
           bp="${{ steps.run_guards.outputs.branch_protection_status }}"
           rc="${{ steps.run_guards.outputs.required_contexts_status }}"
+          token_source="${{ steps.select_token.outputs.token_source }}"
           [ -z "$bp" ] && bp="NOT_RUN"
           [ -z "$rc" ] && rc="NOT_RUN"
+          [ -z "$token_source" ] && token_source="UNAVAILABLE"
 
           {
             echo "## Governance Audit"
             echo "- Branch protection drift: ${bp}"
             echo "- Required contexts drift: ${rc}"
+            echo "- Branch protection token source: ${token_source}"
             echo "- Note: manual-only workflow; no auto-apply."
           } >> "$GITHUB_STEP_SUMMARY"
 
