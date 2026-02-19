@@ -19,10 +19,13 @@ jobs:
       - name: 📥 Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
+      - name: 🧩 Prepare sync manifest
+        run: jq '.labels' .github/workflows/labels.json > .github/workflows/labels.sync.json
+
       - name: 🏷️ Sync Labels
         uses: micnncim/action-label-syncer@3abd5ab72fda571e69fffd97bd4e0033dd5f495c # v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          manifest: .github/workflows/labels.json
+          manifest: .github/workflows/labels.sync.json
           prune: false
