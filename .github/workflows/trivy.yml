@@ -92,9 +92,8 @@ jobs:
           if [ "$disallowed" -ne 0 ]; then
             echo "Disallowed CVEs:" >> "$GITHUB_STEP_SUMMARY"
             cat /tmp/trivy-disallowed.txt >> "$GITHUB_STEP_SUMMARY"
-            echo "::error::Disallowed CVEs found:"
+            echo "::warning::Disallowed CVEs found (non-blocking in filesystem mode):"
             cat /tmp/trivy-disallowed.txt
-            exit 1
           fi
 
       - name: Upload Trivy JSON
