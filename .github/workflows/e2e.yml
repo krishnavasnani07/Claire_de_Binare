@@ -27,14 +27,109 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - name: Create CI secrets directory
+      - name: Preflight required secrets (REAL vs STUB)
+        id: preflight
+        shell: bash
+        env:
+          SMTP_FROM: ${{ secrets.SMTP_FROM }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          ALERT_EMAIL_TO: ${{ secrets.ALERT_EMAIL_TO }}
+          MEXC_API_KEY: ${{ secrets.MEXC_API_KEY }}
+          MEXC_API_SECRET: ${{ secrets.MEXC_API_SECRET }}
         run: |
-          mkdir -p $SECRETS_PATH
-          for name in REDIS_PASSWORD POSTGRES_PASSWORD GRAFANA_PASSWORD MEXC_API_KEY.txt MEXC_API_SECRET.txt; do
-            printf 'ci-%s\n' "$name" > "$SECRETS_PATH/$name"
+          set -euo pipefail
+          required=(SMTP_FROM SMTP_HOST SMTP_USER SMTP_PASSWORD ALERT_EMAIL_TO MEXC_API_KEY MEXC_API_SECRET)
+          missing=()
+
+          for secret_name in "${required[@]}"; do
+            if [[ -z "${!secret_name:-}" ]]; then
+              missing+=("$secret_name")
+            fi
           done
-          POSTGRES_PW=$(cat "$SECRETS_PATH/POSTGRES_PASSWORD")
-          echo "postgresql://claire_user:${POSTGRES_PW}@postgres:5432/claire?sslmode=disable" > "$SECRETS_PATH/POSTGRES_PASSWORD_DSN"
+
+          e2e_mode="REAL"
+          if [[ ${#missing[@]} -gt 0 ]]; then
+            e2e_mode="STUB"
+          fi
+
+          missing_csv="none"
+          if [[ ${#missing[@]} -gt 0 ]]; then
+            missing_csv="$(IFS=,; echo "${missing[*]}")"
+          fi
+
+          protected_context="false"
+          if [[ "${GITHUB_EVENT_NAME}" == "schedule" ]]; then
+            protected_context="true"
+          elif [[ "${GITHUB_REF}" == "refs/heads/main" && ( "${GITHUB_EVENT_NAME}" == "push" || "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ) ]]; then
+            protected_context="true"
+          fi
+
+          echo "e2e_mode=${e2e_mode}" >> "$GITHUB_OUTPUT"
+          echo "missing_secrets=${missing_csv}" >> "$GITHUB_OUTPUT"
+          echo "protected_context=${protected_context}" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## E2E Preflight"
+            echo ""
+            echo "- e2e_mode: ${e2e_mode}"
+            echo "- protected_context: ${protected_context}"
+            echo "- missing_secrets: ${missing_csv}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail closed on protected STUB mode
+        if: steps.preflight.outputs.protected_context == 'true' && steps.preflight.outputs.e2e_mode == 'STUB'
+        shell: bash
+        run: |
+          echo "::error::Protected run cannot use STUB MODE. Missing secrets: ${{ steps.preflight.outputs.missing_secrets }}"
+          exit 1
+
+      - name: Create CI secrets directory
+        env:
+          SMTP_FROM_SECRET: ${{ secrets.SMTP_FROM }}
+          SMTP_HOST_SECRET: ${{ secrets.SMTP_HOST }}
+          SMTP_USER_SECRET: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD_SECRET: ${{ secrets.SMTP_PASSWORD }}
+          ALERT_EMAIL_TO_SECRET: ${{ secrets.ALERT_EMAIL_TO }}
+          MEXC_API_KEY_SECRET: ${{ secrets.MEXC_API_KEY }}
+          MEXC_API_SECRET_SECRET: ${{ secrets.MEXC_API_SECRET }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$SECRETS_PATH"
+          REDIS_VAL="${{ secrets.REDIS_PASSWORD != '' && secrets.REDIS_PASSWORD || 'ci-redis-password' }}"
+          POSTGRES_VAL="${{ secrets.POSTGRES_PASSWORD != '' && secrets.POSTGRES_PASSWORD || 'ci-postgres-password' }}"
+          GRAFANA_VAL="${{ secrets.GRAFANA_PASSWORD != '' && secrets.GRAFANA_PASSWORD || 'ci-grafana-password' }}"
+          SMTP_FROM_VAL="${SMTP_FROM_SECRET:-}"
+          SMTP_HOST_VAL="${SMTP_HOST_SECRET:-}"
+          SMTP_USER_VAL="${SMTP_USER_SECRET:-}"
+          SMTP_PASSWORD_VAL="${SMTP_PASSWORD_SECRET:-}"
+          ALERT_EMAIL_TO_VAL="${ALERT_EMAIL_TO_SECRET:-}"
+          MEXC_KEY_VAL="${MEXC_API_KEY_SECRET:-}"
+          MEXC_SECRET_VAL="${MEXC_API_SECRET_SECRET:-}"
+
+          if [[ "${{ steps.preflight.outputs.e2e_mode }}" == "STUB" ]]; then
+            SMTP_FROM_VAL="ci-stub@example.invalid"
+            SMTP_HOST_VAL="stub"
+            SMTP_USER_VAL="stub"
+            SMTP_PASSWORD_VAL="stub"
+            ALERT_EMAIL_TO_VAL="ci-stub@example.invalid"
+            MEXC_KEY_VAL="ci-mexc-key"
+            MEXC_SECRET_VAL="ci-mexc-secret"
+          fi
+
+          echo "$REDIS_VAL" > "$SECRETS_PATH/REDIS_PASSWORD"
+          echo "$POSTGRES_VAL" > "$SECRETS_PATH/POSTGRES_PASSWORD"
+          echo "postgresql://claire_user:${POSTGRES_VAL}@postgres:5432/claire?sslmode=disable" > "$SECRETS_PATH/POSTGRES_PASSWORD_DSN"
+          echo "$GRAFANA_VAL" > "$SECRETS_PATH/GRAFANA_PASSWORD"
+          echo "$SMTP_FROM_VAL" > "$SECRETS_PATH/SMTP_FROM"
+          echo "$SMTP_HOST_VAL" > "$SECRETS_PATH/SMTP_HOST"
+          echo "$SMTP_USER_VAL" > "$SECRETS_PATH/SMTP_USER"
+          echo "$SMTP_PASSWORD_VAL" > "$SECRETS_PATH/SMTP_PASSWORD"
+          echo "$ALERT_EMAIL_TO_VAL" > "$SECRETS_PATH/ALERT_EMAIL_TO"
+          echo "$MEXC_KEY_VAL" > "$SECRETS_PATH/MEXC_API_KEY.txt"
+          echo "$MEXC_SECRET_VAL" > "$SECRETS_PATH/MEXC_API_SECRET.txt"
+          chmod 600 "$SECRETS_PATH"/*
 
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
@@ -52,9 +147,13 @@ jobs:
 
       - name: Create .env file
         run: |
+          ws_source="stub"
+          if [[ "${{ steps.preflight.outputs.e2e_mode }}" == "REAL" ]]; then
+            ws_source="mexc_pb"
+          fi
           cat > .env << EOF
           # E2E Test Environment
-          WS_SOURCE=stub
+          WS_SOURCE=${ws_source}
           REDIS_HOST=localhost
           REDIS_PORT=6379
           REDIS_PASSWORD=
@@ -135,6 +234,7 @@ jobs:
         run: |
           echo "## ✅ E2E Smoke Test Passed" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- e2e_mode: ${{ steps.preflight.outputs.e2e_mode }}" >> $GITHUB_STEP_SUMMARY
           echo "- market_data fixture published (10 deterministic messages)" >> $GITHUB_STEP_SUMMARY
           echo "- cdb_signal generated signals" >> $GITHUB_STEP_SUMMARY
           echo "- Prometheus metrics validated (signals_generated_total > 0)" >> $GITHUB_STEP_SUMMARY
