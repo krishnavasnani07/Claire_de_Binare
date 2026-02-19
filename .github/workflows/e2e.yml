@@ -161,65 +161,157 @@ jobs:
           EOF
 
       - name: Start Docker Compose stack
+        id: start_stack
+        shell: bash
         run: |
+          set -euo pipefail
+          # Export runtime env from CI secret files so services do not depend on file readability inside containers.
+          export REDIS_PASSWORD="$(cat "$SECRETS_PATH/REDIS_PASSWORD")"
+          export POSTGRES_PASSWORD="$(cat "$SECRETS_PATH/POSTGRES_PASSWORD")"
+          export POSTGRES_PASSWORD_DSN="$(cat "$SECRETS_PATH/POSTGRES_PASSWORD_DSN")"
+          export GRAFANA_PASSWORD="$(cat "$SECRETS_PATH/GRAFANA_PASSWORD")"
+          export SMTP_FROM="$(cat "$SECRETS_PATH/SMTP_FROM")"
+          export SMTP_HOST="$(cat "$SECRETS_PATH/SMTP_HOST")"
+          export SMTP_USER="$(cat "$SECRETS_PATH/SMTP_USER")"
+          export SMTP_PASSWORD="$(cat "$SECRETS_PATH/SMTP_PASSWORD")"
+          export ALERT_EMAIL_TO="$(cat "$SECRETS_PATH/ALERT_EMAIL_TO")"
+          export MEXC_API_KEY="$(cat "$SECRETS_PATH/MEXC_API_KEY.txt")"
+          export MEXC_API_SECRET="$(cat "$SECRETS_PATH/MEXC_API_SECRET.txt")"
+
           docker compose -f infrastructure/compose/base.yml \
                          -f infrastructure/compose/dev.yml \
                          -f infrastructure/compose/logging.yml \
                          up -d
 
       - name: Wait for services to be healthy
+        id: health_wait
+        shell: bash
         run: |
+          set -euo pipefail
           echo "⏳ Waiting for services to be healthy..."
-          timeout=180  # give composed services time for initial health checks
+          timeout=240
+          sleep_interval=5
           elapsed=0
+          required_services=(cdb_redis cdb_prometheus cdb_signal)
+          last_status="none"
+          echo "failure_reason=none" >> "$GITHUB_OUTPUT"
 
           while [ $elapsed -lt $timeout ]; do
             all_healthy=true
+            status_parts=()
 
-            for service in cdb_redis cdb_prometheus cdb_signal; do
-              health=$(docker inspect --format='{{.State.Health.Status}}' $service 2>/dev/null || echo "not_found")
-
+            for service in "${required_services[@]}"; do
+              state=$(docker inspect --format='{{.State.Status}}' "$service" 2>/dev/null || echo "missing")
+              health=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$service" 2>/dev/null || echo "missing")
+              status_parts+=("${service}:${state}/${health}")
               if [ "$health" != "healthy" ]; then
-                echo "  ⏳ $service not healthy yet (status: $health)"
                 all_healthy=false
-                break
               fi
             done
 
+            last_status="$(IFS=,; echo "${status_parts[*]}")"
+            echo "  ⏳ status=${last_status}"
+
             if [ "$all_healthy" = true ]; then
-              echo "✅ All services healthy"
-              break
+              echo "✅ All required services healthy"
+              exit 0
             fi
 
-            sleep 2
-            elapsed=$((elapsed + 2))
+            sleep "$sleep_interval"
+            elapsed=$((elapsed + sleep_interval))
           done
 
-          if [ $elapsed -ge $timeout ]; then
-            echo "❌ Timeout waiting for services to be healthy"
-            docker ps --filter name=cdb_
-            docker logs cdb_signal --tail 50
-            exit 1
-          fi
+          echo "failure_reason=timeout_waiting_for_health:${last_status}" >> "$GITHUB_OUTPUT"
+          echo "❌ Timeout waiting for required services to become healthy"
+          exit 1
 
       - name: Run E2E Smoke Tests
+        id: run_smoke
         run: |
           pytest tests/e2e/test_smoke_pipeline.py -v --tb=short --no-cov
 
       - name: Show service logs on failure
+        id: show_failure_logs
         if: failure()
+        shell: bash
         run: |
+          set +e
           echo "=== cdb_signal logs ==="
-          docker logs cdb_signal --tail 100
+          docker logs cdb_signal --tail 100 || true
 
           echo "=== cdb_ws logs ==="
-          docker logs cdb_ws --tail 100
+          docker logs cdb_ws --tail 100 || true
 
           echo "=== cdb_redis logs ==="
-          docker logs cdb_redis --tail 50
+          docker logs cdb_redis --tail 50 || true
 
           echo "=== Docker ps ==="
-          docker ps --filter name=cdb_
+          docker ps --filter name=cdb_ || true
+
+      - name: Collect diagnostics on failure
+        id: collect_diagnostics
+        if: failure()
+        shell: bash
+        run: |
+          set +e
+          mkdir -p e2e-diagnostics/endpoints
+
+          docker compose -f infrastructure/compose/base.yml -f infrastructure/compose/dev.yml -f infrastructure/compose/logging.yml ps --all > e2e-diagnostics/compose_ps.txt 2>&1
+          docker compose -f infrastructure/compose/base.yml -f infrastructure/compose/dev.yml -f infrastructure/compose/logging.yml logs --no-color --tail=400 > e2e-diagnostics/compose_logs_tail_400.txt 2>&1
+          docker ps --filter name=cdb_ > e2e-diagnostics/docker_ps_cdb.txt 2>&1
+          docker inspect cdb_redis cdb_prometheus cdb_signal cdb_ws > e2e-diagnostics/docker_inspect_core.json 2>&1
+
+          for service in cdb_signal cdb_ws cdb_redis cdb_prometheus cdb_postgres; do
+            docker logs "$service" --tail 200 > "e2e-diagnostics/${service}_logs_tail_200.txt" 2>&1
+          done
+
+          for endpoint in \
+            "ws_health|http://127.0.0.1:8000/health" \
+            "signal_health|http://127.0.0.1:8005/health" \
+            "prometheus_healthy|http://127.0.0.1:19090/-/healthy"; do
+            name="${endpoint%%|*}"
+            url="${endpoint#*|}"
+            curl --connect-timeout 3 --max-time 10 -fsS "$url" > "e2e-diagnostics/endpoints/${name}.txt" 2>&1
+          done
+
+          ss -lntp > e2e-diagnostics/listening_ports.txt 2>&1
+
+      - name: Upload diagnostics artifact
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: e2e-smoke-diagnostics-${{ github.run_id }}
+          path: e2e-diagnostics/
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: E2E failure summary
+        if: failure()
+        shell: bash
+        run: |
+          set -euo pipefail
+          failing_step="unknown"
+          top_level_error="see diagnostics artifact"
+
+          if [[ "${{ steps.start_stack.outcome }}" == "failure" ]]; then
+            failing_step="Start Docker Compose stack"
+            top_level_error="docker compose up failed"
+          elif [[ "${{ steps.health_wait.outcome }}" == "failure" ]]; then
+            failing_step="Wait for services to be healthy"
+            top_level_error="${{ steps.health_wait.outputs.failure_reason }}"
+          elif [[ "${{ steps.run_smoke.outcome }}" == "failure" ]]; then
+            failing_step="Run E2E Smoke Tests"
+            top_level_error="pytest smoke pipeline failed"
+          fi
+
+          {
+            echo "## ❌ E2E Smoke Test Failed"
+            echo ""
+            echo "- e2e_mode: ${{ steps.preflight.outputs.e2e_mode }}"
+            echo "- failing_step: ${failing_step}"
+            echo "- top_level_error: ${top_level_error}"
+            echo "- diagnostics_artifact: e2e-smoke-diagnostics-${{ github.run_id }}"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Teardown Docker Compose stack
         if: always()
