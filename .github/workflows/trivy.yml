@@ -36,10 +36,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      # Optional aber empfehlenswert: Buildx für reproduzierbares Build + Cache
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
-
       # Trivy DB Cache (macht Runs schneller/stabiler)
       - name: Cache Trivy DB
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
@@ -50,29 +46,13 @@ jobs:
             trivy-${{ runner.os }}-${{ github.workflow }}-
             trivy-${{ runner.os }}-
 
-      - name: Select Dockerfile
-        run: |
-          set -euo pipefail
-          candidates=(Dockerfile services/signal/Dockerfile services/execution/Dockerfile)
-          for candidate in "${candidates[@]}"; do
-            if [ -f "$candidate" ]; then
-              echo "DOCKERFILE_PATH=$candidate" >> "$GITHUB_ENV"
-              echo "Selected Dockerfile: $candidate" >> "$GITHUB_STEP_SUMMARY"
-              exit 0
-            fi
-          done
-          echo "No Dockerfile found for Trivy scan." >> "$GITHUB_STEP_SUMMARY"
-          exit 1
-
-      # Wichtig: Kein Fake-Registry-Name. Nutze einen lokalen Tag.
-      - name: Build image (local tag)
-        run: |
-          docker build -f "${DOCKERFILE_PATH}" -t cdb:${{ github.sha }} .
-
       - name: Run Trivy (JSON)
         uses: aquasecurity/trivy-action@7b7aa264d83dc58691451798b4d117d53d21edfe # 7b7aa264d83dc58691451798b4d117d53d21edfe
         with:
-          image-ref: "cdb:${{ github.sha }}"
+          scan-type: "fs"
+          scan-ref: "."
+          trivyignores: ".trivyignore"
+          skip-dirs: ".worktrees_backup"
           format: "json"
           output: "trivy-results.json"
           severity: "CRITICAL,HIGH"
@@ -83,7 +63,9 @@ jobs:
         run: |
           set -euo pipefail
           report="trivy-results.json"
-          echo "### Trivy (container image)" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Trivy (filesystem)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Scan type: fs (scan-ref=.)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Mode: docker-independent scan (kein Image-Inspect)" >> "$GITHUB_STEP_SUMMARY"
           if [ ! -s "$report" ]; then
             echo "- No report generated." >> "$GITHUB_STEP_SUMMARY"
             exit 1
@@ -124,7 +106,10 @@ jobs:
       - name: Run Trivy (SARIF)
         uses: aquasecurity/trivy-action@7b7aa264d83dc58691451798b4d117d53d21edfe # 7b7aa264d83dc58691451798b4d117d53d21edfe
         with:
-          image-ref: "cdb:${{ github.sha }}"
+          scan-type: "fs"
+          scan-ref: "."
+          trivyignores: ".trivyignore"
+          skip-dirs: ".worktrees_backup"
           format: "sarif"
           output: "trivy-results.sarif"
           severity: "CRITICAL,HIGH"
