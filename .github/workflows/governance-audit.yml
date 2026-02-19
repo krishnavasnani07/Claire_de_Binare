@@ -6,7 +6,6 @@ on:
 permissions:
   contents: read
   actions: read
-  administration: read
 
 jobs:
   governance-audit:
@@ -56,6 +55,17 @@ jobs:
           fetch_from_ref "reports/BRANCH_PROTECTION_BASELINE_main.json" "governance/branch-protection-drift-guard"
           fetch_from_ref "scripts/governance/check_required_check_contexts.py" "governance/required-check-context-drift-guard"
           fetch_from_ref "reports/REQUIRED_CHECK_CONTEXTS_BASELINE_main.json" "governance/required-check-context-drift-guard"
+
+      - name: Verify branch protection endpoint access
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! gh api "repos/${GITHUB_REPOSITORY}/branches/main/protection" > /dev/null 2>&1; then
+            echo "::error::Cannot read branch protection via GITHUB_TOKEN. This manual audit requires repository administration read access."
+            exit 1
+          fi
 
       - name: Run governance checks (read-only)
         id: run_guards
