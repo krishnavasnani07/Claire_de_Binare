@@ -12,6 +12,7 @@ jobs:
     name: Sync Labels from labels.json
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       issues: write
       
     steps:
