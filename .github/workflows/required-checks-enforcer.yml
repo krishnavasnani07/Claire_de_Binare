@@ -2,9 +2,8 @@
 name: required-checks-enforcer (Sentinel)
 
 on:
+  # Manual-only by design to avoid recurring Actions noise while keeping on-demand audit capability.
   workflow_dispatch:
-  schedule:
-    - cron: '15 6 * * 0'
 
 permissions:
   checks: read
