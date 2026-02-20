@@ -131,3 +131,5 @@ notes: |
   - correlation_id computed via compute_correlation_id(signal_id)
   - ON CONFLICT (event_pk) DO NOTHING for idempotent writes
   - Phase 8C: Correlation IDs End-to-End
+  - BLOCK-Entscheidungen nutzen event_type="DECISION" (BLOCK ist ein Entscheidungsergebnis,
+    kein eigener Event-Typ). Detaillierte BLOCK-Records in blocked_decisions-Tabelle.
