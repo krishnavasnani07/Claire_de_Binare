@@ -343,7 +343,7 @@ def _phase9_enrich_evidence(
         decision: "ALLOW" or "BLOCK"
         reason_code: RC_XXX or None
         symbol: Trading symbol
-        ts_ms: Exact timestamp used for DECISION event (caller passes this)
+        ts_ms: Deterministischer Timestamp für decision_pk (signal_ts_ms, NICHT wall-clock)
 
     Returns:
         (enriched_evidence, input_hash, decision_pk)
@@ -1150,13 +1150,15 @@ class RiskManager:
         )
 
         # Phase 9: Enrich evidence ONCE (before DECISION emit AND Order creation)
-        # Pass exact ts_ms used for DECISION event timestamp
+        # ts_ms: deterministisch (signal_ts_ms), NICHT wall-clock (now_ms).
+        # Fallback auf now_ms nur wenn Signal kein ts_ms liefert (Compat).
+        deterministic_ts_ms = evidence.get("timestamps_ms", {}).get("signal_ts_ms") or now_ms
         evidence, input_hash, decision_pk = _phase9_enrich_evidence(
             evidence=evidence,
             decision=decision,
             reason_code=reason_code,
             symbol=signal.symbol,
-            ts_ms=now_ms,
+            ts_ms=deterministic_ts_ms,
         )
 
         # Trace-Writes: nur wenn Toggle ON (Toggle OFF = zero side effects)

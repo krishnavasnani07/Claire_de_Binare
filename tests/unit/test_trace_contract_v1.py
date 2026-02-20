@@ -289,3 +289,87 @@ class TestToggleAccessor:
 
         monkeypatch.setenv("TRACE_CONTRACT_V1_ENABLED", "0")
         assert trace_contract_v1_enabled() is False
+
+
+class TestDecisionPkDeterminism:
+    """B2: decision_pk darf nicht von wall-clock abhängen."""
+
+    def test_input_hash_excludes_wall_clock_fields(self):
+        """timestamp_ms, staleness_s, data_silence_s sind NICHT im Hash."""
+        from core.utils.uuid_gen import compute_input_snapshot_hash
+
+        base = {
+            "symbol": "BTCUSDT",
+            "regime_id": 0,
+            "return_1m": 0.1,
+            "return_5m": 0.2,
+            "price_change_5m": 0.3,
+            "pct_change_15m": 0.05,
+            "volume_15m": 0.20,
+            "daily_drawdown_pct": 0.01,
+            "total_exposure_pct": 0.10,
+            "slippage_pct": 0.001,
+            "thresholds": {"a": 1},
+        }
+
+        # Gleiche deterministische Felder, unterschiedliche wall-clock-Felder
+        ev1 = {**base, "timestamp_ms": 1000, "staleness_s": 0.5, "data_silence_s": 1.0}
+        ev2 = {**base, "timestamp_ms": 9999, "staleness_s": 99.0, "data_silence_s": 50.0}
+
+        assert compute_input_snapshot_hash(ev1) == compute_input_snapshot_hash(ev2)
+
+    def test_decision_pk_stable_across_wall_clocks(self):
+        """Gleicher signal_ts_ms + gleiche Inputs → gleicher decision_pk."""
+        from core.utils.uuid_gen import generate_decision_pk
+
+        signal_ts_ms = 1700000000000
+        evidence = {
+            "symbol": "BTCUSDT",
+            "regime_id": 0,
+            "return_1m": 0.1,
+            "return_5m": 0.2,
+            "price_change_5m": 0.3,
+            "pct_change_15m": 0.05,
+            "volume_15m": 0.20,
+            "daily_drawdown_pct": 0.01,
+            "total_exposure_pct": 0.10,
+            "slippage_pct": 0.001,
+            "thresholds": {"a": 1},
+            "timestamp_ms": 1700000001000,  # wall-clock 1
+            "staleness_s": 0.5,
+            "data_silence_s": 1.0,
+        }
+
+        pk1 = generate_decision_pk("BTCUSDT", signal_ts_ms, evidence)
+
+        # Anderer wall-clock-Zeitpunkt
+        evidence["timestamp_ms"] = 1700000099000
+        evidence["staleness_s"] = 99.0
+        evidence["data_silence_s"] = 50.0
+
+        pk2 = generate_decision_pk("BTCUSDT", signal_ts_ms, evidence)
+
+        assert pk1 == pk2, "decision_pk muss wall-clock-unabhängig sein"
+
+    def test_decision_pk_varies_with_signal_ts(self):
+        """Unterschiedlicher signal_ts_ms → unterschiedlicher decision_pk."""
+        from core.utils.uuid_gen import generate_decision_pk
+
+        evidence = {
+            "symbol": "BTCUSDT",
+            "regime_id": 0,
+            "return_1m": 0.1,
+            "return_5m": 0.2,
+            "price_change_5m": 0.3,
+            "pct_change_15m": 0.05,
+            "volume_15m": 0.20,
+            "daily_drawdown_pct": 0.01,
+            "total_exposure_pct": 0.10,
+            "slippage_pct": 0.001,
+            "thresholds": {"a": 1},
+        }
+
+        pk1 = generate_decision_pk("BTCUSDT", 1700000000000, evidence)
+        pk2 = generate_decision_pk("BTCUSDT", 1700000099000, evidence)
+
+        assert pk1 != pk2, "Unterschiedlicher signal_ts_ms muss unterschiedlichen pk erzeugen"
