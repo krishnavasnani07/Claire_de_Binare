@@ -56,61 +56,34 @@ jobs:
           fetch_from_ref "scripts/governance/check_required_check_contexts.py" "governance/required-check-context-drift-guard"
           fetch_from_ref "reports/REQUIRED_CHECK_CONTEXTS_BASELINE_main.json" "governance/required-check-context-drift-guard"
 
-      - name: Select token for branch protection read
-        id: select_token
+      - name: Detect optional admin token
+        id: admin_token
         env:
-          TOKEN_CDB: ${{ secrets.CDB_GITHUB_TOKEN }}
-          TOKEN_CLAUDE: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          TOKEN_DEFAULT: ${{ github.token }}
+          HAS_ADMIN_TOKEN: ${{ secrets.GOVERNANCE_AUDIT_ADMIN_TOKEN != '' }}
         shell: bash
         run: |
           set -euo pipefail
-
-          can_read_branch_protection() {
-            local token="$1"
-            if [ -z "${token:-}" ]; then
-              return 1
-            fi
-            GH_TOKEN="$token" gh api "repos/${GITHUB_REPOSITORY}/branches/main/protection" > /dev/null 2>&1
-          }
-
-          selected_source=""
-          selected_token=""
-
-          if can_read_branch_protection "$TOKEN_CDB"; then
-            selected_source="CDB_GITHUB_TOKEN"
-            selected_token="$TOKEN_CDB"
-          elif can_read_branch_protection "$TOKEN_CLAUDE"; then
-            selected_source="CLAUDE_CODE_OAUTH_TOKEN"
-            selected_token="$TOKEN_CLAUDE"
-          elif can_read_branch_protection "$TOKEN_DEFAULT"; then
-            selected_source="github.token"
-            selected_token="$TOKEN_DEFAULT"
-          else
-            selected_source="NONE"
-            selected_token=""
-            echo "::warning::No available token can read branch protection endpoint. Branch-protection drift check will run in baseline-fallback mode."
+          echo "has_admin_token=${HAS_ADMIN_TOKEN}" >> "$GITHUB_OUTPUT"
+          if [ "${HAS_ADMIN_TOKEN}" != "true" ]; then
+            echo "::warning::No GOVERNANCE_AUDIT_ADMIN_TOKEN configured. Branch-protection drift check will run in baseline-fallback mode."
           fi
-
-          if [ -n "$selected_token" ]; then
-            echo "GH_TOKEN=$selected_token" >> "$GITHUB_ENV"
-          fi
-          echo "token_source=$selected_source" >> "$GITHUB_OUTPUT"
 
       - name: Run governance checks (read-only)
         id: run_guards
+        env:
+          GH_TOKEN: ${{ steps.admin_token.outputs.has_admin_token == 'true' && secrets.GOVERNANCE_AUDIT_ADMIN_TOKEN || github.token }}
         shell: bash
         run: |
           set +e
 
-          token_source="${{ steps.select_token.outputs.token_source }}"
-          bp_mode="live"
-          if [ "$token_source" = "NONE" ]; then
-            bp_mode="baseline-fallback"
-            python scripts/governance/check_branch_protection_drift.py --current-json reports/BRANCH_PROTECTION_BASELINE_main.json
+          has_admin_token="${{ steps.admin_token.outputs.has_admin_token }}"
+          bp_mode="LIVE (admin token)"
+          if [ "$has_admin_token" = "true" ]; then
+            python scripts/governance/check_branch_protection_drift.py
             bp_code=$?
           else
-            python scripts/governance/check_branch_protection_drift.py
+            bp_mode="BASELINE FALLBACK (no admin token)"
+            python scripts/governance/check_branch_protection_drift.py --current-json reports/BRANCH_PROTECTION_BASELINE_main.json
             bp_code=$?
           fi
 
@@ -134,7 +107,7 @@ jobs:
           echo "required_contexts_code=$rc_code" >> "$GITHUB_OUTPUT"
           echo "branch_protection_status=$bp_status" >> "$GITHUB_OUTPUT"
           echo "required_contexts_status=$rc_status" >> "$GITHUB_OUTPUT"
-          echo "branch_protection_mode=$bp_mode" >> "$GITHUB_OUTPUT"
+          echo "branch_protection_check_mode=$bp_mode" >> "$GITHUB_OUTPUT"
 
           if [ "$bp_code" -eq 0 ] && [ "$rc_code" -eq 0 ]; then
             exit 0
@@ -150,19 +123,16 @@ jobs:
         run: |
           bp="${{ steps.run_guards.outputs.branch_protection_status }}"
           rc="${{ steps.run_guards.outputs.required_contexts_status }}"
-          token_source="${{ steps.select_token.outputs.token_source }}"
-          bp_mode="${{ steps.run_guards.outputs.branch_protection_mode }}"
+          bp_mode="${{ steps.run_guards.outputs.branch_protection_check_mode }}"
           [ -z "$bp" ] && bp="NOT_RUN"
           [ -z "$rc" ] && rc="NOT_RUN"
-          [ -z "$token_source" ] && token_source="UNAVAILABLE"
           [ -z "$bp_mode" ] && bp_mode="UNAVAILABLE"
 
           {
             echo "## Governance Audit"
             echo "- Branch protection drift: ${bp}"
             echo "- Required contexts drift: ${rc}"
-            echo "- Branch protection token source: ${token_source}"
-            echo "- Branch protection mode: ${bp_mode}"
+            echo "- Branch protection check: ${bp_mode}"
             echo "- Note: manual-only workflow; no auto-apply."
           } >> "$GITHUB_STEP_SUMMARY"
 
