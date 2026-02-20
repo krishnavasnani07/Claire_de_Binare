@@ -67,10 +67,13 @@ def generate_uuid_hex(
 # Namespace for decision_pk (Phase 8B)
 DECISION_PK_NAMESPACE = uuid.UUID("a1b2c3d4-e5f6-7890-abcd-ef1234567890")
 
-# Fields included in input snapshot hash (deterministic, immutable)
+# Fields included in input snapshot hash (deterministic, immutable).
+# Entfernt (P0 Determinismus): timestamp_ms (direkt wall-clock),
+# staleness_s und data_silence_s (indirekt wall-clock via now_ms-Differenz).
+# Diese 3 Felder bleiben in der Evidence für Observability, aber nicht im Hash.
+# Zeitliche Verankerung erfolgt über ts_ms-Parameter in generate_decision_pk().
 DECISION_HASH_FIELDS = (
     "symbol",
-    "timestamp_ms",
     "regime_id",
     "return_1m",
     "return_5m",
@@ -80,8 +83,6 @@ DECISION_HASH_FIELDS = (
     "daily_drawdown_pct",
     "total_exposure_pct",
     "slippage_pct",
-    "staleness_s",
-    "data_silence_s",
     "thresholds",
 )
 
