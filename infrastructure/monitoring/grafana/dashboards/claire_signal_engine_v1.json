@@ -40,7 +40,7 @@
       "targets": [
         {
           "format": "table",
-          "rawSql": "SELECT COUNT(*) FROM signals WHERE timestamp > EXTRACT(EPOCH FROM NOW() - INTERVAL '1 hour') * 1000",
+          "rawSql": "SELECT COUNT(*) FROM signals WHERE timestamp > NOW() - INTERVAL '1 hour'",
           "refId": "A"
         }
       ],
@@ -92,7 +92,7 @@
       "targets": [
         {
           "format": "table",
-          "rawSql": "SELECT COUNT(*) FROM signals WHERE signal_type = 'buy' AND timestamp > EXTRACT(EPOCH FROM NOW() - INTERVAL '1 hour') * 1000",
+          "rawSql": "SELECT COUNT(*) FROM signals WHERE signal_type = 'buy' AND timestamp > NOW() - INTERVAL '1 hour'",
           "refId": "A"
         }
       ],
@@ -136,7 +136,7 @@
       "targets": [
         {
           "format": "table",
-          "rawSql": "SELECT COUNT(*) FROM signals WHERE signal_type = 'sell' AND timestamp > EXTRACT(EPOCH FROM NOW() - INTERVAL '1 hour') * 1000",
+          "rawSql": "SELECT COUNT(*) FROM signals WHERE signal_type = 'sell' AND timestamp > NOW() - INTERVAL '1 hour'",
           "refId": "A"
         }
       ],
@@ -180,7 +180,7 @@
       "targets": [
         {
           "format": "table",
-          "rawSql": "SELECT ROUND(AVG(confidence)::numeric, 2) FROM signals WHERE timestamp > EXTRACT(EPOCH FROM NOW() - INTERVAL '1 hour') * 1000",
+          "rawSql": "SELECT ROUND(AVG(confidence)::numeric, 2) FROM signals WHERE timestamp > NOW() - INTERVAL '1 hour'",
           "refId": "A"
         }
       ],
@@ -229,7 +229,7 @@
       "targets": [
         {
           "format": "time_series",
-          "rawSql": "SELECT timestamp AS time, COUNT(*) as value FROM signals WHERE timestamp > EXTRACT(EPOCH FROM NOW() - INTERVAL '1 hour') * 1000 GROUP BY time ORDER BY time",
+          "rawSql": "SELECT date_trunc('minute', timestamp) AS time, COUNT(*) AS value FROM signals WHERE $__timeFilter(timestamp) GROUP BY 1 ORDER BY 1",
           "refId": "A"
         }
       ],
@@ -300,7 +300,7 @@
       "targets": [
         {
           "format": "table",
-          "rawSql": "SELECT symbol, COUNT(*) as count FROM signals WHERE timestamp > EXTRACT(EPOCH FROM NOW() - INTERVAL '1 hour') * 1000 GROUP BY symbol ORDER BY count DESC LIMIT 10",
+          "rawSql": "SELECT symbol, COUNT(*) as count FROM signals WHERE timestamp > NOW() - INTERVAL '1 hour' GROUP BY symbol ORDER BY count DESC LIMIT 10",
           "refId": "A"
         }
       ],
@@ -358,7 +358,7 @@
       "targets": [
         {
           "format": "table",
-          "rawSql": "SELECT signal_type, COUNT(*) as count FROM signals WHERE timestamp > EXTRACT(EPOCH FROM NOW() - INTERVAL '1 hour') * 1000 GROUP BY signal_type",
+          "rawSql": "SELECT signal_type, COUNT(*) as count FROM signals WHERE timestamp > NOW() - INTERVAL '1 hour' GROUP BY signal_type",
           "refId": "A"
         }
       ],
@@ -430,7 +430,7 @@
       "targets": [
         {
           "format": "table",
-          "rawSql": "SELECT TO_TIMESTAMP(timestamp/1000) as time, symbol, signal_type, ROUND(confidence::numeric, 2) as confidence, ROUND(price::numeric, 2) as price, ROUND(pct_change::numeric, 2) as pct_change, reason FROM signals ORDER BY timestamp DESC LIMIT 50",
+          "rawSql": "SELECT timestamp AS time, symbol, signal_type, ROUND(confidence::numeric, 2) AS confidence, ROUND(price::numeric, 2) AS price, source FROM signals ORDER BY timestamp DESC LIMIT 50",
           "refId": "A"
         }
       ],
@@ -519,32 +519,12 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "pct_change"
+              "options": "source"
             },
             "properties": [
               {
                 "id": "custom.displayMode",
-                "value": "color-background"
-              },
-              {
-                "id": "thresholds",
-                "value": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "#1a1a1a",
-                      "value": null
-                    },
-                    {
-                      "color": "#8b0000",
-                      "value": 3
-                    },
-                    {
-                      "color": "#ff0000",
-                      "value": 5
-                    }
-                  ]
-                }
+                "value": "auto"
               }
             ]
           }

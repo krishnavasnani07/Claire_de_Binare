@@ -43,7 +43,7 @@
       "datasource": "Prometheus",
       "targets": [
         {
-          "expr": "sum(container_restart_count{name=~\"cdb_.*\"})",
+          "expr": "sum(changes(container_start_time_seconds{id=~\"/docker/.+\"}[72h]))",
           "refId": "A",
           "legendFormat": "Total Restarts"
         }
@@ -668,9 +668,9 @@
       "datasource": "Prometheus",
       "targets": [
         {
-          "expr": "container_restart_count{name=~\"cdb_.*\"}",
+          "expr": "changes(container_start_time_seconds{id=~\"/docker/.+\"}[1h])",
           "refId": "A",
-          "legendFormat": "{{name}}"
+          "legendFormat": "{{id}}"
         }
       ],
       "options": {
@@ -733,9 +733,9 @@
       "datasource": "Prometheus",
       "targets": [
         {
-          "expr": "100 * (container_memory_usage_bytes{name=~\"cdb_.*\"} / container_spec_memory_limit_bytes{name=~\"cdb_.*\"})",
+          "expr": "100 * (container_memory_usage_bytes{id=~\"/docker/.+\"} / container_spec_memory_limit_bytes{id=~\"/docker/.+\"} > 0)",
           "refId": "A",
-          "legendFormat": "{{name}}"
+          "legendFormat": "{{id}}"
         }
       ],
       "options": {
@@ -801,9 +801,9 @@
       "datasource": "Prometheus",
       "targets": [
         {
-          "expr": "100 * sum(rate(container_cpu_usage_seconds_total{name=~\"cdb_.*\"}[5m])) by (name)",
+          "expr": "100 * sum(rate(container_cpu_usage_seconds_total{id=~\"/docker/.+\"}[5m])) by (id)",
           "refId": "A",
-          "legendFormat": "{{name}}"
+          "legendFormat": "{{id}}"
         }
       ],
       "options": {
