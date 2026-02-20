@@ -247,3 +247,45 @@ class TestPhase9EnrichEvidence:
             assert enriched_allow["policy_hash"] == enriched_block["policy_hash"]
         finally:
             risk_svc.TRACE_CONTRACT_V1_ENABLED = original_value
+
+
+class TestToggleAccessor:
+    """B1: Verifiziert trace_contract_v1_enabled() Verhalten."""
+
+    def test_toggle_off_default(self, monkeypatch):
+        """Default (kein Env-Var gesetzt) = OFF."""
+        monkeypatch.delenv("TRACE_CONTRACT_V1_ENABLED", raising=False)
+        from core.utils.trace_toggle import trace_contract_v1_enabled
+
+        assert trace_contract_v1_enabled() is False
+
+    def test_toggle_off_explicit(self, monkeypatch):
+        """Explizit '0' = OFF."""
+        monkeypatch.setenv("TRACE_CONTRACT_V1_ENABLED", "0")
+        from core.utils.trace_toggle import trace_contract_v1_enabled
+
+        assert trace_contract_v1_enabled() is False
+
+    def test_toggle_on(self, monkeypatch):
+        """'1' = ON."""
+        monkeypatch.setenv("TRACE_CONTRACT_V1_ENABLED", "1")
+        from core.utils.trace_toggle import trace_contract_v1_enabled
+
+        assert trace_contract_v1_enabled() is True
+
+    def test_toggle_invalid_value_is_off(self, monkeypatch):
+        """Ungültiger Wert = OFF (fail-safe)."""
+        monkeypatch.setenv("TRACE_CONTRACT_V1_ENABLED", "true")
+        from core.utils.trace_toggle import trace_contract_v1_enabled
+
+        assert trace_contract_v1_enabled() is False
+
+    def test_toggle_respects_monkeypatch(self, monkeypatch):
+        """Wechsel zwischen ON/OFF in Tests möglich (kein Modul-Cache)."""
+        from core.utils.trace_toggle import trace_contract_v1_enabled
+
+        monkeypatch.setenv("TRACE_CONTRACT_V1_ENABLED", "1")
+        assert trace_contract_v1_enabled() is True
+
+        monkeypatch.setenv("TRACE_CONTRACT_V1_ENABLED", "0")
+        assert trace_contract_v1_enabled() is False

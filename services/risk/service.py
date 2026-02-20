@@ -36,6 +36,7 @@ from core.utils.uuid_gen import (
 )
 from core.utils.clock import utcnow
 from core.utils.redis_payload import sanitize_payload
+from core.utils.trace_toggle import trace_contract_v1_enabled
 from core.auth import validate_all_auth
 from core.domain.models import Signal
 
@@ -64,8 +65,8 @@ except ImportError:
 # Phase 8C: Evidence debt safety valve (default: fail-closed)
 ALLOW_EVIDENCE_DEBT = os.getenv("ALLOW_EVIDENCE_DEBT", "0") == "1"
 
-# Phase 9: Trace Contract v1 toggle (default: DISABLED for safety)
-TRACE_CONTRACT_V1_ENABLED = os.getenv("TRACE_CONTRACT_V1_ENABLED", "0") == "1"
+# Phase 9: Trace Contract v1 toggle → zentral in core.utils.trace_toggle
+# (Modul-Level-Konstante entfernt; trace_contract_v1_enabled() wird direkt aufgerufen)
 
 # Logging konfigurieren via JSON-Config
 logging_config_path = Path(__file__).parent.parent.parent / "logging_config.json"
@@ -350,7 +351,7 @@ def _phase9_enrich_evidence(
         - When toggle ON: returns enriched evidence with computed hashes
     """
     # ZERO-IMPACT when toggle OFF: no mutations, no validations, no computations
-    if not TRACE_CONTRACT_V1_ENABLED:
+    if not trace_contract_v1_enabled():
         return evidence, None, None
 
     # Toggle ON: proceed with enrichment
@@ -1158,94 +1159,98 @@ class RiskManager:
             ts_ms=now_ms,
         )
 
-        # Emit DECISION event
-        # When toggle OFF: input_hash/decision_pk are None, _emit_risk_event computes them
-        # When toggle ON: pass pre-computed values to avoid recomputation divergence
-        self._emit_risk_event(
-            decision=decision,
-            reason_code=reason_code,
-            evidence=evidence,
-            decision_pk=decision_pk,
-            input_hash=input_hash,
-        )
-
-        # Phase 8C: Persist DECISION event to correlation_ledger
+        # Trace-Writes: nur wenn Toggle ON (Toggle OFF = zero side effects)
         signal_id = evidence.get("signal_id")
         decision_id = evidence.get("decision_id")
 
-        # Fail-closed: require signal_id and decision_id for correlation
-        if not signal_id or not decision_id:
-            if ALLOW_EVIDENCE_DEBT:
-                logger.warning(
-                    f"⚠️ correlation_ledger DECISION skipped: "
-                    f"signal_id={signal_id}, decision_id={decision_id} (ALLOW_EVIDENCE_DEBT=1)"
-                )
+        if trace_contract_v1_enabled():
+            # risk_events INSERT
+            self._emit_risk_event(
+                decision=decision,
+                reason_code=reason_code,
+                evidence=evidence,
+                decision_pk=decision_pk,
+                input_hash=input_hash,
+            )
+
+            # Phase 8C: correlation_ledger DECISION INSERT
+            # BLOCK-Entscheidungen nutzen event_type="DECISION" (BLOCK ist Entscheidungsergebnis,
+            # kein eigener Event-Typ). Details in blocked_decisions-Tabelle.
+            if not signal_id or not decision_id:
+                if ALLOW_EVIDENCE_DEBT:
+                    logger.warning(
+                        f"⚠️ correlation_ledger DECISION skipped: "
+                        f"signal_id={signal_id}, decision_id={decision_id} (ALLOW_EVIDENCE_DEBT=1)"
+                    )
+                else:
+                    raise ValueError(
+                        f"signal_id and decision_id required for correlation_ledger DECISION "
+                        f"(signal_id={signal_id}, decision_id={decision_id})"
+                    )
             else:
-                raise ValueError(
-                    f"signal_id and decision_id required for correlation_ledger DECISION "
-                    f"(signal_id={signal_id}, decision_id={decision_id})"
-                )
-        else:
-            if not self._persist_correlation_event(
-                signal_id=signal_id,
-                event_type="DECISION",
-                symbol=signal.symbol,
-                timestamp_ms=now_ms,
-                decision_id=decision_id,
-                payload=evidence,
-            ):
-                logger.warning(
-                    f"⚠️ correlation_ledger DECISION write failed (evidence debt)"
-                )
+                if not self._persist_correlation_event(
+                    signal_id=signal_id,
+                    event_type="DECISION",
+                    symbol=signal.symbol,
+                    timestamp_ms=now_ms,
+                    decision_id=decision_id,
+                    payload=evidence,
+                ):
+                    logger.warning(
+                        f"⚠️ correlation_ledger DECISION write failed (evidence debt)"
+                    )
 
         if decision == DECISION_BLOCK:
             logger.warning("Decision contract BLOCK: %s", reason_code)
             stats["orders_blocked"] += 1
             risk_state.signals_blocked += 1
 
-            # Phase 8C: Persist to blocked_decisions table (fail-closed)
-            if not signal_id or not decision_id:
-                if ALLOW_EVIDENCE_DEBT:
-                    logger.warning(
-                        f"⚠️ blocked_decisions skipped: "
-                        f"signal_id={signal_id}, decision_id={decision_id} (ALLOW_EVIDENCE_DEBT=1)"
-                    )
+            # Trace-Writes: blocked_decisions + Redis blocked_order (nur bei Toggle ON)
+            if trace_contract_v1_enabled():
+                # Phase 8C: blocked_decisions INSERT (fail-closed)
+                if not signal_id or not decision_id:
+                    if ALLOW_EVIDENCE_DEBT:
+                        logger.warning(
+                            f"⚠️ blocked_decisions skipped: "
+                            f"signal_id={signal_id}, decision_id={decision_id} (ALLOW_EVIDENCE_DEBT=1)"
+                        )
+                    else:
+                        raise ValueError(
+                            f"signal_id and decision_id required for blocked_decisions "
+                            f"(signal_id={signal_id}, decision_id={decision_id})"
+                        )
                 else:
-                    raise ValueError(
-                        f"signal_id and decision_id required for blocked_decisions "
-                        f"(signal_id={signal_id}, decision_id={decision_id})"
-                    )
-            else:
-                if not self._persist_blocked_decision(
-                    signal_id=signal_id,
-                    decision_id=decision_id,
-                    symbol=signal.symbol,
-                    reason_code=reason_code or "UNKNOWN",
-                    timestamp_ms=now_ms,
-                    evidence=evidence,
-                ):
-                    logger.warning(f"⚠️ blocked_decisions write failed (evidence debt)")
+                    if not self._persist_blocked_decision(
+                        signal_id=signal_id,
+                        decision_id=decision_id,
+                        symbol=signal.symbol,
+                        reason_code=reason_code or "UNKNOWN",
+                        timestamp_ms=now_ms,
+                        evidence=evidence,
+                    ):
+                        logger.warning(f"⚠️ blocked_decisions write failed (evidence debt)")
 
-            # Persist blocked_order artifact for audit/replay (Correlation Backbone)
-            blocked_order = {
-                "type": "blocked_order",
-                "order_id": generate_uuid(),
-                "decision_id": decision_id,
-                "signal_id": signal_id,
-                "trace_id": evidence.get("trace_id"),
-                "symbol": signal.symbol,
-                "side": signal.side,
-                "reason_code": reason_code,
-                "timestamp_ms": int(time.time() * 1000),
-            }
-            try:
-                self.redis_client.xadd(
-                    self.config.orders_blocked_stream,
-                    sanitize_payload(blocked_order),
-                    maxlen=10000,
-                )
-            except Exception:
-                logger.exception("Failed to persist blocked_order artifact")
+                # Redis blocked_order Artefakt (audit/replay)
+                blocked_order = {
+                    "type": "blocked_order",
+                    "order_id": generate_uuid(),
+                    "decision_id": decision_id,
+                    "signal_id": signal_id,
+                    "trace_id": evidence.get("trace_id"),
+                    "symbol": signal.symbol,
+                    "side": signal.side,
+                    "reason_code": reason_code,
+                    "timestamp_ms": int(time.time() * 1000),
+                }
+                try:
+                    self.redis_client.xadd(
+                        self.config.orders_blocked_stream,
+                        sanitize_payload(blocked_order),
+                        maxlen=10000,
+                    )
+                except Exception:
+                    logger.exception("Failed to persist blocked_order artifact")
+
             return None
 
         if not signal.strategy_id:
