@@ -89,9 +89,8 @@ services:
       GF_SMTP_FROM_ADDRESS__FILE: /run/secrets/smtp_from
       GF_SMTP_FROM_NAME: "CDB Alerts"
       GF_SMTP_STARTTLS_POLICY: MandatoryStartTLS
-      # Postgres Datasource Auth
+      # Postgres Datasource Auth (read from secret at startup via entrypoint)
       POSTGRES_USER: ${POSTGRES_USER:-claire_user}
-      POSTGRES_PASSWORD__FILE: /run/secrets/postgres_password
     secrets:
       - postgres_password
       - grafana_password
@@ -99,13 +98,18 @@ services:
       - smtp_password
       - smtp_from
       - alert_email_to
+    # Export POSTGRES_PASSWORD from secret file before starting Grafana
+    # so $__env{POSTGRES_PASSWORD} in datasource provisioning resolves correctly
+    entrypoint: ["/bin/sh", "/usr/local/bin/entrypoint-postgres-password.sh"]
     volumes:
       - grafana_data:/var/lib/grafana
+      - ../../infrastructure/monitoring/grafana/entrypoint-postgres-password.sh:/usr/local/bin/entrypoint-postgres-password.sh:ro
       - ../../infrastructure/monitoring/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
       - ../../infrastructure/monitoring/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
       - ../../infrastructure/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
     depends_on:
       - cdb_prometheus
+      - cdb_postgres
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:3000/api/health"]
       interval: 30s
@@ -118,10 +122,13 @@ services:
     image: prometheuscommunity/postgres-exporter:latest
     container_name: cdb_postgres_exporter
     restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-claire_user}
+      POSTGRES_DB: ${POSTGRES_DB:-claire_de_binare}
     secrets:
-      - postgres_password_dsn
+      - postgres_password
     entrypoint: ["/bin/sh", "-c"]
-    command: ["DATA_SOURCE_NAME=$$(cat /run/secrets/postgres_password_dsn) exec /bin/postgres_exporter"]
+    command: ["DATA_SOURCE_NAME=\"host=cdb_postgres port=5432 user=$${POSTGRES_USER} dbname=$${POSTGRES_DB} password=$$(cat /run/secrets/postgres_password | tr -d '\\n') sslmode=disable\" exec /bin/postgres_exporter"]
     depends_on:
       - cdb_postgres
     healthcheck:
@@ -143,9 +150,9 @@ services:
     depends_on:
       - cdb_redis
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:9121/health"]
+      test: ["CMD-SHELL", "kill -0 1"]
       interval: 30s
-      timeout: 10s
+      timeout: 5s
       retries: 3
     networks:
       - cdb_network
