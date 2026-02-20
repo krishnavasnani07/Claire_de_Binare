@@ -1,12 +1,9 @@
 name: E2E Happy Path
 
-# CRITICAL: This workflow must ALWAYS run to satisfy branch protection requirements
-# even for docs-only PRs. It will skip actual E2E execution for docs-only changes
-# but still produce a SUCCESS status check.
+# PR-decoupled non-critical E2E smoke:
+# runs post-merge on main, on schedule, or manually via workflow_dispatch.
 
 on:
-  pull_request:
-    branches: [ main ]
   push:
     branches: [ main ]
     # No paths-ignore - always run
