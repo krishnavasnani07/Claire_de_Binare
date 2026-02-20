@@ -43,7 +43,7 @@ from core.utils.uuid_gen import (
 )
 from core.utils.clock import utcnow
 from core.utils.redis_payload import sanitize_payload
-from core.utils.trace_toggle import trace_contract_v1_enabled
+from core.utils.trace_toggle import trace_contract_v1_enabled, allow_evidence_debt
 from core.auth import validate_all_auth
 from core.domain.models import Signal
 
@@ -70,7 +70,7 @@ except ImportError:
     from services.risk.models import Order, Alert, RiskState, OrderResult
 
 # Phase 8C: Evidence debt safety valve (default: fail-closed)
-ALLOW_EVIDENCE_DEBT = os.getenv("ALLOW_EVIDENCE_DEBT", "0") == "1"
+# Modul-Level-Konstante entfernt; allow_evidence_debt() aus core.utils.trace_toggle
 
 # Phase 9: Trace Contract v1 toggle → zentral in core.utils.trace_toggle
 # (Modul-Level-Konstante entfernt; trace_contract_v1_enabled() wird direkt aufgerufen)
@@ -1189,7 +1189,7 @@ class RiskManager:
             # BLOCK-Entscheidungen nutzen event_type="DECISION" (BLOCK ist Entscheidungsergebnis,
             # kein eigener Event-Typ). Details in blocked_decisions-Tabelle.
             if not signal_id or not decision_id:
-                if ALLOW_EVIDENCE_DEBT:
+                if allow_evidence_debt():
                     logger.warning(
                         f"⚠️ correlation_ledger DECISION skipped: "
                         f"signal_id={signal_id}, decision_id={decision_id} (ALLOW_EVIDENCE_DEBT=1)"
@@ -1221,7 +1221,7 @@ class RiskManager:
             if trace_contract_v1_enabled():
                 # Phase 8C: blocked_decisions INSERT (fail-closed)
                 if not signal_id or not decision_id:
-                    if ALLOW_EVIDENCE_DEBT:
+                    if allow_evidence_debt():
                         logger.warning(
                             f"⚠️ blocked_decisions skipped: "
                             f"signal_id={signal_id}, decision_id={decision_id} (ALLOW_EVIDENCE_DEBT=1)"

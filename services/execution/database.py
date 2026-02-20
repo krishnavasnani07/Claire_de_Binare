@@ -14,6 +14,7 @@ import time
 from contextlib import contextmanager
 
 from core.utils.uuid_gen import compute_correlation_id, compute_event_pk
+from core.utils.trace_toggle import allow_evidence_debt
 
 try:
     from . import config
@@ -25,7 +26,7 @@ except ImportError:
 logger = logging.getLogger(config.SERVICE_NAME)
 
 # Phase 8C: Fail-closed with safety valve
-ALLOW_EVIDENCE_DEBT = os.getenv("ALLOW_EVIDENCE_DEBT", "0") == "1"
+# Modul-Level-Konstante entfernt; allow_evidence_debt() aus core.utils.trace_toggle
 
 # Valid event types for correlation_ledger
 # BLOCK ist ein Entscheidungsergebnis (event_type="DECISION"), kein eigener Event-Typ.
@@ -107,7 +108,7 @@ class Database:
         # Canonicalize event_type
         event_type = event_type.strip().upper()
         if event_type not in VALID_EVENT_TYPES:
-            if ALLOW_EVIDENCE_DEBT:
+            if allow_evidence_debt():
                 logger.warning(
                     f"⚠️ correlation_ledger skipped: unknown event_type={event_type} "
                     f"(ALLOW_EVIDENCE_DEBT=1)"
@@ -119,7 +120,7 @@ class Database:
 
         # Fail-closed: validate required IDs
         if not signal_id or not decision_id:
-            if ALLOW_EVIDENCE_DEBT:
+            if allow_evidence_debt():
                 logger.warning(
                     f"⚠️ correlation_ledger {event_type} skipped: "
                     f"signal_id={signal_id}, decision_id={decision_id} (ALLOW_EVIDENCE_DEBT=1)"
@@ -131,7 +132,7 @@ class Database:
             )
 
         if event_type == "ORDER" and not order_id:
-            if ALLOW_EVIDENCE_DEBT:
+            if allow_evidence_debt():
                 logger.warning(
                     f"⚠️ correlation_ledger ORDER skipped: order_id missing (ALLOW_EVIDENCE_DEBT=1)"
                 )
@@ -139,7 +140,7 @@ class Database:
             raise ValueError("order_id required for correlation_ledger ORDER")
 
         if event_type == "FILL" and (not order_id or not fill_id):
-            if ALLOW_EVIDENCE_DEBT:
+            if allow_evidence_debt():
                 logger.warning(
                     f"⚠️ correlation_ledger FILL skipped: "
                     f"order_id={order_id}, fill_id={fill_id} (ALLOW_EVIDENCE_DEBT=1)"
