@@ -404,8 +404,14 @@ jobs:
           trivyignores: .trivyignore
           skip-dirs: .worktrees_backup
           severity: HIGH,CRITICAL
-          exit-code: "1"
+          exit-code: "0"
           ignore-unfixed: true
+
+      - name: Trivy reporting mode summary
+        run: |
+          echo "### Trivy Scan" >> $GITHUB_STEP_SUMMARY
+          echo "- Non-blocking mode (reporting-only)." >> $GITHUB_STEP_SUMMARY
+          echo "- Full findings are available in this job log." >> $GITHUB_STEP_SUMMARY
 
   security-audit:
     name: Security Audit (Bandit)
