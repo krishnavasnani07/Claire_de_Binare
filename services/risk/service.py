@@ -22,7 +22,14 @@ from typing import Optional
 
 import psycopg2
 import redis
-from flask import Flask, jsonify, Response
+try:
+    from flask import Flask, jsonify, Response
+    _FLASK_AVAILABLE = True
+except ModuleNotFoundError as e:
+    if e.name == "flask":
+        _FLASK_AVAILABLE = False
+    else:
+        raise
 
 from core.utils.uuid_gen import (
     generate_uuid,
@@ -36,6 +43,7 @@ from core.utils.uuid_gen import (
 )
 from core.utils.clock import utcnow
 from core.utils.redis_payload import sanitize_payload
+from core.utils.trace_toggle import trace_contract_v1_enabled
 from core.auth import validate_all_auth
 from core.domain.models import Signal
 
@@ -64,8 +72,8 @@ except ImportError:
 # Phase 8C: Evidence debt safety valve (default: fail-closed)
 ALLOW_EVIDENCE_DEBT = os.getenv("ALLOW_EVIDENCE_DEBT", "0") == "1"
 
-# Phase 9: Trace Contract v1 toggle (default: DISABLED for safety)
-TRACE_CONTRACT_V1_ENABLED = os.getenv("TRACE_CONTRACT_V1_ENABLED", "0") == "1"
+# Phase 9: Trace Contract v1 toggle → zentral in core.utils.trace_toggle
+# (Modul-Level-Konstante entfernt; trace_contract_v1_enabled() wird direkt aufgerufen)
 
 # Logging konfigurieren via JSON-Config
 logging_config_path = Path(__file__).parent.parent.parent / "logging_config.json"
@@ -85,8 +93,11 @@ else:
 
 logger = logging.getLogger("risk_manager")
 
-# Flask App
-app = Flask(__name__)
+# Flask App (optional – nur für HTTP-Endpoints)
+if _FLASK_AVAILABLE:
+    app = Flask(__name__)
+else:
+    app = None
 
 # Globale Stats
 stats = {
@@ -342,7 +353,7 @@ def _phase9_enrich_evidence(
         decision: "ALLOW" or "BLOCK"
         reason_code: RC_XXX or None
         symbol: Trading symbol
-        ts_ms: Exact timestamp used for DECISION event (caller passes this)
+        ts_ms: Deterministischer Timestamp für decision_pk (signal_ts_ms, NICHT wall-clock)
 
     Returns:
         (enriched_evidence, input_hash, decision_pk)
@@ -350,7 +361,7 @@ def _phase9_enrich_evidence(
         - When toggle ON: returns enriched evidence with computed hashes
     """
     # ZERO-IMPACT when toggle OFF: no mutations, no validations, no computations
-    if not TRACE_CONTRACT_V1_ENABLED:
+    if not trace_contract_v1_enabled():
         return evidence, None, None
 
     # Toggle ON: proceed with enrichment
@@ -1149,103 +1160,109 @@ class RiskManager:
         )
 
         # Phase 9: Enrich evidence ONCE (before DECISION emit AND Order creation)
-        # Pass exact ts_ms used for DECISION event timestamp
+        # ts_ms: deterministisch (signal_ts_ms), NICHT wall-clock (now_ms).
+        # Fallback auf now_ms nur wenn Signal kein ts_ms liefert (Compat).
+        deterministic_ts_ms = evidence.get("timestamps_ms", {}).get("signal_ts_ms") or now_ms
         evidence, input_hash, decision_pk = _phase9_enrich_evidence(
             evidence=evidence,
             decision=decision,
             reason_code=reason_code,
             symbol=signal.symbol,
-            ts_ms=now_ms,
+            ts_ms=deterministic_ts_ms,
         )
 
-        # Emit DECISION event
-        # When toggle OFF: input_hash/decision_pk are None, _emit_risk_event computes them
-        # When toggle ON: pass pre-computed values to avoid recomputation divergence
-        self._emit_risk_event(
-            decision=decision,
-            reason_code=reason_code,
-            evidence=evidence,
-            decision_pk=decision_pk,
-            input_hash=input_hash,
-        )
-
-        # Phase 8C: Persist DECISION event to correlation_ledger
+        # Trace-Writes: nur wenn Toggle ON (Toggle OFF = zero side effects)
         signal_id = evidence.get("signal_id")
         decision_id = evidence.get("decision_id")
 
-        # Fail-closed: require signal_id and decision_id for correlation
-        if not signal_id or not decision_id:
-            if ALLOW_EVIDENCE_DEBT:
-                logger.warning(
-                    f"⚠️ correlation_ledger DECISION skipped: "
-                    f"signal_id={signal_id}, decision_id={decision_id} (ALLOW_EVIDENCE_DEBT=1)"
-                )
+        if trace_contract_v1_enabled():
+            # risk_events INSERT
+            self._emit_risk_event(
+                decision=decision,
+                reason_code=reason_code,
+                evidence=evidence,
+                decision_pk=decision_pk,
+                input_hash=input_hash,
+            )
+
+            # Phase 8C: correlation_ledger DECISION INSERT
+            # BLOCK-Entscheidungen nutzen event_type="DECISION" (BLOCK ist Entscheidungsergebnis,
+            # kein eigener Event-Typ). Details in blocked_decisions-Tabelle.
+            if not signal_id or not decision_id:
+                if ALLOW_EVIDENCE_DEBT:
+                    logger.warning(
+                        f"⚠️ correlation_ledger DECISION skipped: "
+                        f"signal_id={signal_id}, decision_id={decision_id} (ALLOW_EVIDENCE_DEBT=1)"
+                    )
+                else:
+                    raise ValueError(
+                        f"signal_id and decision_id required for correlation_ledger DECISION "
+                        f"(signal_id={signal_id}, decision_id={decision_id})"
+                    )
             else:
-                raise ValueError(
-                    f"signal_id and decision_id required for correlation_ledger DECISION "
-                    f"(signal_id={signal_id}, decision_id={decision_id})"
-                )
-        else:
-            if not self._persist_correlation_event(
-                signal_id=signal_id,
-                event_type="DECISION",
-                symbol=signal.symbol,
-                timestamp_ms=now_ms,
-                decision_id=decision_id,
-                payload=evidence,
-            ):
-                logger.warning(
-                    f"⚠️ correlation_ledger DECISION write failed (evidence debt)"
-                )
+                if not self._persist_correlation_event(
+                    signal_id=signal_id,
+                    event_type="DECISION",
+                    symbol=signal.symbol,
+                    timestamp_ms=now_ms,
+                    decision_id=decision_id,
+                    payload=evidence,
+                ):
+                    logger.warning(
+                        f"⚠️ correlation_ledger DECISION write failed (evidence debt)"
+                    )
 
         if decision == DECISION_BLOCK:
             logger.warning("Decision contract BLOCK: %s", reason_code)
             stats["orders_blocked"] += 1
             risk_state.signals_blocked += 1
 
-            # Phase 8C: Persist to blocked_decisions table (fail-closed)
-            if not signal_id or not decision_id:
-                if ALLOW_EVIDENCE_DEBT:
-                    logger.warning(
-                        f"⚠️ blocked_decisions skipped: "
-                        f"signal_id={signal_id}, decision_id={decision_id} (ALLOW_EVIDENCE_DEBT=1)"
-                    )
+            # Trace-Writes: blocked_decisions + Redis blocked_order (nur bei Toggle ON)
+            if trace_contract_v1_enabled():
+                # Phase 8C: blocked_decisions INSERT (fail-closed)
+                if not signal_id or not decision_id:
+                    if ALLOW_EVIDENCE_DEBT:
+                        logger.warning(
+                            f"⚠️ blocked_decisions skipped: "
+                            f"signal_id={signal_id}, decision_id={decision_id} (ALLOW_EVIDENCE_DEBT=1)"
+                        )
+                    else:
+                        raise ValueError(
+                            f"signal_id and decision_id required for blocked_decisions "
+                            f"(signal_id={signal_id}, decision_id={decision_id})"
+                        )
                 else:
-                    raise ValueError(
-                        f"signal_id and decision_id required for blocked_decisions "
-                        f"(signal_id={signal_id}, decision_id={decision_id})"
-                    )
-            else:
-                if not self._persist_blocked_decision(
-                    signal_id=signal_id,
-                    decision_id=decision_id,
-                    symbol=signal.symbol,
-                    reason_code=reason_code or "UNKNOWN",
-                    timestamp_ms=now_ms,
-                    evidence=evidence,
-                ):
-                    logger.warning(f"⚠️ blocked_decisions write failed (evidence debt)")
+                    if not self._persist_blocked_decision(
+                        signal_id=signal_id,
+                        decision_id=decision_id,
+                        symbol=signal.symbol,
+                        reason_code=reason_code or "UNKNOWN",
+                        timestamp_ms=now_ms,
+                        evidence=evidence,
+                    ):
+                        logger.warning(f"⚠️ blocked_decisions write failed (evidence debt)")
 
-            # Persist blocked_order artifact for audit/replay (Correlation Backbone)
-            blocked_order = {
-                "type": "blocked_order",
-                "order_id": generate_uuid(),
-                "decision_id": decision_id,
-                "signal_id": signal_id,
-                "trace_id": evidence.get("trace_id"),
-                "symbol": signal.symbol,
-                "side": signal.side,
-                "reason_code": reason_code,
-                "timestamp_ms": int(time.time() * 1000),
-            }
-            try:
-                self.redis_client.xadd(
-                    self.config.orders_blocked_stream,
-                    sanitize_payload(blocked_order),
-                    maxlen=10000,
-                )
-            except Exception:
-                logger.exception("Failed to persist blocked_order artifact")
+                # Redis blocked_order Artefakt (audit/replay)
+                blocked_order = {
+                    "type": "blocked_order",
+                    "order_id": generate_uuid(),
+                    "decision_id": decision_id,
+                    "signal_id": signal_id,
+                    "trace_id": evidence.get("trace_id"),
+                    "symbol": signal.symbol,
+                    "side": signal.side,
+                    "reason_code": reason_code,
+                    "timestamp_ms": int(time.time() * 1000),
+                }
+                try:
+                    self.redis_client.xadd(
+                        self.config.orders_blocked_stream,
+                        sanitize_payload(blocked_order),
+                        maxlen=10000,
+                    )
+                except Exception:
+                    logger.exception("Failed to persist blocked_order artifact")
+
             return None
 
         if not signal.strategy_id:
@@ -1855,76 +1872,75 @@ class RiskManager:
 
 # ===== FLASK ENDPOINTS =====
 
+if _FLASK_AVAILABLE and app is not None:
 
-@app.route("/health")
-def health():
-    return jsonify(
-        {
-            "status": "ok" if stats["status"] == "running" else "error",
-            "service": "risk_manager",
-            "version": "0.1.0",
-        }
-    )
+    @app.route("/health")
+    def health():
+        return jsonify(
+            {
+                "status": "ok" if stats["status"] == "running" else "error",
+                "service": "risk_manager",
+                "version": "0.1.0",
+            }
+        )
 
+    @app.route("/status")
+    def status():
+        return jsonify(
+            {
+                **stats,
+                "risk_state": {
+                    "total_exposure": risk_state.total_exposure,
+                    "daily_pnl": risk_state.daily_pnl,
+                    "open_positions": risk_state.open_positions,
+                    "signals_approved": risk_state.signals_approved,
+                    "signals_blocked": risk_state.signals_blocked,
+                    "circuit_breaker": risk_state.circuit_breaker_active,
+                    "positions": risk_state.positions,
+                    "pending_orders": risk_state.pending_orders,
+                    "last_prices": risk_state.last_prices,
+                },
+            }
+        )
 
-@app.route("/status")
-def status():
-    return jsonify(
-        {
-            **stats,
-            "risk_state": {
-                "total_exposure": risk_state.total_exposure,
-                "daily_pnl": risk_state.daily_pnl,
-                "open_positions": risk_state.open_positions,
-                "signals_approved": risk_state.signals_approved,
-                "signals_blocked": risk_state.signals_blocked,
-                "circuit_breaker": risk_state.circuit_breaker_active,
-                "positions": risk_state.positions,
-                "pending_orders": risk_state.pending_orders,
-                "last_prices": risk_state.last_prices,
-            },
-        }
-    )
-
-
-@app.route("/metrics")
-def metrics():
-    body = (
-        "# HELP signals_received_total Signals empfangen (Redis PubSub)\n"
-        "# TYPE signals_received_total counter\n"
-        f"signals_received_total {stats['signals_received']}\n\n"
-        "# HELP orders_approved_total Orders freigegeben\n"
-        "# TYPE orders_approved_total counter\n"
-        f"orders_approved_total {stats['orders_approved']}\n\n"
-        "# HELP orders_blocked_total Orders blockiert (Risk Checks)\n"
-        "# TYPE orders_blocked_total counter\n"
-        f"orders_blocked_total {stats['orders_blocked']}\n\n"
-        "# HELP orders_skipped_total Orders übersprungen (qty=0, parse errors)\n"
-        "# TYPE orders_skipped_total counter\n"
-        f"orders_skipped_total {stats['orders_skipped']}\n\n"
-        "# HELP circuit_breaker_active Circuit Breaker Status\n"
-        "# TYPE circuit_breaker_active gauge\n"
-        f"circuit_breaker_active {1 if risk_state.circuit_breaker_active else 0}\n\n"
-        "# HELP order_results_received_total Anzahl verarbeiteter Order-Result Events\n"
-        "# TYPE order_results_received_total counter\n"
-        f"order_results_received_total {stats['order_results_received']}\n\n"
-        "# HELP orders_rejected_execution_total Abgelehnte Orders durch Execution-Service\n"
-        "# TYPE orders_rejected_execution_total counter\n"
-        f"orders_rejected_execution_total {stats['orders_rejected_execution']}\n\n"
-        "# HELP risk_pending_orders_total Anzahl offener Auftragsbestätigungen\n"
-        "# TYPE risk_pending_orders_total gauge\n"
-        f"risk_pending_orders_total {risk_state.pending_orders}\n\n"
-        "# HELP risk_total_exposure_value Gesamtposition (Notional)\n"
-        "# TYPE risk_total_exposure_value gauge\n"
-        f"risk_total_exposure_value {risk_state.total_exposure}\n\n"
-        "# HELP risk_reduce_only_approved_total Reduce-only SELL orders approved while over exposure limit\n"
-        "# TYPE risk_reduce_only_approved_total counter\n"
-        f"risk_reduce_only_approved_total {stats.get('reduce_only_approved', 0)}\n\n"
-        "# HELP risk_proactive_unwind_triggered_total Proactive auto-unwind triggers (SELL orders generated when over limit)\n"
-        "# TYPE risk_proactive_unwind_triggered_total counter\n"
-        f"risk_proactive_unwind_triggered_total {stats.get('proactive_unwind_triggered', 0)}\n"
-    )
-    return Response(body, mimetype="text/plain")
+    @app.route("/metrics")
+    def metrics():
+        body = (
+            "# HELP signals_received_total Signals empfangen (Redis PubSub)\n"
+            "# TYPE signals_received_total counter\n"
+            f"signals_received_total {stats['signals_received']}\n\n"
+            "# HELP orders_approved_total Orders freigegeben\n"
+            "# TYPE orders_approved_total counter\n"
+            f"orders_approved_total {stats['orders_approved']}\n\n"
+            "# HELP orders_blocked_total Orders blockiert (Risk Checks)\n"
+            "# TYPE orders_blocked_total counter\n"
+            f"orders_blocked_total {stats['orders_blocked']}\n\n"
+            "# HELP orders_skipped_total Orders übersprungen (qty=0, parse errors)\n"
+            "# TYPE orders_skipped_total counter\n"
+            f"orders_skipped_total {stats['orders_skipped']}\n\n"
+            "# HELP circuit_breaker_active Circuit Breaker Status\n"
+            "# TYPE circuit_breaker_active gauge\n"
+            f"circuit_breaker_active {1 if risk_state.circuit_breaker_active else 0}\n\n"
+            "# HELP order_results_received_total Anzahl verarbeiteter Order-Result Events\n"
+            "# TYPE order_results_received_total counter\n"
+            f"order_results_received_total {stats['order_results_received']}\n\n"
+            "# HELP orders_rejected_execution_total Abgelehnte Orders durch Execution-Service\n"
+            "# TYPE orders_rejected_execution_total counter\n"
+            f"orders_rejected_execution_total {stats['orders_rejected_execution']}\n\n"
+            "# HELP risk_pending_orders_total Anzahl offener Auftragsbestätigungen\n"
+            "# TYPE risk_pending_orders_total gauge\n"
+            f"risk_pending_orders_total {risk_state.pending_orders}\n\n"
+            "# HELP risk_total_exposure_value Gesamtposition (Notional)\n"
+            "# TYPE risk_total_exposure_value gauge\n"
+            f"risk_total_exposure_value {risk_state.total_exposure}\n\n"
+            "# HELP risk_reduce_only_approved_total Reduce-only SELL orders approved while over exposure limit\n"
+            "# TYPE risk_reduce_only_approved_total counter\n"
+            f"risk_reduce_only_approved_total {stats.get('reduce_only_approved', 0)}\n\n"
+            "# HELP risk_proactive_unwind_triggered_total Proactive auto-unwind triggers (SELL orders generated when over limit)\n"
+            "# TYPE risk_proactive_unwind_triggered_total counter\n"
+            f"risk_proactive_unwind_triggered_total {stats.get('proactive_unwind_triggered', 0)}\n"
+        )
+        return Response(body, mimetype="text/plain")
 
 
 # ===== SIGNAL HANDLER =====
@@ -1959,7 +1975,13 @@ if __name__ == "__main__":
     # Bootstrap risk state from DB positions (source-of-truth reconciliation)
     manager.bootstrap_state_from_db()
 
-    # Flask in Thread
+    # Flask in Thread (nur wenn Flask verfügbar)
+    if not _FLASK_AVAILABLE or app is None:
+        raise RuntimeError(
+            "Flask ist nicht installiert. HTTP-Endpoints (health/status/metrics) "
+            "benötigen Flask als optionale Abhängigkeit: pip install flask"
+        )
+
     flask_thread = Thread(target=lambda: app.run(host="0.0.0.0", port=config.port))
     flask_thread.daemon = True
     flask_thread.start()
