@@ -28,7 +28,9 @@ logger = logging.getLogger(config.SERVICE_NAME)
 ALLOW_EVIDENCE_DEBT = os.getenv("ALLOW_EVIDENCE_DEBT", "0") == "1"
 
 # Valid event types for correlation_ledger
-VALID_EVENT_TYPES = {"SIGNAL", "DECISION", "ORDER", "FILL", "BLOCK"}
+# BLOCK ist ein Entscheidungsergebnis (event_type="DECISION"), kein eigener Event-Typ.
+# Details zu BLOCK-Entscheidungen in der blocked_decisions-Tabelle.
+VALID_EVENT_TYPES = {"SIGNAL", "DECISION", "ORDER", "FILL"}
 
 
 class Database:
