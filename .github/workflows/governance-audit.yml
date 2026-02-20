@@ -1,0 +1,177 @@
+name: Governance Audit
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  governance-audit:
+    name: governance-audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Setup Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Install minimal dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyyaml==6.0.3
+
+      - name: Ensure governance guard files exist
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          fetch_from_ref() {
+            local path="$1"
+            local ref="$2"
+
+            if [ -f "$path" ]; then
+              echo "Using repository file: $path"
+              return 0
+            fi
+
+            echo "Repository file missing, fetching from ref '$ref': $path"
+            mkdir -p "$(dirname "$path")"
+
+            if ! gh api "repos/${GITHUB_REPOSITORY}/contents/${path}?ref=${ref}" --jq '.content' | tr -d '\n' | base64 -d > "$path"; then
+              echo "::error::Unable to obtain required file '${path}' from ref '${ref}'."
+              exit 1
+            fi
+          }
+
+          fetch_from_ref "scripts/governance/check_branch_protection_drift.py" "governance/branch-protection-drift-guard"
+          fetch_from_ref "reports/BRANCH_PROTECTION_BASELINE_main.json" "governance/branch-protection-drift-guard"
+          fetch_from_ref "scripts/governance/check_required_check_contexts.py" "governance/required-check-context-drift-guard"
+          fetch_from_ref "reports/REQUIRED_CHECK_CONTEXTS_BASELINE_main.json" "governance/required-check-context-drift-guard"
+
+      - name: Select token for branch protection read
+        id: select_token
+        env:
+          TOKEN_CDB: ${{ secrets.CDB_GITHUB_TOKEN }}
+          TOKEN_CLAUDE: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          TOKEN_DEFAULT: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          can_read_branch_protection() {
+            local token="$1"
+            if [ -z "${token:-}" ]; then
+              return 1
+            fi
+            GH_TOKEN="$token" gh api "repos/${GITHUB_REPOSITORY}/branches/main/protection" > /dev/null 2>&1
+          }
+
+          selected_source=""
+          selected_token=""
+
+          if can_read_branch_protection "$TOKEN_CDB"; then
+            selected_source="CDB_GITHUB_TOKEN"
+            selected_token="$TOKEN_CDB"
+          elif can_read_branch_protection "$TOKEN_CLAUDE"; then
+            selected_source="CLAUDE_CODE_OAUTH_TOKEN"
+            selected_token="$TOKEN_CLAUDE"
+          elif can_read_branch_protection "$TOKEN_DEFAULT"; then
+            selected_source="github.token"
+            selected_token="$TOKEN_DEFAULT"
+          else
+            selected_source="NONE"
+            selected_token=""
+            echo "::warning::No available token can read branch protection endpoint. Branch-protection drift check will run in baseline-fallback mode."
+          fi
+
+          if [ -n "$selected_token" ]; then
+            echo "GH_TOKEN=$selected_token" >> "$GITHUB_ENV"
+          fi
+          echo "token_source=$selected_source" >> "$GITHUB_OUTPUT"
+
+      - name: Run governance checks (read-only)
+        id: run_guards
+        shell: bash
+        run: |
+          set +e
+
+          token_source="${{ steps.select_token.outputs.token_source }}"
+          bp_mode="live"
+          if [ "$token_source" = "NONE" ]; then
+            bp_mode="baseline-fallback"
+            python scripts/governance/check_branch_protection_drift.py --current-json reports/BRANCH_PROTECTION_BASELINE_main.json
+            bp_code=$?
+          else
+            python scripts/governance/check_branch_protection_drift.py
+            bp_code=$?
+          fi
+
+          python scripts/governance/check_required_check_contexts.py
+          rc_code=$?
+
+          set -e
+
+          map_status() {
+            case "$1" in
+              0) echo "OK" ;;
+              2) echo "DRIFT" ;;
+              *) echo "ERROR" ;;
+            esac
+          }
+
+          bp_status="$(map_status "$bp_code")"
+          rc_status="$(map_status "$rc_code")"
+
+          echo "branch_protection_code=$bp_code" >> "$GITHUB_OUTPUT"
+          echo "required_contexts_code=$rc_code" >> "$GITHUB_OUTPUT"
+          echo "branch_protection_status=$bp_status" >> "$GITHUB_OUTPUT"
+          echo "required_contexts_status=$rc_status" >> "$GITHUB_OUTPUT"
+          echo "branch_protection_mode=$bp_mode" >> "$GITHUB_OUTPUT"
+
+          if [ "$bp_code" -eq 0 ] && [ "$rc_code" -eq 0 ]; then
+            exit 0
+          fi
+          if [ "$bp_code" -eq 2 ] || [ "$rc_code" -eq 2 ]; then
+            exit 2
+          fi
+          exit 1
+
+      - name: Step Summary
+        if: always()
+        shell: bash
+        run: |
+          bp="${{ steps.run_guards.outputs.branch_protection_status }}"
+          rc="${{ steps.run_guards.outputs.required_contexts_status }}"
+          token_source="${{ steps.select_token.outputs.token_source }}"
+          bp_mode="${{ steps.run_guards.outputs.branch_protection_mode }}"
+          [ -z "$bp" ] && bp="NOT_RUN"
+          [ -z "$rc" ] && rc="NOT_RUN"
+          [ -z "$token_source" ] && token_source="UNAVAILABLE"
+          [ -z "$bp_mode" ] && bp_mode="UNAVAILABLE"
+
+          {
+            echo "## Governance Audit"
+            echo "- Branch protection drift: ${bp}"
+            echo "- Required contexts drift: ${rc}"
+            echo "- Branch protection token source: ${token_source}"
+            echo "- Branch protection mode: ${bp_mode}"
+            echo "- Note: manual-only workflow; no auto-apply."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload governance artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: governance-audit-reports
+          path: |
+            reports/BRANCH_PROTECTION_*main.*
+            reports/REQUIRED_CHECK_CONTEXTS_*main.*
+          if-no-files-found: warn
