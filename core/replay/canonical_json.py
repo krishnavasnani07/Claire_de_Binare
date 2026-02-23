@@ -8,7 +8,8 @@ Rules:
   - Compact separators (",", ":") -- no whitespace variance
   - None values OMITTED from dict serialization (not serialized as null)
   - None values in lists are preserved as null (removing would change indices)
-  - Floats sanitized: NaN/Inf -> None -> omitted; normal floats rounded to 10 decimals
+  - Floats sanitized: NaN/Inf -> None (omitted from dicts, null in lists);
+    normal floats rounded to 10 decimals; -0.0 normalized to 0.0
   - UTF-8 encoding for hashing
 
 Isolation: This module has its own _sanitize_float(), intentionally decoupled

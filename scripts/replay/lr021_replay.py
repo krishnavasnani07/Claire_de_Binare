@@ -42,9 +42,15 @@ REQUIRED_FIELDS = {"schema_version", "event_type", "event_id", "ts_ms", "payload
 VALID_EVENT_TYPES = {"DECISION", "ORDER", "FILL"}
 
 
-def validate_envelope(obj: dict, line_number: int) -> list[str]:
+def validate_envelope(obj: object, line_number: int) -> list[str]:
     """Validate envelope schema. Returns list of error messages (empty = valid)."""
     errors = []
+    if not isinstance(obj, dict):
+        errors.append(
+            f"line {line_number}: envelope must be a JSON object, "
+            f"got {type(obj).__name__}"
+        )
+        return errors
     missing = REQUIRED_FIELDS - set(obj.keys())
     if missing:
         errors.append(f"line {line_number}: missing fields: {sorted(missing)}")

@@ -15,7 +15,7 @@
 | `tests/fixtures/replay/lr021_expected_hashes.jsonl` | Golden file (frozen expected hashes) |
 | `tests/unit/replay/test_canonical_json.py` | 30 tests: sanitization, None-omission, key-order independence, pinned bytes |
 | `tests/unit/replay/test_envelopes.py` | 7 tests: envelope `to_dict()` contract |
-| `tests/unit/replay/test_lr021_replay.py` | 13 tests: golden-file replay, validation, chain integrity, lenient mode |
+| `tests/unit/replay/test_lr021_replay.py` | 15 tests: golden-file replay, validation, chain integrity, lenient mode |
 
 ## How to Run Replay
 
