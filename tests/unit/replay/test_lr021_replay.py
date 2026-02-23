@@ -72,6 +72,20 @@ class TestGoldenFileReplay:
 
 
 class TestValidation:
+    def test_non_dict_json_strict(self):
+        """Valid JSON but not an object -> strict raises."""
+        for bad_value in ["[]", '"foo"', "42", "true"]:
+            with pytest.raises(ValueError, match="must be a JSON object"):
+                replay(io.StringIO(bad_value + "\n"), io.StringIO(), strict=True)
+
+    def test_non_dict_json_lenient(self):
+        """Valid JSON but not an object -> lenient skips."""
+        output = io.StringIO()
+        summary = replay(io.StringIO("[]\n"), output, strict=False, chain=True)
+        assert summary["processed"] == 0
+        assert summary["skipped"] == 1
+        assert "must be a JSON object" in summary["errors"][0]
+
     def test_missing_fields_strict(self):
         bad_input = '{"event_type":"DECISION"}\n'
         with pytest.raises(ValueError, match="missing fields"):
