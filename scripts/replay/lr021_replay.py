@@ -28,11 +28,12 @@ import json
 import sys
 from typing import TextIO
 
-# Allow running as standalone script: add project root to path
+# Allow running as standalone script: scripts/ has no __init__.py,
+# so we add repo root to sys.path for `core.*` imports.
 if __name__ == "__main__":
-    import os
+    from pathlib import Path
 
-    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from core.replay.canonical_json import canonical_json_dumps, sha256_hex
 

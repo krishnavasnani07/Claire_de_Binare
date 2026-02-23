@@ -1,7 +1,7 @@
 """
 Canonical JSON serialization for deterministic replay hashing.
 
-Governance: CDB_PSM_POLICY.md (Event-Sourcing, Determinismus)
+Governance: LR-021 Slice 1 Evidence (docs/live-readiness/LR-021-EVIDENCE-SLICE1.md)
 
 Rules:
   - Keys sorted lexicographically (sort_keys=True)
