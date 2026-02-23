@@ -398,6 +398,36 @@ def process_order(order_data: dict):
                     corr_err,
                 )
 
+        # LR-021 Slice 2: FILL envelope emission (toggle-gated, default OFF)
+        try:
+            _lr021_emit = os.getenv("LR021_ENVELOPE_EMIT_ENABLED", "0") == "1"
+        except Exception:
+            _lr021_emit = False
+        if (
+            _lr021_emit
+            and ExecutionResult._schema_status(result.status) == "FILLED"
+            and getattr(result, "fill_id", None)
+        ):
+            try:
+                from core.replay.emitter import emit_fill_envelope
+
+                emit_fill_envelope(
+                    event_id=str(result.fill_id),
+                    ts_ms=timestamp_ms,
+                    order_id=str(result.order_id),
+                    fill_id=str(result.fill_id),
+                    symbol=str(result.symbol),
+                    side=str(result.side),
+                    filled_quantity=float(result.filled_quantity),
+                    price=float(result.price) if result.price is not None else None,
+                    policy_id=getattr(order, "policy_id", None),
+                    policy_hash=getattr(order, "policy_hash", None),
+                    input_hash=getattr(order, "input_hash", None),
+                    output_hash=getattr(order, "output_hash", None),
+                )
+            except Exception:
+                pass  # Guardrail: never break execution path
+
         # Update stats (Thread-safe)
         schema_status = ExecutionResult._schema_status(result.status)
         if schema_status == "FILLED":

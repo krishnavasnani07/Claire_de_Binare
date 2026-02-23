@@ -1167,6 +1167,30 @@ class RiskManager:
             ts_ms=deterministic_ts_ms,
         )
 
+        # LR-021 Slice 2: DECISION envelope emission (toggle-gated, default OFF)
+        try:
+            _lr021_emit = os.getenv("LR021_ENVELOPE_EMIT_ENABLED", "0") == "1"
+        except Exception:
+            _lr021_emit = False
+        if _lr021_emit and evidence.get("decision_id"):
+            try:
+                from core.replay.emitter import emit_decision_envelope
+
+                emit_decision_envelope(
+                    event_id=str(evidence["decision_id"]),
+                    ts_ms=deterministic_ts_ms,
+                    decision=decision,
+                    reason_code=reason_code,
+                    symbol=signal.symbol,
+                    evidence=evidence,
+                    policy_id=evidence.get("policy_id"),
+                    policy_hash=evidence.get("policy_hash"),
+                    input_hash=evidence.get("input_hash"),
+                    output_hash=evidence.get("output_hash"),
+                )
+            except Exception:
+                pass  # Guardrail: never break trading path
+
         # Trace-Writes: nur wenn Toggle ON (Toggle OFF = zero side effects)
         signal_id = evidence.get("signal_id")
         decision_id = evidence.get("decision_id")
@@ -1461,6 +1485,34 @@ class RiskManager:
             f"Reserved {estimated_notional:.2f} USDT exposure for {order.client_id} "
             f"(total pending: {risk_state.pending_exposure_usdt:.2f})"
         )
+
+        # LR-021 Slice 2: ORDER envelope emission (toggle-gated, default OFF)
+        try:
+            _lr021_emit = os.getenv("LR021_ENVELOPE_EMIT_ENABLED", "0") == "1"
+        except Exception:
+            _lr021_emit = False
+        if _lr021_emit and getattr(order, "order_id", None):
+            try:
+                from core.replay.emitter import emit_order_envelope
+
+                if order.price is None:
+                    raise ValueError("order.price is None — skip order envelope")
+                emit_order_envelope(
+                    event_id=str(order.order_id),
+                    ts_ms=int(order.timestamp * 1000) if getattr(order, "timestamp", None) else deterministic_ts_ms,
+                    symbol=order.symbol,
+                    side=str(order.side),
+                    quantity=float(order.quantity),
+                    price=float(order.price),
+                    signal_id=order.signal_id or None,
+                    decision_id=order.decision_id or None,
+                    policy_id=getattr(order, "policy_id", None),
+                    policy_hash=getattr(order, "policy_hash", None),
+                    input_hash=getattr(order, "input_hash", None),
+                    output_hash=getattr(order, "output_hash", None),
+                )
+            except Exception:
+                pass  # Guardrail: never break trading path
 
         return order
 
