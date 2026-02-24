@@ -400,7 +400,12 @@ def process_order(order_data: dict):
 
         # LR-021 Slice 2: FILL envelope emission (toggle-gated, default OFF)
         try:
-            _lr021_emit = os.getenv("LR021_ENVELOPE_EMIT_ENABLED", "0") == "1"
+            _cdb_val = os.getenv("CDB_ENVELOPE_EMISSION")
+            _lr021_emit = (
+                (_cdb_val == "1")
+                if _cdb_val is not None
+                else os.getenv("LR021_ENVELOPE_EMIT_ENABLED", "0") == "1"
+            )
         except Exception:
             _lr021_emit = False
         if (

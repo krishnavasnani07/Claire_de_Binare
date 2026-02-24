@@ -134,6 +134,70 @@ class TestValidation:
         with pytest.raises(ValueError, match="invalid JSON"):
             replay(io.StringIO("NOT JSON\n"), io.StringIO(), strict=True)
 
+    def test_unknown_schema_version_strict(self):
+        """Unknown schema_version in strict mode raises ValueError."""
+        bad_input = json.dumps({
+            "schema_version": "envelope.v2",
+            "event_type": "DECISION",
+            "event_id": "ev-001",
+            "ts_ms": 1000,
+            "payload": {},
+        }) + "\n"
+        with pytest.raises(ValueError, match="unsupported schema_version"):
+            replay(io.StringIO(bad_input), io.StringIO(), strict=True)
+
+    def test_unknown_schema_version_lenient(self):
+        """Unknown schema_version in lenient mode skips + counts error."""
+        bad_input = json.dumps({
+            "schema_version": "envelope.v2",
+            "event_type": "DECISION",
+            "event_id": "ev-001",
+            "ts_ms": 1000,
+            "payload": {},
+        }) + "\n"
+        output = io.StringIO()
+        summary = replay(io.StringIO(bad_input), output, strict=False, chain=True)
+        assert summary["processed"] == 0
+        assert summary["skipped"] == 1
+        assert "unsupported schema_version" in summary["errors"][0]
+
+    def test_validate_envelope_bad_schema_version(self):
+        """Direct validate_envelope call with unknown schema_version."""
+        obj = {
+            "schema_version": "envelope.v999",
+            "event_type": "DECISION",
+            "event_id": "ev-1",
+            "ts_ms": 1000,
+            "payload": {},
+        }
+        errors = validate_envelope(obj, 1)
+        assert len(errors) == 1
+        assert "unsupported schema_version" in errors[0]
+
+    def test_empty_schema_version_strict(self):
+        """Empty string schema_version in strict mode raises ValueError."""
+        bad_input = json.dumps({
+            "schema_version": "",
+            "event_type": "DECISION",
+            "event_id": "ev-001",
+            "ts_ms": 1000,
+            "payload": {},
+        }) + "\n"
+        with pytest.raises(ValueError, match="unsupported schema_version"):
+            replay(io.StringIO(bad_input), io.StringIO(), strict=True)
+
+    def test_none_schema_version_strict(self):
+        """None schema_version in strict mode raises ValueError."""
+        bad_input = json.dumps({
+            "schema_version": None,
+            "event_type": "DECISION",
+            "event_id": "ev-001",
+            "ts_ms": 1000,
+            "payload": {},
+        }) + "\n"
+        with pytest.raises(ValueError, match="unsupported schema_version"):
+            replay(io.StringIO(bad_input), io.StringIO(), strict=True)
+
     def test_validate_envelope_valid(self):
         obj = {
             "schema_version": "envelope.v1",
@@ -219,6 +283,44 @@ class TestChainHash:
         assert "chain_hash" not in result
         assert "event_hash" in result
         assert summary["final_chain_hash"] is None
+
+
+class TestCanonicalReplayOutput:
+    """Verify replay output uses canonical_json_dumps."""
+
+    def test_none_in_payload_omitted_from_replay_output(self):
+        """Replay output omits None values from payload (canonical_json_dumps)."""
+        event = json.dumps({
+            "schema_version": "envelope.v1",
+            "event_type": "DECISION",
+            "event_id": "ev-c1",
+            "ts_ms": 1000,
+            "payload": {"decision": "ALLOW", "reason_code": None},
+        })
+        output = io.StringIO()
+        replay(io.StringIO(event + "\n"), output, strict=True, chain=False)
+        output.seek(0)
+        line = output.readline().strip()
+        assert '"reason_code"' not in line
+        parsed = json.loads(line)
+        assert "reason_code" not in parsed["payload"]
+
+    def test_negative_zero_normalized_in_replay_output(self):
+        """Replay output normalizes -0.0 to 0.0 (canonical_json_dumps)."""
+        event = json.dumps({
+            "schema_version": "envelope.v1",
+            "event_type": "ORDER",
+            "event_id": "ev-c2",
+            "ts_ms": 2000,
+            "payload": {"price": -0.0},
+        })
+        output = io.StringIO()
+        replay(io.StringIO(event + "\n"), output, strict=True, chain=False)
+        output.seek(0)
+        raw = output.getvalue()
+        assert "-0.0" not in raw
+        parsed = json.loads(output.readline())
+        assert parsed["payload"]["price"] == 0.0
 
 
 class TestEdgeCases:

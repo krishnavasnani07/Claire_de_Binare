@@ -4,7 +4,8 @@ Toggle-gated envelope emitter for LR-021 Slice 2.
 Emits DecisionEnvelopeV1 / OrderEnvelopeV1 / FillEnvelopeV1 as structured
 JSONL to a configured output (default: stdout logger). Toggle default OFF.
 
-Toggle: LR021_ENVELOPE_EMIT_ENABLED=0|1 (env var, read per call, no cache).
+Toggle: CDB_ENVELOPE_EMISSION=0|1 (primary) | LR021_ENVELOPE_EMIT_ENABLED=0|1 (legacy alias).
+Read per call, no cache. CDB_ takes precedence when set.
 When OFF: all emit functions are no-ops (zero side effects, zero I/O).
 
 Governance: LR-021 Slice 2 Evidence (docs/live-readiness/LR-021-EVIDENCE-SLICE2.md)
@@ -23,7 +24,6 @@ relations:
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 from typing import Any, Dict, Optional
@@ -34,11 +34,19 @@ logger = logging.getLogger("lr021.emitter")
 
 
 def envelope_emit_enabled() -> bool:
-    """True only when LR021_ENVELOPE_EMIT_ENABLED=1.
+    """True only when envelope emission toggle is '1'.
+
+    Precedence: CDB_ENVELOPE_EMISSION (primary) > LR021_ENVELOPE_EMIT_ENABLED (legacy alias).
+    If CDB_ENVELOPE_EMISSION is set (any value including '0'), it wins.
+    Otherwise falls back to LR021_ENVELOPE_EMIT_ENABLED.
+    Default: '0' (OFF).
 
     Reads os.getenv on every call (no module-level cache) so tests
     can toggle via monkeypatch.setenv.
     """
+    primary = os.getenv("CDB_ENVELOPE_EMISSION")
+    if primary is not None:
+        return primary == "1"
     return os.getenv("LR021_ENVELOPE_EMIT_ENABLED", "0") == "1"
 
 
@@ -89,7 +97,7 @@ def emit_envelope(envelope: dict) -> None:
 
     event_hash = _compute_event_hash(envelope)
     output = {**envelope, "event_hash": event_hash}
-    line = json.dumps(output, sort_keys=True, separators=(",", ":"))
+    line = canonical_json_dumps(output)
     logger.info(line)
 
 
