@@ -6,6 +6,9 @@ Governance: LR-021 Slice 2 Evidence (docs/live-readiness/LR-021-EVIDENCE-SLICE2.
 import json
 import logging
 
+import pytest
+
+from core.replay.canonical_json import canonical_json_dumps
 from core.replay.emitter import (
     _build_envelope,
     _compute_event_hash,
@@ -17,20 +20,57 @@ from core.replay.emitter import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _clean_toggle_env(monkeypatch):
+    """Ensure no toggle env leaks between tests."""
+    monkeypatch.delenv("CDB_ENVELOPE_EMISSION", raising=False)
+    monkeypatch.delenv("LR021_ENVELOPE_EMIT_ENABLED", raising=False)
+
+
 class TestEnvelopeEmitEnabled:
     def test_default_off(self, monkeypatch):
-        monkeypatch.delenv("LR021_ENVELOPE_EMIT_ENABLED", raising=False)
+        """Both vars unset -> OFF."""
         assert envelope_emit_enabled() is False
 
-    def test_explicit_zero_off(self, monkeypatch):
-        monkeypatch.setenv("LR021_ENVELOPE_EMIT_ENABLED", "0")
-        assert envelope_emit_enabled() is False
-
-    def test_one_on(self, monkeypatch):
+    def test_legacy_one_on(self, monkeypatch):
+        """Legacy var '1' with CDB_ unset -> ON."""
         monkeypatch.setenv("LR021_ENVELOPE_EMIT_ENABLED", "1")
         assert envelope_emit_enabled() is True
 
-    def test_garbage_value_off(self, monkeypatch):
+    def test_legacy_zero_off(self, monkeypatch):
+        """Legacy var '0' with CDB_ unset -> OFF."""
+        monkeypatch.setenv("LR021_ENVELOPE_EMIT_ENABLED", "0")
+        assert envelope_emit_enabled() is False
+
+    def test_primary_one_on(self, monkeypatch):
+        """CDB_ var '1' -> ON."""
+        monkeypatch.setenv("CDB_ENVELOPE_EMISSION", "1")
+        assert envelope_emit_enabled() is True
+
+    def test_primary_zero_off(self, monkeypatch):
+        """CDB_ var '0' -> OFF."""
+        monkeypatch.setenv("CDB_ENVELOPE_EMISSION", "0")
+        assert envelope_emit_enabled() is False
+
+    def test_primary_wins_over_legacy(self, monkeypatch):
+        """CDB_='0' takes precedence even when legacy='1'."""
+        monkeypatch.setenv("CDB_ENVELOPE_EMISSION", "0")
+        monkeypatch.setenv("LR021_ENVELOPE_EMIT_ENABLED", "1")
+        assert envelope_emit_enabled() is False
+
+    def test_primary_one_wins_over_legacy_zero(self, monkeypatch):
+        """CDB_='1' takes precedence even when legacy='0'."""
+        monkeypatch.setenv("CDB_ENVELOPE_EMISSION", "1")
+        monkeypatch.setenv("LR021_ENVELOPE_EMIT_ENABLED", "0")
+        assert envelope_emit_enabled() is True
+
+    def test_garbage_primary_off(self, monkeypatch):
+        """Garbage value in CDB_ -> OFF."""
+        monkeypatch.setenv("CDB_ENVELOPE_EMISSION", "yes")
+        assert envelope_emit_enabled() is False
+
+    def test_garbage_legacy_off(self, monkeypatch):
+        """Garbage value in legacy -> OFF."""
         monkeypatch.setenv("LR021_ENVELOPE_EMIT_ENABLED", "yes")
         assert envelope_emit_enabled() is False
 
@@ -119,6 +159,61 @@ class TestEmitEnvelope:
             emit_envelope(env)
         parsed = json.loads(caplog.records[0].message)
         assert parsed["event_hash"] == expected_hash
+
+
+class TestCanonicalOutput:
+    """Verify emitted output uses canonical_json_dumps (None omission, float normalization)."""
+
+    def test_none_in_payload_omitted_from_output(self, monkeypatch, caplog):
+        """canonical_json_dumps omits None values from emitted output line."""
+        monkeypatch.setenv("LR021_ENVELOPE_EMIT_ENABLED", "1")
+        env = _build_envelope(
+            event_type="DECISION",
+            event_id="ev-canon-1",
+            ts_ms=1000,
+            payload={"decision": "ALLOW", "reason_code": None},
+        )
+        with caplog.at_level(logging.INFO, logger="lr021.emitter"):
+            emit_envelope(env)
+        line = caplog.records[0].message
+        assert '"reason_code"' not in line
+        parsed = json.loads(line)
+        assert "reason_code" not in parsed["payload"]
+
+    def test_negative_zero_normalized_in_output(self, monkeypatch, caplog):
+        """canonical_json_dumps normalizes -0.0 to 0.0 in emitted output."""
+        monkeypatch.setenv("LR021_ENVELOPE_EMIT_ENABLED", "1")
+        env = _build_envelope(
+            event_type="ORDER",
+            event_id="ev-canon-2",
+            ts_ms=2000,
+            payload={"price": -0.0},
+        )
+        with caplog.at_level(logging.INFO, logger="lr021.emitter"):
+            emit_envelope(env)
+        line = caplog.records[0].message
+        assert '"-0.0"' not in line
+        assert "-0.0" not in line
+        parsed = json.loads(line)
+        assert parsed["payload"]["price"] == 0.0
+
+    def test_key_order_canonical_in_output(self, monkeypatch, caplog):
+        """Emitted output line matches canonical_json_dumps serialization."""
+        monkeypatch.setenv("LR021_ENVELOPE_EMIT_ENABLED", "1")
+        env = _build_envelope(
+            event_type="DECISION",
+            event_id="ev-canon-3",
+            ts_ms=3000,
+            payload={"z_key": 1, "a_key": 2},
+        )
+        with caplog.at_level(logging.INFO, logger="lr021.emitter"):
+            emit_envelope(env)
+        line = caplog.records[0].message
+        parsed = json.loads(line)
+        # Remove event_hash, re-serialize with canonical_json_dumps — should match
+        event_hash = parsed.pop("event_hash")
+        expected_line = canonical_json_dumps({**parsed, "event_hash": event_hash})
+        assert line == expected_line
 
 
 class TestEmitDecisionEnvelope:

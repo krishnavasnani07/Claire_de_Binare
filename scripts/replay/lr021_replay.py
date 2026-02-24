@@ -39,6 +39,7 @@ from core.replay.canonical_json import canonical_json_dumps, sha256_hex
 
 
 REQUIRED_FIELDS = {"schema_version", "event_type", "event_id", "ts_ms", "payload"}
+VALID_SCHEMA_VERSIONS = {"envelope.v1"}
 VALID_EVENT_TYPES = {"DECISION", "ORDER", "FILL"}
 
 
@@ -54,6 +55,12 @@ def validate_envelope(obj: object, line_number: int) -> list[str]:
     missing = REQUIRED_FIELDS - set(obj.keys())
     if missing:
         errors.append(f"line {line_number}: missing fields: {sorted(missing)}")
+    schema_version = obj.get("schema_version")
+    if not schema_version or schema_version not in VALID_SCHEMA_VERSIONS:
+        errors.append(
+            f"line {line_number}: unsupported schema_version {schema_version!r}, "
+            f"expected one of {sorted(VALID_SCHEMA_VERSIONS)}"
+        )
     event_type = obj.get("event_type")
     if event_type and event_type not in VALID_EVENT_TYPES:
         errors.append(
@@ -137,7 +144,7 @@ def replay(
             output_obj["chain_hash"] = chain_hash_val
             prev_chain_hash = chain_hash_val
 
-        output_line = json.dumps(output_obj, sort_keys=True, separators=(",", ":"))
+        output_line = canonical_json_dumps(output_obj)
         output_stream.write(output_line + "\n")
         processed += 1
 
