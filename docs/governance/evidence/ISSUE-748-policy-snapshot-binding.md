@@ -144,3 +144,50 @@ All three envelopes carry the identical policy_snapshot dict.
 
 - Builder tests: 14 unit tests (toggle, keys, checksum determinism, secret-free, env vars)
 - Wiring tests: 20 tests (toggle OFF zero-change, toggle ON propagation, Redis roundtrip, golden hash stability)
+
+---
+
+## Smoke Runbook: Toggle ON Verification (Staging)
+
+Pre-condition: PR #962 merged (CDB_GIT_COMMIT + CDB_POLICY_VERSION wired in Compose).
+
+### Steps
+
+1. **Enable toggle in staging Compose override** (do NOT commit):
+   ```bash
+   # Temporary: add to cdb_risk + cdb_execution environment in your staging compose
+   CDB_POLICY_SNAPSHOT_BINDING_ENABLED: "1"
+   CDB_ENVELOPE_EMISSION: "1"
+   ```
+
+2. **Restart risk + execution services** (adjust compose files to your staging overlay):
+   ```bash
+   docker compose -f base.yml -f <your-staging-overlay>.yml up -d cdb_risk cdb_execution
+   ```
+
+3. **Trigger a signal** (paper mode / stub) and wait for Decision→Order→Fill.
+
+4. **Inspect DECISION envelope** (from JSONL log or Redis stream):
+   ```bash
+   # Example: last DECISION envelope from replay log
+   tail -1 logs/replay_envelopes.jsonl | python -m json.tool
+   ```
+
+5. **Verify policy_snapshot fields**:
+
+   | Field | Expected (CI/Staging) | Fail if |
+   |-------|-----------------------|---------|
+   | `policy_id` | `"risk_policy_v1"` | missing or empty |
+   | `version` | tag name or `"dev-<7-char-sha>"` | `"unknown"` |
+   | `git_commit` | 40-char hex SHA | `"unknown"` |
+   | `checksum` | 64-char hex SHA256 | missing or empty |
+   | `effective_at` | ISO-8601 with `+00:00` | missing or not UTC |
+
+6. **Verify propagation**: ORDER and FILL envelopes carry the **identical** `policy_snapshot` dict as the DECISION envelope (same `checksum`, same `effective_at`).
+
+7. **Verify zero-drift**: With toggle OFF (default), repeat step 4 — `policy_snapshot` key must NOT appear in any envelope.
+
+### Pass Criteria
+- Toggle ON: all 5 fields present, `version` and `git_commit` are NOT `"unknown"` in CI/staging
+- Toggle OFF: no `policy_snapshot` key anywhere
+- No trading behavior change in either mode
