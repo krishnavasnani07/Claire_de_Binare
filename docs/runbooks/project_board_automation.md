@@ -22,7 +22,7 @@ Kurzer Betriebsleitfaden für die Repo-Organisation über Milestones, Labels und
 - Project URL: `https://github.com/users/jannekbuengener/projects/8`
 - Owner / Number: `jannekbuengener / 8`
 - Triage View (`EINGANG`): `https://github.com/users/jannekbuengener/projects/8/views/18`
-  - Filter: `is:open label:"triage:offen"`
+  - Intake: neue Items landen standardmaessig in `INBOX`; `triage:offen` bleibt Fallback fuer Items ohne aufloesbaren Milestone
 - Milestones:
   - `System ist beweisbar`
   - `System ist stabil`
@@ -58,6 +58,13 @@ Kurzer Betriebsleitfaden für die Repo-Organisation über Milestones, Labels und
     - PRs -> `Review`
 - `.github/workflows/project_status_label_map.yml`
   - Setzt Project-Status anhand von `status:*` Labels (inkl. `closed -> Done`), idempotent.
+- `.github/workflows/auto-milestone.yml`
+  - Setzt bei neuen/reopened/labeled Issues und PRs einen Milestone, falls noch keiner gesetzt ist:
+    - genau ein `milestone:<TITLE>` -> setzt den offenen Milestone `<TITLE>`
+    - mehrere `milestone:<...>` Labels -> Warnung und keine Mutation
+    - sonst Default `INBOX`, aber nur wenn ein offener Milestone `INBOX` existiert
+    - unbekannter Titel oder fehlendes/geschlossenes `INBOX` -> nur Warnung, keine Mutation
+    - Fork-PRs werden wegen read-only Token nur geloggt und uebersprungen
 - `.github/workflows/milestone_stage_label_sync.yml`
   - Synchronisiert `stage:*` Labels aus Milestones (`milestoned`, `demilestoned`, `reopened`), mutually exclusive.
 - `.github/workflows/triage_guard.yml`
@@ -70,9 +77,19 @@ Kurzer Betriebsleitfaden für die Repo-Organisation über Milestones, Labels und
 
 ## Triage-Prozess (Jannek)
 
-- Öffne die View `EINGANG` und arbeite nur Items mit `triage:offen` ab (offen, ohne Milestone).
-- Weise jedem Item zuerst einen der 6 Milestones zu; dadurch entfernt `triage_guard` das Label automatisch.
+- Öffne die View `EINGANG` und arbeite neue Items mit Default-Milestone `INBOX` zuerst ab; `triage:offen` bleibt nur der Fallback fuer nicht aufgeloeste Faelle.
+- Ersetze `INBOX` im Triage-Schritt durch einen der 6 strategischen Milestones.
 - Setze danach optional `status:*` Labels (z. B. `status:approved` / `status:in-progress`), damit das Board den Kanban-Status korrekt zieht.
+
+## Milestone-Autofill
+
+- Genau ein `milestone:<TITLE>` mappt 1:1 auf einen vorhandenen offenen Milestone mit exakt diesem Titel.
+- Mehrere `milestone:<...>`-Labels gelten als mehrdeutig; der Workflow loggt eine Warnung und setzt keinen Milestone.
+- Ohne `milestone:`-Label setzt die Automation den Default-Milestone `INBOX`, aber nur wenn ein offener Milestone `INBOX` existiert.
+- `issue-governance.yml` stuft `INBOX` auf den passenden Phase-Milestone hoch, sobald der Titel eine gemappte Phase enthaelt; andere bereits gesetzte Milestones bleiben stabil und werden nicht ueberschrieben.
+- Existiert `<TITLE>` nicht als offener Milestone oder ist `INBOX` nicht offen/vorhanden, bleibt das Item unveraendert und der Workflow loggt nur eine Warnung.
+- Fork-PRs im `pull_request`-Trigger bleiben unveraendert; der Workflow loggt den read-only-Fall und beendet sich fail-soft.
+- `INBOX` ist ein Intake-Milestone; im Triage-Schritt wird er spaeter durch einen der 6 strategischen Milestones ersetzt.
 
 Report-Ausnahme:
 - Issues mit `report:weekly` oder `report:weekly-fail` sind `triage:offen`-exempt.
@@ -173,6 +190,17 @@ Trigger-Safety:
 - PR-bezogene Board-Änderungen sind dadurch eventual consistent und werden über den täglichen Reconcile-Job nachgezogen.
 
 ## Quick Sanity Checks (gh CLI)
+
+## Manual validation
+
+- Ensure an open milestone `INBOX` exists (otherwise workflow warns and does nothing)
+- New issue without milestone gets `INBOX`
+- New issue with exactly one `milestone:<TITLE>` gets the matching open milestone
+- New issue with multiple `milestone:<...>` labels only warns and stays unchanged
+- Phase-based governance upgrades `INBOX` to the mapped phase milestone, but does not overwrite other milestones
+- PR from the same repo gets a milestone via the Issues API
+- `workflow_dispatch` backfill only touches open items without a milestone
+- Missing or closed `INBOX` only warns and does not fail the workflow
 
 ### Auth / Scopes
 
