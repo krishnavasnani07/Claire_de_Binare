@@ -772,14 +772,12 @@ class RiskManager:
             cursor = conn.cursor()
 
             # Query open positions
-            cursor.execute(
-                """
+            cursor.execute("""
                 SELECT symbol, side, size, entry_price, current_price
                 FROM positions
                 WHERE closed_at IS NULL AND size > 0
                 ORDER BY symbol
-                """
-            )
+                """)
             positions = cursor.fetchall()
 
             if not positions:
@@ -787,8 +785,7 @@ class RiskManager:
                 # If positions empty, but orders show net open position, FAIL
                 logger.info("Positions table empty - checking for state mismatch...")
 
-                cursor.execute(
-                    """
+                cursor.execute("""
                     SELECT
                         COALESCE(SUM(CASE WHEN side = 'buy' THEN filled_size ELSE 0 END), 0) as buy_total,
                         COALESCE(SUM(CASE WHEN side = 'sell' THEN filled_size ELSE 0 END), 0) as sell_total
@@ -796,8 +793,7 @@ class RiskManager:
                     WHERE status = 'filled'
                       AND filled_size > 0
                       AND created_at >= '2026-01-17 14:15:00'
-                    """
-                )
+                    """)
                 buy_total, sell_total = cursor.fetchone()
                 net_position = float(buy_total) - float(sell_total)
 
