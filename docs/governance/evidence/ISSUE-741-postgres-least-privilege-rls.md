@@ -24,18 +24,26 @@ Current status:
 - RLS table flags and policy inventory for the tracked `public` tables
 - Offline desired-vs-observed diff against `scripts/audit/desired_privileges.json`
 
+## Secret Policy
+
+- Canonical Secret Store: `C:\Users\janne\Documents\.secrets\.cdb`
+- Rotation / changes: rotator-only via `infrastructure/scripts/manage_secrets.ps1`; do not hand-edit secret files or stage secret material in the repo.
+- Connection env: export or load `POSTGRES_DSN`, `DATABASE_URL`, and related connection settings via the rotator workflow before running the dump or report commands.
+
 ## How to Generate Live Evidence
 
 - Follow [postgres_least_privilege_rls.md](../../runbooks/postgres_least_privilege_rls.md) to dump live CSV artifacts and run the offline report.
-- Attach the generated dump directory plus `report.json` / `summary.md` to the Issue, PR, or workflow artifact store.
-- Do not commit live dumps, DSNs, passwords, or other environment-specific secrets to the repository.
+- Generate the evidence bundle in a local or external path outside the repo, then upload the ZIP via GitHub UI attachment or an external artifact store and paste the resulting link into the Issue.
+- Do not commit live dumps, ZIP bundles, DSNs, passwords, or other environment-specific secrets to the repository.
 
 ## Evidence Placeholders
 
 - Dump timestamp (UTC): `TBD`
 - Environment: `TBD`
+- Local / external evidence bundle path: `TBD`
 - Dump artifact links: `TBD`
 - Offline report artifact links: `TBD`
+- Issue comment permalink: `TBD`
 - Operator notes: `TBD`
 
 ## Current Gaps

@@ -54,32 +54,46 @@ All scripts are in `infrastructure/database/`:
 | `rollback_least_privilege.sql` | Restore `claire_user` ALL PRIVILEGES | superuser |
 | `verify_privileges.sql` | Show effective grants, memberships, ownership | superuser |
 
+## Secret Policy
+
+- Canonical Secret Store: `C:\Users\janne\Documents\.secrets\.cdb`
+- Rotation / changes: rotator-only via `infrastructure/scripts/manage_secrets.ps1`; do not hand-edit secret files and do not create alternate secret copies inside the repo.
+- Connection env: export or load `POSTGRES_DSN`, `DATABASE_URL`, and related connection material via the rotator workflow before running these commands. Do not paste credentials directly into shells, docs, or committed config.
+
 ## Live Evidence Workflow
 
 Use exactly these three commands to capture live evidence, run the offline
-diff, and prepare attachable artifacts without committing secrets:
+diff, and prepare attachable artifacts without committing secrets. The
+evidence bundle must live outside the repo and be linked from the Issue after
+upload:
 
 ```bash
-mkdir -p .artifacts/postgres-privileges
+export EVIDENCE_DIR="/tmp/cdb_pg_evidence_<ENV>_<YYYYMMDD_HHMM>"
+mkdir -p "$EVIDENCE_DIR"
 
+# Load POSTGRES_DSN / DATABASE_URL via the rotator first. Do not hand-edit
+# secret files or inline credentials here.
 psql "$POSTGRES_DSN" \
-  -v roles_out="$(pwd)/.artifacts/postgres-privileges/roles.csv" \
-  -v role_memberships_out="$(pwd)/.artifacts/postgres-privileges/role_memberships.csv" \
-  -v table_privileges_out="$(pwd)/.artifacts/postgres-privileges/table_privileges.csv" \
-  -v column_privileges_out="$(pwd)/.artifacts/postgres-privileges/column_privileges.csv" \
-  -v rls_tables_out="$(pwd)/.artifacts/postgres-privileges/rls_tables.csv" \
-  -v policies_out="$(pwd)/.artifacts/postgres-privileges/policies.csv" \
-  -v default_privileges_out="$(pwd)/.artifacts/postgres-privileges/default_privileges.csv" \
+  -v roles_out="$EVIDENCE_DIR/roles.csv" \
+  -v role_memberships_out="$EVIDENCE_DIR/role_memberships.csv" \
+  -v table_privileges_out="$EVIDENCE_DIR/table_privileges.csv" \
+  -v column_privileges_out="$EVIDENCE_DIR/column_privileges.csv" \
+  -v rls_tables_out="$EVIDENCE_DIR/rls_tables.csv" \
+  -v policies_out="$EVIDENCE_DIR/policies.csv" \
+  -v default_privileges_out="$EVIDENCE_DIR/default_privileges.csv" \
   -f scripts/audit/postgres_privilege_dump.sql
 
 python scripts/audit/postgres_least_privilege_report.py \
-  --input-dir .artifacts/postgres-privileges \
-  --out-dir .artifacts/postgres-privilege-report
+  --input-dir "$EVIDENCE_DIR" \
+  --out-dir "$EVIDENCE_DIR/report"
+
+zip -r "${EVIDENCE_DIR}.zip" "$EVIDENCE_DIR"
 ```
 
-Attach `.artifacts/postgres-privileges/` and
-`.artifacts/postgres-privilege-report/` to the Issue/PR/run as external
-artifacts. Do not commit the live dump files or any DSN/secret material.
+Upload `${EVIDENCE_DIR}.zip` via GitHub UI attachment or an external
+artifact-store, then paste the resulting link or issue-comment permalink into
+the Issue. Do not commit the live dump files, the ZIP bundle, or any
+DSN/secret material.
 
 ## Apply Steps
 
