@@ -100,20 +100,19 @@ def load_rows_from_postgres(
             if any(column not in present_columns for column in EXPECTED_COLUMNS):
                 return rows, storage_table
 
-            cur.execute(
-                f"""
-                SELECT
-                    pr_id,
-                    commit_sha,
-                    yaml_evidence_path,
-                    integrity_hash,
-                    integrity_algo,
-                    integrity_version,
-                    created_at
-                FROM {storage_table}
-                ORDER BY pr_id ASC, commit_sha ASC, created_at ASC
-                """
+            query = (
+                "SELECT "
+                "pr_id, "
+                "commit_sha, "
+                "yaml_evidence_path, "
+                "integrity_hash, "
+                "integrity_algo, "
+                "integrity_version, "
+                "created_at "
+                f"FROM {storage_table} "
+                "ORDER BY pr_id ASC, commit_sha ASC, created_at ASC"
             )
+            cur.execute(query)
             rows = [dict(row) for row in cur.fetchall()]
             return rows, storage_table
     finally:
