@@ -29,11 +29,12 @@ Current status:
 - Canonical Secret Store: `C:\Users\janne\Documents\.secrets\.cdb`
 - Rotation / changes: rotator-only via `infrastructure/scripts/manage_secrets.ps1`; do not hand-edit secret files or stage secret material in the repo.
 - Connection env: export or load `POSTGRES_DSN`, `DATABASE_URL`, and related connection settings via the rotator workflow before running the dump or report commands.
+- Rotator proof-of-use: use `pwsh -File infrastructure/scripts/manage_secrets.ps1 -Action list` and `pwsh -File infrastructure/scripts/manage_secrets.ps1 -Action validate` as the non-mutating evidence commands. There is no separate `status` or `dry-run` verb in the current script.
 
 ## How to Generate Live Evidence
 
 - Follow [postgres_least_privilege_rls.md](../../runbooks/postgres_least_privilege_rls.md) to dump live CSV artifacts and run the offline report.
-- Generate the evidence bundle in a local or external path outside the repo, then upload the ZIP via GitHub UI attachment or an external artifact store and paste the resulting link into the Issue.
+- Generate the evidence bundle in a local or external path outside the repo, then upload the ZIP via GitHub UI attachment as the standard path. If UI upload is unavailable, use an external artifact store and paste the resulting link into the Issue.
 - Do not commit live dumps, ZIP bundles, DSNs, passwords, or other environment-specific secrets to the repository.
 
 ## Evidence Placeholders

@@ -60,6 +60,27 @@ All scripts are in `infrastructure/database/`:
 - Rotation / changes: rotator-only via `infrastructure/scripts/manage_secrets.ps1`; do not hand-edit secret files and do not create alternate secret copies inside the repo.
 - Connection env: export or load `POSTGRES_DSN`, `DATABASE_URL`, and related connection material via the rotator workflow before running these commands. Do not paste credentials directly into shells, docs, or committed config.
 
+## Rotator Proof of Use
+
+Use the rotator entrypoint from an operator shell that is configured for the
+canonical secret store `C:\Users\janne\Documents\.secrets\.cdb`. The current
+script does not expose a separate `status` or `dry-run` verb; use the
+non-mutating `list` and `validate` actions as proof-of-use commands.
+
+```powershell
+pwsh -File infrastructure/scripts/manage_secrets.ps1 -Action list
+pwsh -File infrastructure/scripts/manage_secrets.ps1 -Action validate
+pwsh -File infrastructure/scripts/manage_secrets.ps1 -Action rotate -SecretName <secret-name>
+```
+
+- `list`: confirms that the rotator can see the managed secret files without
+  printing secret values.
+- `validate`: confirms that the required secret set is present and non-empty.
+- `rotate`: use only when an approved rotation is required; provide the secret
+  value through the rotator workflow, not by hand-editing files.
+- Proof-of-use evidence should capture only timestamp, operator, command name,
+  and outcome summary. Do not capture or paste secret values.
+
 ## Live Evidence Workflow
 
 Use exactly these three commands to capture live evidence, run the offline
@@ -90,10 +111,10 @@ python scripts/audit/postgres_least_privilege_report.py \
 zip -r "${EVIDENCE_DIR}.zip" "$EVIDENCE_DIR"
 ```
 
-Upload `${EVIDENCE_DIR}.zip` via GitHub UI attachment or an external
-artifact-store, then paste the resulting link or issue-comment permalink into
-the Issue. Do not commit the live dump files, the ZIP bundle, or any
-DSN/secret material.
+Upload `${EVIDENCE_DIR}.zip` via GitHub UI attachment as the default path. If
+the UI upload is not available, use an external artifact store and paste the
+resulting link or issue-comment permalink into the Issue. Do not commit the
+live dump files, the ZIP bundle, or any DSN/secret material.
 
 ## Apply Steps
 
