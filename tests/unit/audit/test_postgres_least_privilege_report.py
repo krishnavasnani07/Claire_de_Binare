@@ -19,7 +19,6 @@ from audit.postgres_least_privilege_report import (  # noqa: E402
     main,
 )
 
-
 FIXTURE_DIR = repo_root / "tests" / "fixtures" / "postgres_privileges"
 BASELINE_PATH = repo_root / "scripts" / "audit" / "desired_privileges.json"
 
