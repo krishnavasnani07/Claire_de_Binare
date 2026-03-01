@@ -1,0 +1,51 @@
+# Evidence Spec for Issue #741 — Postgres Least-Privilege + RLS Hardening
+
+Purpose:
+- Provide a reproducible path to capture live Postgres role, grant, and RLS evidence without changing runtime behavior.
+- Keep the DB-layer governance anchor open until deployed environments prove the writer/reader split and any future RLS posture with attached artifacts.
+
+Pass criteria:
+- [ ] A live dump was generated with `scripts/audit/postgres_privilege_dump.sql`.
+- [ ] The offline diff was run with `scripts/audit/postgres_least_privilege_report.py`.
+- [ ] Dump artifacts were attached outside the repo (Issue/PR/Run artifact), not committed.
+- [ ] Remaining live-environment gaps are documented explicitly.
+
+Current status:
+- Evidence status: OPEN
+- GitHub issue state observed during implementation: CLOSED
+- Date: 2026-03-01
+
+---
+
+## Scope
+
+- Postgres roles: `cdb_reader`, `cdb_writer`, `cdb_admin`, `claire_user`
+- Effective table privileges for the least-privilege writer/reader split
+- RLS table flags and policy inventory for the tracked `public` tables
+- Offline desired-vs-observed diff against `scripts/audit/desired_privileges.json`
+
+## How to Generate Live Evidence
+
+- Follow [postgres_least_privilege_rls.md](../../runbooks/postgres_least_privilege_rls.md) to dump live CSV artifacts and run the offline report.
+- Attach the generated dump directory plus `report.json` / `summary.md` to the Issue, PR, or workflow artifact store.
+- Do not commit live dumps, DSNs, passwords, or other environment-specific secrets to the repository.
+
+## Evidence Placeholders
+
+- Dump timestamp (UTC): `TBD`
+- Environment: `TBD`
+- Dump artifact links: `TBD`
+- Offline report artifact links: `TBD`
+- Operator notes: `TBD`
+
+## Current Gaps
+
+- Live deployment proof is still missing for the `claire_user` -> `cdb_writer` handoff and the absence of direct runtime privileges.
+- RLS remains evidence-only in this phase; no runtime enforcement, trigger hardening, or policy rollout is introduced here.
+- Ownership-bypass and live grant drift remain possible until operator evidence confirms the deployed state.
+
+## Crosslinks
+
+- DB-layer governance anchor: `#744`
+- Related Task G slices: `#750`, `#752`, `#753`
+- Follow-up hardening / operational proof target: `#741`

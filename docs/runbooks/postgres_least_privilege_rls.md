@@ -54,6 +54,33 @@ All scripts are in `infrastructure/database/`:
 | `rollback_least_privilege.sql` | Restore `claire_user` ALL PRIVILEGES | superuser |
 | `verify_privileges.sql` | Show effective grants, memberships, ownership | superuser |
 
+## Live Evidence Workflow
+
+Use exactly these three commands to capture live evidence, run the offline
+diff, and prepare attachable artifacts without committing secrets:
+
+```bash
+mkdir -p .artifacts/postgres-privileges
+
+psql "$POSTGRES_DSN" \
+  -v roles_out="$(pwd)/.artifacts/postgres-privileges/roles.csv" \
+  -v role_memberships_out="$(pwd)/.artifacts/postgres-privileges/role_memberships.csv" \
+  -v table_privileges_out="$(pwd)/.artifacts/postgres-privileges/table_privileges.csv" \
+  -v column_privileges_out="$(pwd)/.artifacts/postgres-privileges/column_privileges.csv" \
+  -v rls_tables_out="$(pwd)/.artifacts/postgres-privileges/rls_tables.csv" \
+  -v policies_out="$(pwd)/.artifacts/postgres-privileges/policies.csv" \
+  -v default_privileges_out="$(pwd)/.artifacts/postgres-privileges/default_privileges.csv" \
+  -f scripts/audit/postgres_privilege_dump.sql
+
+python scripts/audit/postgres_least_privilege_report.py \
+  --input-dir .artifacts/postgres-privileges \
+  --out-dir .artifacts/postgres-privilege-report
+```
+
+Attach `.artifacts/postgres-privileges/` and
+`.artifacts/postgres-privilege-report/` to the Issue/PR/run as external
+artifacts. Do not commit the live dump files or any DSN/secret material.
+
 ## Apply Steps
 
 ### Step 1: Create roles and grants (safe, additive)
