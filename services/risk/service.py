@@ -23,6 +23,7 @@ from typing import Optional
 import psycopg2
 import redis
 import importlib.util
+
 try:
     _FLASK_AVAILABLE = importlib.util.find_spec("flask") is not None
 except ModuleNotFoundError as e:
@@ -46,7 +47,10 @@ from core.utils.uuid_gen import (
 from core.utils.clock import utcnow
 from core.utils.redis_payload import sanitize_payload
 from core.utils.trace_toggle import trace_contract_v1_enabled, allow_evidence_debt
-from core.replay.policy_snapshot import build_policy_snapshot, policy_snapshot_binding_enabled
+from core.replay.policy_snapshot import (
+    build_policy_snapshot,
+    policy_snapshot_binding_enabled,
+)
 from core.auth import validate_all_auth
 from core.domain.models import Signal
 
@@ -379,9 +383,9 @@ def _phase9_enrich_evidence(
     # Enrich evidence with Phase 9 fields
     evidence["policy_id"] = POLICY_ID
     evidence["policy_hash"] = policy_hash
-    evidence[
-        "input_hash"
-    ] = input_hash  # alias, keep input_snapshot_hash for backwards compat
+    evidence["input_hash"] = (
+        input_hash  # alias, keep input_snapshot_hash for backwards compat
+    )
 
     # output_hash uses the SAME decision_pk that will be written to event
     evidence["output_hash"] = compute_output_hash(
@@ -1159,7 +1163,9 @@ class RiskManager:
         # Phase 9: Enrich evidence ONCE (before DECISION emit AND Order creation)
         # ts_ms: deterministisch (signal_ts_ms), NICHT wall-clock (now_ms).
         # Fallback auf now_ms nur wenn Signal kein ts_ms liefert (Compat).
-        deterministic_ts_ms = evidence.get("timestamps_ms", {}).get("signal_ts_ms") or now_ms
+        deterministic_ts_ms = (
+            evidence.get("timestamps_ms", {}).get("signal_ts_ms") or now_ms
+        )
         evidence, input_hash, decision_pk = _phase9_enrich_evidence(
             evidence=evidence,
             decision=decision,
@@ -1200,6 +1206,9 @@ class RiskManager:
                     reason_code=reason_code,
                     symbol=signal.symbol,
                     evidence=evidence,
+                    signal_id=evidence.get("signal_id"),
+                    trace_id=evidence.get("trace_id"),
+                    decision_context=evidence.get("decision_context"),
                     policy_id=evidence.get("policy_id"),
                     policy_hash=evidence.get("policy_hash"),
                     input_hash=evidence.get("input_hash"),
@@ -1278,7 +1287,9 @@ class RiskManager:
                         timestamp_ms=now_ms,
                         evidence=evidence,
                     ):
-                        logger.warning(f"⚠️ blocked_decisions write failed (evidence debt)")
+                        logger.warning(
+                            f"⚠️ blocked_decisions write failed (evidence debt)"
+                        )
 
                 # Redis blocked_order Artefakt (audit/replay)
                 blocked_order = {
@@ -1524,13 +1535,20 @@ class RiskManager:
                     raise ValueError("order.price is None — skip order envelope")
                 emit_order_envelope(
                     event_id=str(order.order_id),
-                    ts_ms=int(order.timestamp * 1000) if getattr(order, "timestamp", None) else deterministic_ts_ms,
+                    ts_ms=(
+                        int(order.timestamp * 1000)
+                        if getattr(order, "timestamp", None)
+                        else deterministic_ts_ms
+                    ),
                     symbol=order.symbol,
                     side=str(order.side),
                     quantity=float(order.quantity),
                     price=float(order.price),
                     signal_id=order.signal_id or None,
                     decision_id=order.decision_id or None,
+                    order_id=order.order_id or None,
+                    trace_id=order.trace_id or None,
+                    decision_context=evidence.get("decision_context"),
                     policy_id=getattr(order, "policy_id", None),
                     policy_hash=getattr(order, "policy_hash", None),
                     input_hash=getattr(order, "input_hash", None),
@@ -2018,6 +2036,7 @@ if _FLASK_AVAILABLE:
             f"risk_proactive_unwind_triggered_total {stats.get('proactive_unwind_triggered', 0)}\n"
         )
         return Response(body, mimetype="text/plain")
+
 else:
     app = None
 

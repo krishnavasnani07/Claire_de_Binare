@@ -9,12 +9,15 @@ Three envelope types represent the trading pipeline stages:
 All envelopes share:
   - schema_version (str): "envelope.v1" for V1 envelopes
   - event_type (str): DECISION / ORDER / FILL
-  - event_id (str): Unique event identifier
+  - event_id (str): Deterministic envelope identifier when correlation inputs exist
   - ts_ms (int): Event timestamp in milliseconds
+  - created_at (str): UTC ISO-8601 derived from ts_ms
   - payload (dict): Event-specific data
 
 Optional fields (set to None when not applicable):
+  - correlation_id, trace_id
   - policy_id, policy_hash, input_hash, output_hash
+  - decision_context (dict): immutable decision inputs/thresholds snapshot
   - policy_snapshot (dict): nested policy metadata (#748, Slice 1)
 
 relations:
@@ -30,7 +33,17 @@ relations:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
+
+
+def _created_at_from_ts_ms(ts_ms: int) -> str:
+    """Convert millisecond timestamps to canonical UTC ISO-8601."""
+    return (
+        datetime.fromtimestamp(ts_ms / 1000.0, tz=timezone.utc)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
 
 
 @dataclass
@@ -42,10 +55,14 @@ class DecisionEnvelopeV1:
     event_id: str
     ts_ms: int
     payload: Dict[str, Any]
+    created_at: Optional[str] = None
+    correlation_id: Optional[str] = None
+    trace_id: Optional[str] = None
     policy_id: Optional[str] = None
     policy_hash: Optional[str] = None
     input_hash: Optional[str] = None
     output_hash: Optional[str] = None
+    decision_context: Optional[Dict[str, Any]] = None
     policy_snapshot: Optional[Dict[str, Any]] = None
 
     def to_dict(self) -> dict:
@@ -55,8 +72,13 @@ class DecisionEnvelopeV1:
             "event_type": self.event_type,
             "event_id": self.event_id,
             "ts_ms": self.ts_ms,
+            "created_at": self.created_at or _created_at_from_ts_ms(self.ts_ms),
             "payload": self.payload,
         }
+        if self.correlation_id is not None:
+            result["correlation_id"] = self.correlation_id
+        if self.trace_id is not None:
+            result["trace_id"] = self.trace_id
         if self.policy_id is not None:
             result["policy_id"] = self.policy_id
         if self.policy_hash is not None:
@@ -65,6 +87,8 @@ class DecisionEnvelopeV1:
             result["input_hash"] = self.input_hash
         if self.output_hash is not None:
             result["output_hash"] = self.output_hash
+        if self.decision_context is not None:
+            result["decision_context"] = self.decision_context
         if self.policy_snapshot is not None:
             result["policy_snapshot"] = self.policy_snapshot
         return result
@@ -79,10 +103,14 @@ class OrderEnvelopeV1:
     event_id: str
     ts_ms: int
     payload: Dict[str, Any]
+    created_at: Optional[str] = None
+    correlation_id: Optional[str] = None
+    trace_id: Optional[str] = None
     policy_id: Optional[str] = None
     policy_hash: Optional[str] = None
     input_hash: Optional[str] = None
     output_hash: Optional[str] = None
+    decision_context: Optional[Dict[str, Any]] = None
     policy_snapshot: Optional[Dict[str, Any]] = None
 
     def to_dict(self) -> dict:
@@ -92,8 +120,13 @@ class OrderEnvelopeV1:
             "event_type": self.event_type,
             "event_id": self.event_id,
             "ts_ms": self.ts_ms,
+            "created_at": self.created_at or _created_at_from_ts_ms(self.ts_ms),
             "payload": self.payload,
         }
+        if self.correlation_id is not None:
+            result["correlation_id"] = self.correlation_id
+        if self.trace_id is not None:
+            result["trace_id"] = self.trace_id
         if self.policy_id is not None:
             result["policy_id"] = self.policy_id
         if self.policy_hash is not None:
@@ -102,6 +135,8 @@ class OrderEnvelopeV1:
             result["input_hash"] = self.input_hash
         if self.output_hash is not None:
             result["output_hash"] = self.output_hash
+        if self.decision_context is not None:
+            result["decision_context"] = self.decision_context
         if self.policy_snapshot is not None:
             result["policy_snapshot"] = self.policy_snapshot
         return result
@@ -116,10 +151,14 @@ class FillEnvelopeV1:
     event_id: str
     ts_ms: int
     payload: Dict[str, Any]
+    created_at: Optional[str] = None
+    correlation_id: Optional[str] = None
+    trace_id: Optional[str] = None
     policy_id: Optional[str] = None
     policy_hash: Optional[str] = None
     input_hash: Optional[str] = None
     output_hash: Optional[str] = None
+    decision_context: Optional[Dict[str, Any]] = None
     policy_snapshot: Optional[Dict[str, Any]] = None
 
     def to_dict(self) -> dict:
@@ -129,8 +168,13 @@ class FillEnvelopeV1:
             "event_type": self.event_type,
             "event_id": self.event_id,
             "ts_ms": self.ts_ms,
+            "created_at": self.created_at or _created_at_from_ts_ms(self.ts_ms),
             "payload": self.payload,
         }
+        if self.correlation_id is not None:
+            result["correlation_id"] = self.correlation_id
+        if self.trace_id is not None:
+            result["trace_id"] = self.trace_id
         if self.policy_id is not None:
             result["policy_id"] = self.policy_id
         if self.policy_hash is not None:
@@ -139,6 +183,8 @@ class FillEnvelopeV1:
             result["input_hash"] = self.input_hash
         if self.output_hash is not None:
             result["output_hash"] = self.output_hash
+        if self.decision_context is not None:
+            result["decision_context"] = self.decision_context
         if self.policy_snapshot is not None:
             result["policy_snapshot"] = self.policy_snapshot
         return result

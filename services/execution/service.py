@@ -13,6 +13,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 import importlib.util
+
 try:
     _FLASK_AVAILABLE = importlib.util.find_spec("flask") is not None
 except ModuleNotFoundError as e:
@@ -425,6 +426,9 @@ def process_order(order_data: dict):
                     side=str(result.side),
                     filled_quantity=float(result.filled_quantity),
                     price=float(result.price) if result.price is not None else None,
+                    signal_id=getattr(order, "signal_id", None),
+                    trace_id=getattr(order, "trace_id", None),
+                    status=ExecutionResult._schema_status(result.status),
                     policy_id=getattr(order, "policy_id", None),
                     policy_hash=getattr(order, "policy_hash", None),
                     input_hash=getattr(order, "input_hash", None),
@@ -619,6 +623,7 @@ if _FLASK_AVAILABLE:
         except Exception as e:
             logger.error(f"Error retrieving orders: {e}")
             return jsonify({"error": str(e)}), 500
+
 else:
     app = None
 

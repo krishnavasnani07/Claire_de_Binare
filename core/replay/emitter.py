@@ -24,11 +24,13 @@ relations:
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import logging
 import os
 from typing import Any, Dict, Optional
 
 from core.replay.canonical_json import canonical_json_dumps, sha256_hex
+from core.utils.uuid_gen import compute_correlation_id, compute_event_pk
 
 logger = logging.getLogger("lr021.emitter")
 
@@ -56,12 +58,61 @@ def _compute_event_hash(envelope_dict: dict) -> str:
     return sha256_hex(canonical.encode("utf-8"))
 
 
+def _created_at_from_ts_ms(ts_ms: int) -> str:
+    """Convert millisecond timestamps to canonical UTC ISO-8601."""
+    return (
+        datetime.fromtimestamp(ts_ms / 1000.0, tz=timezone.utc)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
+
+
+def _derive_correlation_id(signal_id: Optional[str]) -> Optional[str]:
+    """Compute deterministic correlation_id when signal_id is available."""
+    if not signal_id:
+        return None
+    try:
+        return compute_correlation_id(signal_id)
+    except ValueError:
+        return None
+
+
+def _derive_event_id(
+    *,
+    event_type: str,
+    fallback_event_id: str,
+    signal_id: Optional[str] = None,
+    order_id: Optional[str] = None,
+    fill_id: Optional[str] = None,
+) -> str:
+    """Prefer deterministic event ids when correlation inputs are available."""
+    if not signal_id:
+        return fallback_event_id
+    try:
+        if event_type == "DECISION":
+            return compute_event_pk(signal_id, event_type)
+        if event_type == "ORDER" and order_id:
+            return compute_event_pk(signal_id, event_type, order_id=order_id)
+        if event_type == "FILL" and order_id and fill_id:
+            return compute_event_pk(
+                signal_id, event_type, order_id=order_id, fill_id=fill_id
+            )
+    except ValueError:
+        return fallback_event_id
+    return fallback_event_id
+
+
 def _build_envelope(
     *,
     event_type: str,
     event_id: str,
     ts_ms: int,
     payload: Dict[str, Any],
+    signal_id: Optional[str] = None,
+    order_id: Optional[str] = None,
+    fill_id: Optional[str] = None,
+    trace_id: Optional[str] = None,
+    decision_context: Optional[Dict[str, Any]] = None,
     policy_id: Optional[str] = None,
     policy_hash: Optional[str] = None,
     input_hash: Optional[str] = None,
@@ -69,13 +120,26 @@ def _build_envelope(
     policy_snapshot: Optional[Dict[str, Any]] = None,
 ) -> dict:
     """Build envelope dict with optional fields omitted when None."""
+    deterministic_event_id = _derive_event_id(
+        event_type=event_type,
+        fallback_event_id=event_id,
+        signal_id=signal_id,
+        order_id=order_id,
+        fill_id=fill_id,
+    )
     envelope: dict[str, Any] = {
         "schema_version": "envelope.v1",
         "event_type": event_type,
-        "event_id": event_id,
+        "event_id": deterministic_event_id,
         "ts_ms": ts_ms,
+        "created_at": _created_at_from_ts_ms(ts_ms),
         "payload": payload,
     }
+    correlation_id = _derive_correlation_id(signal_id)
+    if correlation_id is not None:
+        envelope["correlation_id"] = correlation_id
+    if trace_id is not None:
+        envelope["trace_id"] = trace_id
     if policy_id is not None:
         envelope["policy_id"] = policy_id
     if policy_hash is not None:
@@ -84,6 +148,8 @@ def _build_envelope(
         envelope["input_hash"] = input_hash
     if output_hash is not None:
         envelope["output_hash"] = output_hash
+    if decision_context is not None:
+        envelope["decision_context"] = decision_context
     if policy_snapshot is not None:
         envelope["policy_snapshot"] = policy_snapshot
     return envelope
@@ -112,6 +178,9 @@ def emit_decision_envelope(
     reason_code: Optional[str],
     symbol: str,
     evidence: Dict[str, Any],
+    signal_id: Optional[str] = None,
+    trace_id: Optional[str] = None,
+    decision_context: Optional[Dict[str, Any]] = None,
     policy_id: Optional[str] = None,
     policy_hash: Optional[str] = None,
     input_hash: Optional[str] = None,
@@ -125,6 +194,7 @@ def emit_decision_envelope(
     payload: dict[str, Any] = {
         "decision": decision,
         "symbol": symbol,
+        "decision_id": event_id,
     }
     if reason_code is not None:
         payload["reason_code"] = reason_code
@@ -137,6 +207,9 @@ def emit_decision_envelope(
         event_id=event_id,
         ts_ms=ts_ms,
         payload=payload,
+        signal_id=signal_id,
+        trace_id=trace_id,
+        decision_context=decision_context,
         policy_id=policy_id,
         policy_hash=policy_hash,
         input_hash=input_hash,
@@ -156,6 +229,9 @@ def emit_order_envelope(
     price: float,
     signal_id: Optional[str] = None,
     decision_id: Optional[str] = None,
+    order_id: Optional[str] = None,
+    trace_id: Optional[str] = None,
+    decision_context: Optional[Dict[str, Any]] = None,
     policy_id: Optional[str] = None,
     policy_hash: Optional[str] = None,
     input_hash: Optional[str] = None,
@@ -176,12 +252,18 @@ def emit_order_envelope(
         payload["signal_id"] = signal_id
     if decision_id is not None:
         payload["decision_id"] = decision_id
+    if order_id is not None:
+        payload["order_id"] = order_id
 
     envelope = _build_envelope(
         event_type="ORDER",
         event_id=event_id,
         ts_ms=ts_ms,
         payload=payload,
+        signal_id=signal_id,
+        order_id=order_id,
+        trace_id=trace_id,
+        decision_context=decision_context,
         policy_id=policy_id,
         policy_hash=policy_hash,
         input_hash=input_hash,
@@ -201,6 +283,10 @@ def emit_fill_envelope(
     side: str,
     filled_quantity: float,
     price: Optional[float],
+    signal_id: Optional[str] = None,
+    trace_id: Optional[str] = None,
+    decision_context: Optional[Dict[str, Any]] = None,
+    status: Optional[str] = None,
     policy_id: Optional[str] = None,
     policy_hash: Optional[str] = None,
     input_hash: Optional[str] = None,
@@ -220,12 +306,19 @@ def emit_fill_envelope(
     }
     if price is not None:
         payload["price"] = price
+    if status is not None:
+        payload["status"] = status
 
     envelope = _build_envelope(
         event_type="FILL",
         event_id=event_id,
         ts_ms=ts_ms,
         payload=payload,
+        signal_id=signal_id,
+        order_id=order_id,
+        fill_id=fill_id,
+        trace_id=trace_id,
+        decision_context=decision_context,
         policy_id=policy_id,
         policy_hash=policy_hash,
         input_hash=input_hash,

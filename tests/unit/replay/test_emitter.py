@@ -18,6 +18,7 @@ from core.replay.emitter import (
     emit_order_envelope,
     envelope_emit_enabled,
 )
+from core.utils.uuid_gen import compute_correlation_id, compute_event_pk
 
 
 @pytest.fixture(autouse=True)
@@ -87,11 +88,15 @@ class TestBuildEnvelope:
         assert env["event_type"] == "DECISION"
         assert env["event_id"] == "ev-001"
         assert env["ts_ms"] == 1700000000000
+        assert env["created_at"] == "2023-11-14T22:13:20Z"
         assert env["payload"] == {"decision": "ALLOW"}
         assert "policy_id" not in env
         assert "policy_hash" not in env
         assert "input_hash" not in env
         assert "output_hash" not in env
+        assert "correlation_id" not in env
+        assert "trace_id" not in env
+        assert "decision_context" not in env
 
     def test_optional_fields_included(self):
         env = _build_envelope(
@@ -109,19 +114,75 @@ class TestBuildEnvelope:
         assert env["input_hash"] == "inp"
         assert env["output_hash"] == "out"
 
+    def test_deterministic_event_id_with_signal_context(self):
+        env = _build_envelope(
+            event_type="ORDER",
+            event_id="legacy-order-id",
+            ts_ms=1700000000000,
+            payload={"symbol": "BTCUSDT"},
+            signal_id="sig-001",
+            order_id="ord-001",
+            trace_id="trace-001",
+            decision_context={"inputs": {"symbol": "BTCUSDT"}},
+        )
+        assert env["event_id"] == compute_event_pk(
+            "sig-001", "ORDER", order_id="ord-001"
+        )
+        assert env["correlation_id"] == compute_correlation_id("sig-001")
+        assert env["trace_id"] == "trace-001"
+        assert env["decision_context"] == {"inputs": {"symbol": "BTCUSDT"}}
+
 
 class TestComputeEventHash:
     def test_deterministic(self):
-        env = {"event_type": "DECISION", "event_id": "ev-001", "ts_ms": 1000, "payload": {}}
+        env = {
+            "event_type": "DECISION",
+            "event_id": "ev-001",
+            "ts_ms": 1000,
+            "payload": {},
+        }
         h1 = _compute_event_hash(env)
         h2 = _compute_event_hash(env)
         assert h1 == h2
         assert len(h1) == 64
 
     def test_different_data_different_hash(self):
-        env1 = {"event_type": "DECISION", "event_id": "ev-001", "ts_ms": 1000, "payload": {}}
-        env2 = {"event_type": "DECISION", "event_id": "ev-002", "ts_ms": 1000, "payload": {}}
+        env1 = {
+            "event_type": "DECISION",
+            "event_id": "ev-001",
+            "ts_ms": 1000,
+            "payload": {},
+        }
+        env2 = {
+            "event_type": "DECISION",
+            "event_id": "ev-002",
+            "ts_ms": 1000,
+            "payload": {},
+        }
         assert _compute_event_hash(env1) != _compute_event_hash(env2)
+
+    def test_semantic_key_reordering_keeps_hash_stable(self):
+        env1 = {
+            "event_type": "DECISION",
+            "event_id": "ev-001",
+            "ts_ms": 1000,
+            "payload": {"symbol": "BTCUSDT", "decision": "ALLOW"},
+            "decision_context": {
+                "inputs": {"slippage_pct": 0.001, "symbol": "BTCUSDT"},
+                "thresholds": {"max_slippage_pct": 0.002},
+            },
+        }
+        env2 = {
+            "decision_context": {
+                "thresholds": {"max_slippage_pct": 0.002},
+                "inputs": {"symbol": "BTCUSDT", "slippage_pct": 0.001},
+            },
+            "payload": {"decision": "ALLOW", "symbol": "BTCUSDT"},
+            "ts_ms": 1000,
+            "event_id": "ev-001",
+            "event_type": "DECISION",
+        }
+        assert _compute_event_hash(env1) == _compute_event_hash(env2)
 
 
 class TestEmitEnvelope:
@@ -240,12 +301,20 @@ class TestEmitDecisionEnvelope:
                 reason_code="MAX_EXPOSURE",
                 symbol="ETHUSDT",
                 evidence={"z_key": 1, "a_key": 2},
+                signal_id="sig-001",
+                trace_id="trace-001",
+                decision_context={"inputs": {"symbol": "ETHUSDT"}},
             )
         assert len(caplog.records) == 1
         parsed = json.loads(caplog.records[0].message)
         assert parsed["event_type"] == "DECISION"
+        assert parsed["event_id"] == compute_event_pk("sig-001", "DECISION")
+        assert parsed["correlation_id"] == compute_correlation_id("sig-001")
+        assert parsed["trace_id"] == "trace-001"
+        assert parsed["decision_context"] == {"inputs": {"symbol": "ETHUSDT"}}
         payload = parsed["payload"]
         assert payload["decision"] == "BLOCK"
+        assert payload["decision_id"] == "dec-001"
         assert payload["reason_code"] == "MAX_EXPOSURE"
         assert payload["symbol"] == "ETHUSDT"
         assert payload["evidence_keys"] == ["a_key", "z_key"]
@@ -298,7 +367,7 @@ class TestEmitOrderEnvelope:
         monkeypatch.setenv("LR021_ENVELOPE_EMIT_ENABLED", "1")
         with caplog.at_level(logging.INFO, logger="lr021.emitter"):
             emit_order_envelope(
-                event_id="ord-001",
+                event_id="legacy-order-id",
                 ts_ms=1000,
                 symbol="BTCUSDT",
                 side="BUY",
@@ -306,9 +375,18 @@ class TestEmitOrderEnvelope:
                 price=50000.0,
                 signal_id="sig-001",
                 decision_id="dec-001",
+                order_id="ord-001",
+                trace_id="trace-001",
+                decision_context={"thresholds": {"max_slippage_pct": 0.002}},
             )
         parsed = json.loads(caplog.records[0].message)
         assert parsed["event_type"] == "ORDER"
+        assert parsed["event_id"] == compute_event_pk(
+            "sig-001", "ORDER", order_id="ord-001"
+        )
+        assert parsed["correlation_id"] == compute_correlation_id("sig-001")
+        assert parsed["trace_id"] == "trace-001"
+        assert parsed["decision_context"] == {"thresholds": {"max_slippage_pct": 0.002}}
         payload = parsed["payload"]
         assert payload["symbol"] == "BTCUSDT"
         assert payload["side"] == "BUY"
@@ -316,6 +394,7 @@ class TestEmitOrderEnvelope:
         assert payload["price"] == 50000.0
         assert payload["signal_id"] == "sig-001"
         assert payload["decision_id"] == "dec-001"
+        assert payload["order_id"] == "ord-001"
 
     def test_optional_ids_omitted(self, monkeypatch, caplog):
         monkeypatch.setenv("LR021_ENVELOPE_EMIT_ENABLED", "1")
@@ -353,7 +432,7 @@ class TestEmitFillEnvelope:
         monkeypatch.setenv("LR021_ENVELOPE_EMIT_ENABLED", "1")
         with caplog.at_level(logging.INFO, logger="lr021.emitter"):
             emit_fill_envelope(
-                event_id="fill-001",
+                event_id="legacy-fill-id",
                 ts_ms=1000,
                 order_id="ord-001",
                 fill_id="fill-001",
@@ -361,14 +440,23 @@ class TestEmitFillEnvelope:
                 side="BUY",
                 filled_quantity=0.01,
                 price=50000.0,
+                signal_id="sig-001",
+                trace_id="trace-001",
+                status="FILLED",
             )
         parsed = json.loads(caplog.records[0].message)
         assert parsed["event_type"] == "FILL"
+        assert parsed["event_id"] == compute_event_pk(
+            "sig-001", "FILL", order_id="ord-001", fill_id="fill-001"
+        )
+        assert parsed["correlation_id"] == compute_correlation_id("sig-001")
+        assert parsed["trace_id"] == "trace-001"
         payload = parsed["payload"]
         assert payload["order_id"] == "ord-001"
         assert payload["fill_id"] == "fill-001"
         assert payload["filled_quantity"] == 0.01
         assert payload["price"] == 50000.0
+        assert payload["status"] == "FILLED"
 
     def test_price_none_omitted(self, monkeypatch, caplog):
         monkeypatch.setenv("LR021_ENVELOPE_EMIT_ENABLED", "1")
