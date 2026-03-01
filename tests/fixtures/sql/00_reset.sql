@@ -4,6 +4,7 @@
 
 -- Truncate tables in reverse dependency order to avoid FK violations
 TRUNCATE TABLE security_policy_refs RESTART IDENTITY CASCADE;
+TRUNCATE TABLE system_config RESTART IDENTITY CASCADE;
 TRUNCATE TABLE deployment_approvals_mirror RESTART IDENTITY CASCADE;
 TRUNCATE TABLE governance_events RESTART IDENTITY CASCADE;
 TRUNCATE TABLE audit_trail RESTART IDENTITY CASCADE;

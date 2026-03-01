@@ -48,18 +48,34 @@ CREATE TABLE deployment_approvals_mirror (
 
 CREATE INDEX idx_deployment_approvals_mirror_pr_id ON deployment_approvals_mirror(pr_id);
 
+CREATE TABLE system_config (
+    config_key TEXT PRIMARY KEY,
+    config_scope TEXT NOT NULL DEFAULT 'global',
+    value_ref TEXT,
+    value_hash TEXT NOT NULL,
+    source_path TEXT,
+    integrity_hash TEXT NOT NULL,
+    integrity_algo TEXT NOT NULL DEFAULT 'HMAC-SHA256',
+    integrity_version INTEGER NOT NULL DEFAULT 1,
+    observed_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_system_config_observed_at ON system_config(observed_at);
+
 CREATE TABLE security_policy_refs (
     policy_id TEXT PRIMARY KEY,
-    version_hash TEXT,
+    version_hash TEXT NOT NULL,
     docs_path TEXT,
-    integrity_hash TEXT,
+    integrity_hash TEXT NOT NULL,
+    integrity_algo TEXT NOT NULL DEFAULT 'HMAC-SHA256',
+    integrity_version INTEGER NOT NULL DEFAULT 1,
     observed_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX idx_security_policy_refs_version_hash ON security_policy_refs(version_hash);
 
 INSERT INTO schema_version (version, description) VALUES
-    ('1.0.3', 'Add governance mirror tables v0 (DB-HARDENING #750-#753)');
+    ('1.0.4', 'Add access-domain integrity metadata for governance mirrors (#753)');
 
 DO $$
 BEGIN
@@ -88,6 +104,12 @@ BEGIN
     END IF;
 
     IF NOT EXISTS (
+        SELECT 1 FROM information_schema.tables WHERE table_name = 'system_config'
+    ) THEN
+        RAISE EXCEPTION 'Migration fehlgeschlagen: system_config fehlt';
+    END IF;
+
+    IF NOT EXISTS (
         SELECT 1 FROM information_schema.tables WHERE table_name = 'security_policy_refs'
     ) THEN
         RAISE EXCEPTION 'Migration fehlgeschlagen: security_policy_refs fehlt';
@@ -112,9 +134,47 @@ BEGIN
     END IF;
 
     IF NOT EXISTS (
+        SELECT 1 FROM pg_indexes WHERE tablename = 'system_config' AND indexname = 'idx_system_config_observed_at'
+    ) THEN
+        RAISE EXCEPTION 'Migration fehlgeschlagen: idx_system_config_observed_at fehlt';
+    END IF;
+
+    IF NOT EXISTS (
         SELECT 1 FROM pg_indexes WHERE tablename = 'security_policy_refs' AND indexname = 'idx_security_policy_refs_version_hash'
     ) THEN
         RAISE EXCEPTION 'Migration fehlgeschlagen: idx_security_policy_refs_version_hash fehlt';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'system_config' AND column_name = 'integrity_algo'
+    ) THEN
+        RAISE EXCEPTION 'Migration fehlgeschlagen: system_config.integrity_algo fehlt';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'system_config' AND column_name = 'integrity_version'
+    ) THEN
+        RAISE EXCEPTION 'Migration fehlgeschlagen: system_config.integrity_version fehlt';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'security_policy_refs' AND column_name = 'integrity_algo'
+    ) THEN
+        RAISE EXCEPTION 'Migration fehlgeschlagen: security_policy_refs.integrity_algo fehlt';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'security_policy_refs' AND column_name = 'integrity_version'
+    ) THEN
+        RAISE EXCEPTION 'Migration fehlgeschlagen: security_policy_refs.integrity_version fehlt';
     END IF;
 
     RAISE NOTICE 'Migration 004 erfolgreich: governance v0 Tabellen und Indizes erstellt';
