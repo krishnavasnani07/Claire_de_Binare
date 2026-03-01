@@ -35,11 +35,26 @@ DEFINE FIELD deployment_approvals_mirror.created_at TYPE datetime;
 DEFINE TABLE deployment_approvals_mirror PERMISSIONS FOR CREATE, FOR SELECT;
 DEFINE INDEX idx_deployment_approvals_created_at ON deployment_approvals_mirror(created_at);
 
+DEFINE TABLE system_config SCHEMAFULL;
+DEFINE FIELD system_config.config_key TYPE string;
+DEFINE FIELD system_config.config_scope TYPE string;
+DEFINE FIELD system_config.value_ref TYPE string;
+DEFINE FIELD system_config.value_hash TYPE string;
+DEFINE FIELD system_config.source_path TYPE string;
+DEFINE FIELD system_config.integrity_hash TYPE string;
+DEFINE FIELD system_config.integrity_algo TYPE string;
+DEFINE FIELD system_config.integrity_version TYPE int;
+DEFINE FIELD system_config.observed_at TYPE datetime;
+DEFINE TABLE system_config PERMISSIONS FOR CREATE, FOR SELECT;
+DEFINE INDEX idx_system_config_observed_at ON system_config(observed_at);
+
 DEFINE TABLE security_policy_refs SCHEMAFULL;
 DEFINE FIELD security_policy_refs.policy_id TYPE string;
 DEFINE FIELD security_policy_refs.version_hash TYPE string;
 DEFINE FIELD security_policy_refs.docs_path TYPE string;
 DEFINE FIELD security_policy_refs.integrity_hash TYPE string;
+DEFINE FIELD security_policy_refs.integrity_algo TYPE string;
+DEFINE FIELD security_policy_refs.integrity_version TYPE int;
 DEFINE FIELD security_policy_refs.observed_at TYPE datetime;
 DEFINE TABLE security_policy_refs PERMISSIONS FOR CREATE, FOR SELECT;
 DEFINE INDEX idx_security_policy_refs_observed_at ON security_policy_refs(observed_at);

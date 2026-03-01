@@ -35,6 +35,7 @@ against Issue #741 which scopes both topics.
 | `audit_trail` | SELECT | — | ALL | Governance mirror (no runtime writes) |
 | `governance_events` | SELECT | — | ALL | Governance mirror (no runtime writes) |
 | `deployment_approvals_mirror` | SELECT | — | ALL | Governance mirror (no runtime writes) |
+| `system_config` | SELECT | — | ALL | Access-domain config fingerprints only (no runtime writes) |
 | `security_policy_refs` | SELECT | — | ALL | Governance mirror (no runtime writes) |
 | `schema_version` | SELECT | SELECT | ALL | Migration tracking (admin writes only) |
 
