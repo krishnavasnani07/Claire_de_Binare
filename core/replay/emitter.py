@@ -58,7 +58,6 @@ def _compute_event_hash(envelope_dict: dict) -> str:
     return sha256_hex(canonical.encode("utf-8"))
 
 
-
 def _derive_correlation_id(signal_id: Optional[str]) -> Optional[str]:
     """Compute deterministic correlation_id when signal_id is available."""
     if not signal_id:

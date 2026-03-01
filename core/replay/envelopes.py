@@ -64,9 +64,11 @@ class DecisionEnvelopeV1:
             "event_type": self.event_type,
             "event_id": self.event_id,
             "ts_ms": self.ts_ms,
-            "created_at": self.created_at
-            if self.created_at is not None
-            else created_at_from_ts_ms(self.ts_ms),
+            "created_at": (
+                self.created_at
+                if self.created_at is not None
+                else created_at_from_ts_ms(self.ts_ms)
+            ),
             "payload": self.payload,
         }
         if self.correlation_id is not None:
@@ -114,9 +116,11 @@ class OrderEnvelopeV1:
             "event_type": self.event_type,
             "event_id": self.event_id,
             "ts_ms": self.ts_ms,
-            "created_at": self.created_at
-            if self.created_at is not None
-            else created_at_from_ts_ms(self.ts_ms),
+            "created_at": (
+                self.created_at
+                if self.created_at is not None
+                else created_at_from_ts_ms(self.ts_ms)
+            ),
             "payload": self.payload,
         }
         if self.correlation_id is not None:
@@ -164,9 +168,11 @@ class FillEnvelopeV1:
             "event_type": self.event_type,
             "event_id": self.event_id,
             "ts_ms": self.ts_ms,
-            "created_at": self.created_at
-            if self.created_at is not None
-            else created_at_from_ts_ms(self.ts_ms),
+            "created_at": (
+                self.created_at
+                if self.created_at is not None
+                else created_at_from_ts_ms(self.ts_ms)
+            ),
             "payload": self.payload,
         }
         if self.correlation_id is not None:
