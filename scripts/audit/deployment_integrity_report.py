@@ -32,6 +32,7 @@ INPUT_FILE_CANDIDATES = (
     "deployment_approvals_mirror.json",
     "deployment_approvals.json",
 )
+# Accept both the logical issue name and the repo-visible mirror table name.
 STORAGE_TABLE_CANDIDATES = (
     "deployment_approvals_mirror",
     "deployment_approvals",
