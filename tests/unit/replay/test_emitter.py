@@ -19,6 +19,7 @@ from core.replay.emitter import (
     envelope_emit_enabled,
 )
 from core.utils.uuid_gen import compute_correlation_id, compute_event_pk
+from core.replay.time import created_at_from_ts_ms
 
 
 @pytest.fixture(autouse=True)
@@ -88,7 +89,7 @@ class TestBuildEnvelope:
         assert env["event_type"] == "DECISION"
         assert env["event_id"] == "ev-001"
         assert env["ts_ms"] == 1700000000000
-        assert env["created_at"] == "2023-11-14T22:13:20Z"
+        assert env["created_at"] == created_at_from_ts_ms(1700000000000)
         assert env["payload"] == {"decision": "ALLOW"}
         assert "policy_id" not in env
         assert "policy_hash" not in env
@@ -131,6 +132,16 @@ class TestBuildEnvelope:
         assert env["correlation_id"] == compute_correlation_id("sig-001")
         assert env["trace_id"] == "trace-001"
         assert env["decision_context"] == {"inputs": {"symbol": "BTCUSDT"}}
+
+    def test_created_at_canonical_format(self):
+        ts_ms = 1700000000123
+        env = _build_envelope(
+            event_type="DECISION",
+            event_id="ev-002",
+            ts_ms=ts_ms,
+            payload={"decision": "ALLOW"},
+        )
+        assert env["created_at"] == created_at_from_ts_ms(ts_ms)
 
 
 class TestComputeEventHash:

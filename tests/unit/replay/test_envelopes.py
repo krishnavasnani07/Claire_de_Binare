@@ -9,6 +9,7 @@ from core.replay.envelopes import (
     FillEnvelopeV1,
     OrderEnvelopeV1,
 )
+from core.replay.time import created_at_from_ts_ms
 
 SAMPLE_SNAPSHOT = {
     "policy_id": "risk_v2",
@@ -45,7 +46,7 @@ class TestDecisionEnvelopeV1:
         assert "policy_snapshot" not in d
         assert d["event_type"] == "DECISION"
         assert d["schema_version"] == "envelope.v1"
-        assert d["created_at"] == "2023-11-14T22:13:20Z"
+        assert d["created_at"] == created_at_from_ts_ms(1700000000000)
 
     def test_to_dict_includes_present_optionals(self):
         env = DecisionEnvelopeV1(
@@ -91,6 +92,32 @@ class TestDecisionEnvelopeV1:
         assert d["trace_id"] == "trace-123"
         assert d["decision_context"] == SAMPLE_DECISION_CONTEXT
 
+    def test_created_at_is_canonical_milliseconds(self):
+        ts_ms = 1700000000123
+        env = DecisionEnvelopeV1(
+            schema_version="envelope.v1",
+            event_type="DECISION",
+            event_id="ev-002",
+            ts_ms=ts_ms,
+            payload={"decision": "ALLOW"},
+        )
+        d = env.to_dict()
+        assert d["created_at"] == created_at_from_ts_ms(ts_ms)
+        assert d["created_at"].endswith("Z")
+        assert "." in d["created_at"]
+
+    def test_created_at_preserves_explicit_value(self):
+        env = DecisionEnvelopeV1(
+            schema_version="envelope.v1",
+            event_type="DECISION",
+            event_id="ev-003",
+            ts_ms=1700000000000,
+            payload={"decision": "ALLOW"},
+            created_at="",
+        )
+        d = env.to_dict()
+        assert d["created_at"] == ""
+
     def test_roundtrip_determinism(self):
         kwargs = dict(
             schema_version="envelope.v1",
@@ -134,7 +161,7 @@ class TestOrderEnvelopeV1:
         assert "decision_context" not in d
         assert "policy_snapshot" not in d
         assert d["event_type"] == "ORDER"
-        assert d["created_at"] == "2023-11-14T22:13:20Z"
+        assert d["created_at"] == created_at_from_ts_ms(1700000000000)
 
     def test_to_dict_includes_present_optionals(self):
         env = OrderEnvelopeV1(
@@ -195,7 +222,7 @@ class TestFillEnvelopeV1:
         assert "decision_context" not in d
         assert "policy_snapshot" not in d
         assert d["event_type"] == "FILL"
-        assert d["created_at"] == "2023-11-14T22:13:20Z"
+        assert d["created_at"] == created_at_from_ts_ms(1700000000000)
 
     def test_to_dict_includes_present_optionals(self):
         env = FillEnvelopeV1(

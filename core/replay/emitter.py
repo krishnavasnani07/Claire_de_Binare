@@ -24,13 +24,13 @@ relations:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import logging
 import os
 from typing import Any, Dict, Optional
 
 from core.replay.canonical_json import canonical_json_dumps, sha256_hex
 from core.utils.uuid_gen import compute_correlation_id, compute_event_pk
+from core.replay.time import created_at_from_ts_ms
 
 logger = logging.getLogger("lr021.emitter")
 
@@ -57,14 +57,6 @@ def _compute_event_hash(envelope_dict: dict) -> str:
     canonical = canonical_json_dumps(envelope_dict)
     return sha256_hex(canonical.encode("utf-8"))
 
-
-def _created_at_from_ts_ms(ts_ms: int) -> str:
-    """Convert millisecond timestamps to canonical UTC ISO-8601."""
-    return (
-        datetime.fromtimestamp(ts_ms / 1000.0, tz=timezone.utc)
-        .isoformat()
-        .replace("+00:00", "Z")
-    )
 
 
 def _derive_correlation_id(signal_id: Optional[str]) -> Optional[str]:
@@ -132,7 +124,7 @@ def _build_envelope(
         "event_type": event_type,
         "event_id": deterministic_event_id,
         "ts_ms": ts_ms,
-        "created_at": _created_at_from_ts_ms(ts_ms),
+        "created_at": created_at_from_ts_ms(ts_ms),
         "payload": payload,
     }
     correlation_id = _derive_correlation_id(signal_id)
