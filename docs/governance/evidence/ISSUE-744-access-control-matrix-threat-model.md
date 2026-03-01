@@ -10,8 +10,8 @@ Pass criteria:
 - [x] Child issue mapping explicitly covers #741, #750, #751, #752, and #753.
 
 Evidence plan:
-- This anchor stays open until child DB-hardening issues close the current UNKNOWN/GAP entries with implementation evidence.
-- Live privilege evidence is expected from grant dumps, migration verification, and integrity-guard changes tracked in child issues.
+- This anchor stays open until the remaining live DB UNKNOWN/GAP entries are backed by deployed grant / RLS / actor evidence; the Task G integrity-report slices are delivered, but they do not close that operational proof gap.
+- Live privilege evidence is expected from grant dumps, migration verification, and least-privilege validation anchored back to [#741](https://github.com/jannekbuengener/Claire_de_Binare/issues/741).
 
 Current status:
 - Matrix: Open
@@ -28,7 +28,7 @@ Current status:
 - Status snapshot:
   - Matrix: `Open`
   - GitHub: `OPEN`
-  - updatedAt: `2026-03-01T03:55:25Z`
+  - updatedAt: `2026-03-01T05:20:54Z`
 - Owner metadata from issue body: `scope:core + prio:should + agent:gemini`
 - Scope: `Role x Resource x Action (CRUD)` for Postgres and SurrealDB, plus bypass paths and control gaps.
 - GitHub labels observed on Issue #744: `documentation`, `security`, `type:docs`, `type:security`, `type:research`, `scope:core`, `scope:docs`, `scope:monitoring`, `stage:proof`, `prio:must`, `agent:gemini`, `agent:copilot`
@@ -126,10 +126,10 @@ SurrealDB notes:
 | Issue | Status | What it delivers |
 |---|---|---|
 | [#741](https://github.com/jannekbuengener/Claire_de_Binare/issues/741) | CLOSED | Establishes the Postgres least-privilege baseline and the writer/reader split; this anchor depends on its grant model but still needs live-environment proof. |
-| [#750](https://github.com/jannekbuengener/Claire_de_Binare/issues/750) | OPEN | Hardens the `core_secrets` domain and should resolve the remaining integrity boundary around `core_secrets_metadata` and secret-adjacent flows. |
+| [#750](https://github.com/jannekbuengener/Claire_de_Binare/issues/750) | Delivered | Merged via [#1011](https://github.com/jannekbuengener/Claire_de_Binare/pull/1011) with evidence in `docs/governance/evidence/ISSUE-750-core-secrets-integrity-guards.md`. This now provides modeled + report coverage for `core_secrets_metadata` / `core_secrets` / `service_secrets`, but live grants, ownership, and runtime enforcement gaps still point back to [#741](https://github.com/jannekbuengener/Claire_de_Binare/issues/741). |
 | [#751](https://github.com/jannekbuengener/Claire_de_Binare/issues/751) | CLOSED | Adds integrity guard intent for `audit_trail` and `governance_events`; this closes part of the append-only threat model but not the full DB-layer matrix. |
-| [#752](https://github.com/jannekbuengener/Claire_de_Binare/issues/752) | OPEN | Hardens the deployment-approval domain, especially append-only and anti-bypass expectations for `deployment_approvals`. |
-| [#753](https://github.com/jannekbuengener/Claire_de_Binare/issues/753) | OPEN | Hardens the access domain around `system_config` and `security_policies`; this anchor notes that the inspected schema currently exposes `system_config` and `security_policy_refs`, not a `security_policies` table. |
+| [#752](https://github.com/jannekbuengener/Claire_de_Binare/issues/752) | Delivered | Merged via [#1010](https://github.com/jannekbuengener/Claire_de_Binare/pull/1010) with evidence in `docs/governance/evidence/ISSUE-752-deployment-integrity-guards.md`. This now provides modeled + report coverage for `deployment_approvals_mirror`, but live grants, RLS proof, and runtime enforcement gaps still point back to [#741](https://github.com/jannekbuengener/Claire_de_Binare/issues/741). |
+| [#753](https://github.com/jannekbuengener/Claire_de_Binare/issues/753) | Delivered | Merged via [#1009](https://github.com/jannekbuengener/Claire_de_Binare/pull/1009) with evidence in `docs/governance/evidence/ISSUE-753-access-integrity-guards.md`. This now provides modeled + report coverage for `system_config` and `security_policy_refs`, but live grants, RLS proof, and runtime enforcement gaps still point back to [#741](https://github.com/jannekbuengener/Claire_de_Binare/issues/741). |
 
 ### Related issues
 
@@ -148,6 +148,24 @@ SurrealDB notes:
 - Run: [22291780930](https://github.com/jannekbuengener/Claire_de_Binare/actions/runs/22291780930) `ci`
 - Run: [22291780252](https://github.com/jannekbuengener/Claire_de_Binare/actions/runs/22291780252) `Automatic Dependency Submission`
 
+### Task G delivery evidence linked from this anchor
+
+- [#753](https://github.com/jannekbuengener/Claire_de_Binare/issues/753) access-domain delivery:
+  - PR: [#1009](https://github.com/jannekbuengener/Claire_de_Binare/pull/1009)
+  - CI: [22535953931](https://github.com/jannekbuengener/Claire_de_Binare/actions/runs/22535953931) `ci`
+  - Policy gate: [22535953930](https://github.com/jannekbuengener/Claire_de_Binare/actions/runs/22535953930), [22535956261](https://github.com/jannekbuengener/Claire_de_Binare/actions/runs/22535956261)
+  - Evidence doc: `docs/governance/evidence/ISSUE-753-access-integrity-guards.md`
+- [#752](https://github.com/jannekbuengener/Claire_de_Binare/issues/752) deployment-domain delivery:
+  - PR: [#1010](https://github.com/jannekbuengener/Claire_de_Binare/pull/1010)
+  - CI: [22536495129](https://github.com/jannekbuengener/Claire_de_Binare/actions/runs/22536495129) `ci`
+  - Policy gate: [22536495087](https://github.com/jannekbuengener/Claire_de_Binare/actions/runs/22536495087)
+  - Evidence doc: `docs/governance/evidence/ISSUE-752-deployment-integrity-guards.md`
+- [#750](https://github.com/jannekbuengener/Claire_de_Binare/issues/750) core-secrets delivery:
+  - PR: [#1011](https://github.com/jannekbuengener/Claire_de_Binare/pull/1011)
+  - CI: [22536664457](https://github.com/jannekbuengener/Claire_de_Binare/actions/runs/22536664457) `ci`
+  - Policy gate: [22536664462](https://github.com/jannekbuengener/Claire_de_Binare/actions/runs/22536664462)
+  - Evidence doc: `docs/governance/evidence/ISSUE-750-core-secrets-integrity-guards.md`
+
 ### Repo artifacts used for the current-state matrix
 
 - `infrastructure/database/roles_and_grants.sql`
@@ -164,4 +182,5 @@ SurrealDB notes:
 - No active Postgres RLS policy definitions were found in the inspected repo snapshot. Any "RLS" expectation must therefore be treated as planned or historical unless child evidence proves otherwise.
 - No explicit SurrealDB users, scopes, or access tokens are defined in the inspected repo artifacts, so actor attribution in the SurrealDB matrix remains `UNKNOWN (GAP)`.
 - The SurrealDB `governance_events` permission line appears malformed in `setup.surql`, so its effective append-only semantics are not yet provable from the checked-in file alone.
-- The inspected DB layer exposes `core_secrets_metadata` and `security_policy_refs`; it does not expose `core_secrets` or `security_policies` tables directly. The child issues still define the intended target domains and remain the correct implementation trace.
+- The Task G child deliveries now provide modeled + report coverage for `core_secrets_metadata`, `deployment_approvals_mirror`, `system_config`, and `security_policy_refs`, but they do not replace the missing live grant dump / RLS / runtime-enforcement proof that still needs to be anchored against [#741](https://github.com/jannekbuengener/Claire_de_Binare/issues/741).
+- The inspected DB layer still exposes `core_secrets_metadata` and `security_policy_refs` rather than the logical issue names `core_secrets` and `security_policies`. The delivered child docs now record that naming drift explicitly, which closes the documentation gap but not the live-environment verification gap.
