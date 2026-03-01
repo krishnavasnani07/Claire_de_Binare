@@ -19,6 +19,7 @@ from core.replay.canonical_json import canonical_json_dumps
 INTEGRITY_KEY_ENV = "CDB_AUDIT_INTEGRITY_KEY"
 ACCESS_INTEGRITY_KEY_ENV = "CDB_ACCESS_INTEGRITY_KEY"
 DEPLOYMENT_INTEGRITY_KEY_ENV = "CDB_DEPLOYMENT_INTEGRITY_KEY"
+CORE_SECRETS_INTEGRITY_KEY_ENV = "CDB_CORE_SECRETS_INTEGRITY_KEY"
 INTEGRITY_ALGO = "hmac-sha256"
 INTEGRITY_VERSION = 1
 
@@ -68,6 +69,24 @@ TABLE_HASH_FIELDS = {
         "yaml_evidence_path",
         "created_at",
     ),
+    "core_secrets_metadata": (
+        "secret_name",
+        "provider_ref",
+        "fingerprint",
+        "created_at",
+    ),
+    "core_secrets": (
+        "secret_name",
+        "provider_ref",
+        "fingerprint",
+        "created_at",
+    ),
+    "service_secrets": (
+        "secret_name",
+        "provider_ref",
+        "fingerprint",
+        "created_at",
+    ),
 }
 
 TABLE_KEY_ENVS = {
@@ -76,6 +95,9 @@ TABLE_KEY_ENVS = {
     "system_config": ACCESS_INTEGRITY_KEY_ENV,
     "security_policy_refs": ACCESS_INTEGRITY_KEY_ENV,
     "deployment_approvals_mirror": DEPLOYMENT_INTEGRITY_KEY_ENV,
+    "core_secrets_metadata": CORE_SECRETS_INTEGRITY_KEY_ENV,
+    "core_secrets": CORE_SECRETS_INTEGRITY_KEY_ENV,
+    "service_secrets": CORE_SECRETS_INTEGRITY_KEY_ENV,
 }
 
 TABLE_ROW_ID_FIELDS = {
@@ -84,6 +106,9 @@ TABLE_ROW_ID_FIELDS = {
     "system_config": ("config_key",),
     "security_policy_refs": ("policy_id",),
     "deployment_approvals_mirror": ("pr_id", "commit_sha"),
+    "core_secrets_metadata": ("secret_name",),
+    "core_secrets": ("secret_name",),
+    "service_secrets": ("secret_name",),
 }
 
 
