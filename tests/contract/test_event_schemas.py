@@ -14,7 +14,9 @@ SCHEMA_PATH = Path("core/replay/contracts/envelope_v1.schema.json")
 SCHEMA: Dict[str, Any] = json.loads(SCHEMA_PATH.read_text())
 
 
-def make_sample_envelope(*, event_type: str, ts_ms: int = 1700000000000, **kwargs: Any) -> Dict[str, Any]:
+def make_sample_envelope(
+    *, event_type: str, ts_ms: int = 1700000000000, **kwargs: Any
+) -> Dict[str, Any]:
     base = {
         "event_id": "env-001",
         "ts_ms": ts_ms,
