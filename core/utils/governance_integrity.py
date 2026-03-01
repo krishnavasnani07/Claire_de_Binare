@@ -17,6 +17,7 @@ from typing import Any
 from core.replay.canonical_json import canonical_json_dumps
 
 INTEGRITY_KEY_ENV = "CDB_AUDIT_INTEGRITY_KEY"
+ACCESS_INTEGRITY_KEY_ENV = "CDB_ACCESS_INTEGRITY_KEY"
 INTEGRITY_ALGO = "hmac-sha256"
 INTEGRITY_VERSION = 1
 
@@ -46,14 +47,52 @@ TABLE_HASH_FIELDS = {
         "evidence_ref",
         "created_at",
     ),
+    "system_config": (
+        "config_key",
+        "config_scope",
+        "value_ref",
+        "value_hash",
+        "source_path",
+        "observed_at",
+    ),
+    "security_policy_refs": (
+        "policy_id",
+        "version_hash",
+        "docs_path",
+        "observed_at",
+    ),
+}
+
+TABLE_KEY_ENVS = {
+    "audit_trail": INTEGRITY_KEY_ENV,
+    "governance_events": INTEGRITY_KEY_ENV,
+    "system_config": ACCESS_INTEGRITY_KEY_ENV,
+    "security_policy_refs": ACCESS_INTEGRITY_KEY_ENV,
+}
+
+TABLE_ROW_ID_FIELDS = {
+    "audit_trail": ("id",),
+    "governance_events": ("id",),
+    "system_config": ("config_key",),
+    "security_policy_refs": ("policy_id",),
 }
 
 
-def resolve_integrity_key(key: str | None = None) -> str | None:
+def resolve_integrity_key(
+    key: str | None = None,
+    *,
+    env_var: str = INTEGRITY_KEY_ENV,
+) -> str | None:
     """Resolve the external integrity key from the override or environment."""
     if key is not None:
         return key
-    return os.getenv(INTEGRITY_KEY_ENV)
+    return os.getenv(env_var)
+
+
+def resolve_table_integrity_key(table_name: str, key: str | None = None) -> str | None:
+    """Resolve the integrity key for a specific governance/access-domain table."""
+    env_var = TABLE_KEY_ENVS.get(table_name, INTEGRITY_KEY_ENV)
+    return resolve_integrity_key(key, env_var=env_var)
 
 
 def _normalize_timestamp(value: Any) -> Any:
@@ -104,9 +143,10 @@ def compute_integrity_hash(
     key: str | None = None,
 ) -> str:
     """Compute the HMAC-SHA256 integrity hash for a governance row."""
-    resolved_key = resolve_integrity_key(key)
+    env_var = TABLE_KEY_ENVS.get(table_name, INTEGRITY_KEY_ENV)
+    resolved_key = resolve_integrity_key(key, env_var=env_var)
     if not resolved_key:
-        raise ValueError(f"{INTEGRITY_KEY_ENV} is not set")
+        raise ValueError(f"{env_var} is not set")
 
     material = canonical_json_dumps(build_integrity_payload(table_name, row)).encode(
         "utf-8"
@@ -146,6 +186,16 @@ def _coerce_version(value: Any) -> int | None:
         return None
 
 
+def _resolve_row_id(table_name: str, row: dict[str, Any]) -> Any:
+    fields = TABLE_ROW_ID_FIELDS.get(table_name, ("id",))
+    values = [row.get(field) for field in fields]
+    if all(value is None for value in values):
+        return None
+    if len(values) == 1:
+        return values[0]
+    return ":".join("" if value is None else str(value) for value in values)
+
+
 def validate_row_integrity(
     table_name: str,
     row: dict[str, Any],
@@ -155,7 +205,7 @@ def validate_row_integrity(
     stored_hash = row.get("integrity_hash")
     stored_algo = row.get("integrity_algo")
     stored_version = _coerce_version(row.get("integrity_version"))
-    row_id = row.get("id")
+    row_id = _resolve_row_id(table_name, row)
 
     result = {
         "table": table_name,
@@ -167,10 +217,12 @@ def validate_row_integrity(
         "expected_hash_prefix": None,
     }
 
-    resolved_key = resolve_integrity_key(key)
+    resolved_key = resolve_table_integrity_key(table_name, key=key)
     if not resolved_key:
         result["reason_code"] = REASON_KEY_MISSING
-        result["reason"] = f"{INTEGRITY_KEY_ENV} is not set"
+        result["reason"] = (
+            f"{TABLE_KEY_ENVS.get(table_name, INTEGRITY_KEY_ENV)} is not set"
+        )
         return result
 
     if not stored_hash:
