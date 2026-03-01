@@ -33,17 +33,9 @@ relations:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-
-def _created_at_from_ts_ms(ts_ms: int) -> str:
-    """Convert millisecond timestamps to canonical UTC ISO-8601."""
-    return (
-        datetime.fromtimestamp(ts_ms / 1000.0, tz=timezone.utc)
-        .isoformat()
-        .replace("+00:00", "Z")
-    )
+from core.replay.time import created_at_from_ts_ms
 
 
 @dataclass
@@ -72,7 +64,11 @@ class DecisionEnvelopeV1:
             "event_type": self.event_type,
             "event_id": self.event_id,
             "ts_ms": self.ts_ms,
-            "created_at": self.created_at or _created_at_from_ts_ms(self.ts_ms),
+            "created_at": (
+                self.created_at
+                if self.created_at is not None
+                else created_at_from_ts_ms(self.ts_ms)
+            ),
             "payload": self.payload,
         }
         if self.correlation_id is not None:
@@ -120,7 +116,11 @@ class OrderEnvelopeV1:
             "event_type": self.event_type,
             "event_id": self.event_id,
             "ts_ms": self.ts_ms,
-            "created_at": self.created_at or _created_at_from_ts_ms(self.ts_ms),
+            "created_at": (
+                self.created_at
+                if self.created_at is not None
+                else created_at_from_ts_ms(self.ts_ms)
+            ),
             "payload": self.payload,
         }
         if self.correlation_id is not None:
@@ -168,7 +168,11 @@ class FillEnvelopeV1:
             "event_type": self.event_type,
             "event_id": self.event_id,
             "ts_ms": self.ts_ms,
-            "created_at": self.created_at or _created_at_from_ts_ms(self.ts_ms),
+            "created_at": (
+                self.created_at
+                if self.created_at is not None
+                else created_at_from_ts_ms(self.ts_ms)
+            ),
             "payload": self.payload,
         }
         if self.correlation_id is not None:
