@@ -18,6 +18,7 @@ from core.replay.canonical_json import canonical_json_dumps
 
 INTEGRITY_KEY_ENV = "CDB_AUDIT_INTEGRITY_KEY"
 ACCESS_INTEGRITY_KEY_ENV = "CDB_ACCESS_INTEGRITY_KEY"
+DEPLOYMENT_INTEGRITY_KEY_ENV = "CDB_DEPLOYMENT_INTEGRITY_KEY"
 INTEGRITY_ALGO = "hmac-sha256"
 INTEGRITY_VERSION = 1
 
@@ -61,6 +62,12 @@ TABLE_HASH_FIELDS = {
         "docs_path",
         "observed_at",
     ),
+    "deployment_approvals_mirror": (
+        "pr_id",
+        "commit_sha",
+        "yaml_evidence_path",
+        "created_at",
+    ),
 }
 
 TABLE_KEY_ENVS = {
@@ -68,6 +75,7 @@ TABLE_KEY_ENVS = {
     "governance_events": INTEGRITY_KEY_ENV,
     "system_config": ACCESS_INTEGRITY_KEY_ENV,
     "security_policy_refs": ACCESS_INTEGRITY_KEY_ENV,
+    "deployment_approvals_mirror": DEPLOYMENT_INTEGRITY_KEY_ENV,
 }
 
 TABLE_ROW_ID_FIELDS = {
@@ -75,6 +83,7 @@ TABLE_ROW_ID_FIELDS = {
     "governance_events": ("id",),
     "system_config": ("config_key",),
     "security_policy_refs": ("policy_id",),
+    "deployment_approvals_mirror": ("pr_id", "commit_sha"),
 }
 
 

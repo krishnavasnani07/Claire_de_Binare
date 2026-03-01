@@ -31,6 +31,8 @@ DEFINE FIELD deployment_approvals_mirror.pr_id TYPE string;
 DEFINE FIELD deployment_approvals_mirror.commit_sha TYPE string;
 DEFINE FIELD deployment_approvals_mirror.yaml_evidence_path TYPE string;
 DEFINE FIELD deployment_approvals_mirror.integrity_hash TYPE string;
+DEFINE FIELD deployment_approvals_mirror.integrity_algo TYPE string;
+DEFINE FIELD deployment_approvals_mirror.integrity_version TYPE int;
 DEFINE FIELD deployment_approvals_mirror.created_at TYPE datetime;
 DEFINE TABLE deployment_approvals_mirror PERMISSIONS FOR CREATE, FOR SELECT;
 DEFINE INDEX idx_deployment_approvals_created_at ON deployment_approvals_mirror(created_at);
