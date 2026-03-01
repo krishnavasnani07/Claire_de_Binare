@@ -28,7 +28,7 @@ Current status:
 - Status snapshot:
   - Matrix: `Open`
   - GitHub: `OPEN`
-  - updatedAt: `2026-03-01T05:20:54Z`
+  - updatedAt: `2026-03-01T06:01:34Z`
 - Owner metadata from issue body: `scope:core + prio:should + agent:gemini`
 - Scope: `Role x Resource x Action (CRUD)` for Postgres and SurrealDB, plus bypass paths and control gaps.
 - GitHub labels observed on Issue #744: `documentation`, `security`, `type:docs`, `type:security`, `type:research`, `scope:core`, `scope:docs`, `scope:monitoring`, `stage:proof`, `prio:must`, `agent:gemini`, `agent:copilot`
@@ -125,7 +125,7 @@ SurrealDB notes:
 
 | Issue | Status | What it delivers |
 |---|---|---|
-| [#741](https://github.com/jannekbuengener/Claire_de_Binare/issues/741) | CLOSED | Establishes the Postgres least-privilege baseline and the writer/reader split; this anchor depends on its grant model but still needs live-environment proof. |
+| [#741](https://github.com/jannekbuengener/Claire_de_Binare/issues/741) | Phase-1 Delivered | Delivered via [#1013](https://github.com/jannekbuengener/Claire_de_Binare/pull/1013) with CI evidence in [22537116044](https://github.com/jannekbuengener/Claire_de_Binare/actions/runs/22537116044), report tooling in `docs/governance/evidence/ISSUE-741-postgres-least-privilege-rls.md`, and a local-docker live evidence comment at [issuecomment-3979218245](https://github.com/jannekbuengener/Claire_de_Binare/issues/741#issuecomment-3979218245). The operational gap is now narrowed to environment-by-environment proof and eventual runtime enforcement decisions. |
 | [#750](https://github.com/jannekbuengener/Claire_de_Binare/issues/750) | Delivered | Merged via [#1011](https://github.com/jannekbuengener/Claire_de_Binare/pull/1011) with evidence in `docs/governance/evidence/ISSUE-750-core-secrets-integrity-guards.md`. This now provides modeled + report coverage for `core_secrets_metadata` / `core_secrets` / `service_secrets`, but live grants, ownership, and runtime enforcement gaps still point back to [#741](https://github.com/jannekbuengener/Claire_de_Binare/issues/741). |
 | [#751](https://github.com/jannekbuengener/Claire_de_Binare/issues/751) | CLOSED | Adds integrity guard intent for `audit_trail` and `governance_events`; this closes part of the append-only threat model but not the full DB-layer matrix. |
 | [#752](https://github.com/jannekbuengener/Claire_de_Binare/issues/752) | Delivered | Merged via [#1010](https://github.com/jannekbuengener/Claire_de_Binare/pull/1010) with evidence in `docs/governance/evidence/ISSUE-752-deployment-integrity-guards.md`. This now provides modeled + report coverage for `deployment_approvals_mirror`, but live grants, RLS proof, and runtime enforcement gaps still point back to [#741](https://github.com/jannekbuengener/Claire_de_Binare/issues/741). |
@@ -149,6 +149,13 @@ SurrealDB notes:
 - Run: [22291780252](https://github.com/jannekbuengener/Claire_de_Binare/actions/runs/22291780252) `Automatic Dependency Submission`
 
 ### Task G delivery evidence linked from this anchor
+
+- [#741](https://github.com/jannekbuengener/Claire_de_Binare/issues/741) least-privilege phase-1 delivery:
+  - PR: [#1013](https://github.com/jannekbuengener/Claire_de_Binare/pull/1013)
+  - CI: [22537116044](https://github.com/jannekbuengener/Claire_de_Binare/actions/runs/22537116044) `ci`
+  - Policy gate: [22537116047](https://github.com/jannekbuengener/Claire_de_Binare/actions/runs/22537116047)
+  - Evidence doc: `docs/governance/evidence/ISSUE-741-postgres-least-privilege-rls.md`
+  - Live evidence comment: [issuecomment-3979218245](https://github.com/jannekbuengener/Claire_de_Binare/issues/741#issuecomment-3979218245)
 
 - [#753](https://github.com/jannekbuengener/Claire_de_Binare/issues/753) access-domain delivery:
   - PR: [#1009](https://github.com/jannekbuengener/Claire_de_Binare/pull/1009)
@@ -178,7 +185,7 @@ SurrealDB notes:
 
 ### Explicit gaps
 
-- No live Postgres grant dump or `\du` / `information_schema` evidence is attached here, so effective runtime privileges in deployed environments remain partially unverified. This is the main gap for [#741](https://github.com/jannekbuengener/Claire_de_Binare/issues/741).
+- Local-docker live Postgres grant and RLS evidence is now attached via [#741 comment evidence](https://github.com/jannekbuengener/Claire_de_Binare/issues/741#issuecomment-3979218245), but deployed environments remain partially unverified until equivalent artifacts are captured per environment. This remains the main gap for [#741](https://github.com/jannekbuengener/Claire_de_Binare/issues/741).
 - No active Postgres RLS policy definitions were found in the inspected repo snapshot. Any "RLS" expectation must therefore be treated as planned or historical unless child evidence proves otherwise.
 - No explicit SurrealDB users, scopes, or access tokens are defined in the inspected repo artifacts, so actor attribution in the SurrealDB matrix remains `UNKNOWN (GAP)`.
 - The SurrealDB `governance_events` permission line appears malformed in `setup.surql`, so its effective append-only semantics are not yet provable from the checked-in file alone.
