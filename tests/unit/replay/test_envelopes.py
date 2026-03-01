@@ -10,7 +10,6 @@ from core.replay.envelopes import (
     OrderEnvelopeV1,
 )
 
-
 SAMPLE_SNAPSHOT = {
     "policy_id": "risk_v2",
     "policy_version": "2.1.0",
