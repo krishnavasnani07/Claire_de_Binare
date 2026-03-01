@@ -21,8 +21,8 @@ Current status:
 
 ## Implementation
 
-- PR: TBD
-- CI/Test run: TBD
+- PR: https://github.com/jannekbuengener/Claire_de_Binare/pull/1011
+- CI/Test run: https://github.com/jannekbuengener/Claire_de_Binare/pull/1011/checks
 - Doc/ADR: `docs/governance/core-secrets-integrity-report.md`
 
 ### What Changed
