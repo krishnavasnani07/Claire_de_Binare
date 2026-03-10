@@ -26,11 +26,17 @@ if ! ls -d ${ARTIFACT_DIR} &>/dev/null; then
   echo "⚠️  WARNING: No soak test artifacts directory found"
   echo "Expected: artifacts/soak_test_YYYYMMDD_HHMMSS/"
   echo "Creating artifacts directory"
-  mkdir -p "artifacts/soak_test_$(date +%Y%m%d)_$(date +%H%M%S)"
-  ARTIFACT_DIR="artifacts/soak_test_$(date +%Y%m%d)_$(date +%H%M%S)"
+  NEW_DIR="artifacts/soak_test_$(date +%Y%m%d)_$(date +%H%M%S)"
+  mkdir -p "$NEW_DIR"
+  ARTIFACT_DIR="$NEW_DIR"
 fi
 
 ARTIFACT_PATH=$(ls -d ${ARTIFACT_DIR} | head -1)
+
+if [ -z "$ARTIFACT_PATH" ] || [ ! -d "$ARTIFACT_PATH" ]; then
+  echo "ERROR: artifact directory not available — aborting soak monitor" >&2
+  exit 1
+fi
 
 # Colors for output
 RED='\033[0;31m'
