@@ -14,8 +14,8 @@ Examples:
     # Full multi-agent pipeline
     python run_discussion.py proposal.md --preset deep
 
-    # Custom Docs Hub location
-    python run_discussion.py proposal.md --docs-hub /path/to/docs
+    # Custom docs workspace location
+    python run_discussion.py proposal.md --docs-hub /path/to/workspace
 """
 
 import argparse
@@ -29,7 +29,6 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from orchestrator import DiscussionOrchestrator  # noqa: E402  # noqa: E402
 from utils.config_loader import ConfigLoader  # noqa: E402  # noqa: E402
-
 
 console = Console(force_terminal=True, legacy_windows=False)
 
@@ -57,7 +56,7 @@ This proposal was automatically generated to validate the Discussion Pipeline en
 """
 
 
-def ensure_proposal_file(proposal_arg: str, docs_hub_path: Path) -> Path:
+def ensure_proposal_file(proposal_arg: str, discussions_path: Path) -> Path:
     """
     Ensure a usable proposal file exists.
 
@@ -73,7 +72,7 @@ def ensure_proposal_file(proposal_arg: str, docs_hub_path: Path) -> Path:
     elif proposal_input.exists():
         proposals_dir = proposal_input.parent
     else:
-        proposals_dir = docs_hub_path / "discussions" / "proposals"
+        proposals_dir = discussions_path / "proposals"
 
     proposals_dir.mkdir(parents=True, exist_ok=True)
 
@@ -101,7 +100,7 @@ def main():
 Examples:
   %(prog)s proposal.md
   %(prog)s proposal.md --preset standard
-  %(prog)s proposal.md --docs-hub ../Claire_de_Binare_Docs
+  %(prog)s proposal.md --docs-hub D:/Dev/Workspaces/Repos/Claire_de_Binare
 
 Presets:
   quick       Single agent (Claude) - fast analysis
@@ -113,7 +112,7 @@ Environment:
   ANTHROPIC_API_KEY   Required for Claude agent
   GOOGLE_API_KEY      Required for Gemini agent (Phase 2)
   GITHUB_TOKEN        Required for GitHub integration (Phase 3)
-  DOCS_HUB_PATH       Optional path to Docs Hub workspace
+  DOCS_HUB_PATH       Optional path to docs workspace
         """,
     )
 
@@ -131,7 +130,7 @@ Environment:
         "--docs-hub",
         type=str,
         default=None,
-        help="Path to Docs Hub workspace (auto-detected if not specified)",
+        help="Path to docs workspace (auto-detected if not specified)",
     )
 
     parser.add_argument(
@@ -155,7 +154,9 @@ Environment:
         config_loader = ConfigLoader(docs_hub_path=args.docs_hub)
 
         # Ensure proposal exists and has content
-        proposal_path = ensure_proposal_file(args.proposal, config_loader.docs_hub_path)
+        proposal_path = ensure_proposal_file(
+            args.proposal, config_loader.discussions_path
+        )
 
         if not proposal_path.suffix == ".md":
             console.print(
