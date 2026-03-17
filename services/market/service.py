@@ -23,6 +23,7 @@ import time
 
 import redis
 from flask import Flask, jsonify
+from prometheus_client import Counter, Gauge, generate_latest, CONTENT_TYPE_LATEST
 
 from core.utils.redis_payload import sanitize_market_data
 
@@ -35,6 +36,21 @@ logger = logging.getLogger(__name__)
 
 MARKET_PRICE_TTL_SECONDS = 30
 SUBSCRIBE_CHANNEL = "market_data"
+
+# ─── Prometheus metrics ───────────────────────────────────────────────────────
+
+MESSAGES_RECEIVED = Counter(
+    "market_messages_received_total",
+    "Total number of valid market_data messages processed",
+)
+MESSAGES_INVALID = Counter(
+    "market_messages_invalid_total",
+    "Total number of invalid or rejected market_data messages",
+)
+CACHE_SIZE = Gauge(
+    "market_cache_size",
+    "Number of symbols currently held in the in-memory price cache",
+)
 
 app = Flask(__name__)
 
@@ -65,12 +81,14 @@ def _process_message(raw: str) -> None:
         data = json.loads(raw)
     except (json.JSONDecodeError, TypeError):
         _stats["messages_invalid"] += 1
+        MESSAGES_INVALID.inc()
         return
 
     try:
         sanitized = sanitize_market_data(data)
     except ValueError as exc:
         _stats["messages_invalid"] += 1
+        MESSAGES_INVALID.inc()
         logger.debug("sanitize_market_data rejected: %s", exc)
         return
 
@@ -86,8 +104,10 @@ def _process_message(raw: str) -> None:
     }
     with _cache_lock:
         _cache[key] = entry
+        CACHE_SIZE.set(len(_cache))
 
     _stats["messages_received"] += 1
+    MESSAGES_RECEIVED.inc()
 
     if _redis_client is not None:
         try:
@@ -128,6 +148,11 @@ def status():
             "cached_symbols": symbols,
         }
     )
+
+
+@app.route("/metrics", methods=["GET"])
+def metrics():
+    return generate_latest(), 200, {"Content-Type": CONTENT_TYPE_LATEST}
 
 
 @app.route("/market/price/<symbol>", methods=["GET"])
