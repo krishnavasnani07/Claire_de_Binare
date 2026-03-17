@@ -107,3 +107,70 @@ no live stack, no `E2E_RUN=1` guard. Runs in CI as part of
 
 **LR-020 status: `IMPLEMENTED`** — Tier 1 CI proof + Tier 2 live-stack FILLED result.
 Full paper-trading pipeline confirmed end-to-end.
+
+## 5. Tier 2 — Operational Preconditions
+
+> **Governance note (#1188):** The Tier-2 run was executed manually against a local
+> live stack. The table below documents which operational preconditions were explicitly
+> verified before the run, which are only inferable from the run outcome, and which
+> were not checked at all. Documentation of this state does not retroactively
+> constitute a formal precheck.
+
+| Precondition | Required by | Verification method | Status |
+|---|---|---|---|
+| Redis connectivity | script | `ping()` + `sys.exit` on failure | **EXPLICITLY VERIFIED** |
+| Redis password present | script | 3-tier fallback + `sys.exit` if missing | **EXPLICITLY VERIFIED** |
+| `account_state` available in Redis | script | `_read_account_state()` + WARNING if None | **EXPLICITLY VERIFIED** (embedded in signal; ts_ms ~29 days old — no staleness guard) |
+| `market_state:BTCUSDT` price available | script | `_read_market_price()` + WARNING if None | **EXPLICITLY VERIFIED** |
+| Risk subscribers on `signals` channel | script | publish() return value printed | **IMPLICIT** — subscriber count printed to stdout, not captured in evidence JSON |
+| Kill-switch INACTIVE | P5-policy `require_kill_switch_precheck: true` | **Not checked pre-run** | **NOT EXPLICITLY VERIFIED** — inferred ex post from FILLED result (active kill-switch would have produced REJECTED) |
+| Runtime mode = mock/shadow | P5-policy `require_runtime_mode_shadow_precheck: true` | **Not checked pre-run** | **NOT EXPLICITLY VERIFIED** — inferred ex post from `MOCK_` prefix in `order_id` |
+| Regime = TREND or RANGE | script stdout note | **Not checked pre-run** | **IMPLICIT** — Risk Service decision acts as runtime gate; FILLED proves regime was acceptable at run time |
+| Allocation entry for `lr020-t2` | script comment (line 461) | **Not checked pre-run** | **IMPLICIT** — FILLED proves entry existed at run time |
+
+### What is proven
+
+- Full Signal→Risk→Execution→stream pipeline operated correctly under the conditions
+  present at run time.
+- Redis connectivity, credentials, account_state, and market_price were available and
+  explicitly verified.
+- All four evidence checks in `lr020_tier2_evidence.json` returned PASS.
+
+### What is only inferred
+
+- Kill-switch was inactive: inferred from non-KILL_SWITCH_ACTIVE result, not from a
+  pre-run state check.
+- Runtime mode was mock/shadow: inferred from `MOCK_` prefix in order_id, not from a
+  pre-run `/status` endpoint check.
+- Regime was TREND/RANGE: inferred from DECISION_ALLOW result, not from a pre-run
+  regime state check.
+
+### What remains unverified as a formal precondition
+
+The following preconditions required by `governance/p5_canary_readiness.yaml` were
+**not performed as explicit pre-run checks** and are **not captured in the evidence
+artifact**:
+
+- **Kill-switch state** (`require_kill_switch_precheck: true`) — no pre-run check in
+  `scripts/lr020_tier2_evidence_capture.py`; not recorded in `lr020_tier2_evidence.json`
+- **Runtime mode** (`require_runtime_mode_shadow_precheck: true`) — no `/status`
+  endpoint query before injection; not recorded in artifact
+
+### Operator guidance for future Tier-2 re-runs
+
+Pre-run precondition checks are now **automated in the capture script (schema 1.2)**
+introduced in the follow-up to #1188:
+
+- Kill-switch state is queried from `http://localhost:8002/status` →
+  `risk_state.circuit_breaker` before probe injection.
+- Execution runtime mode is queried from `http://localhost:8003/status` →
+  `mode` before probe injection.
+- Either check failing, timing out, or returning a malformed response aborts
+  the script with exit code 1 (fail-closed) before any signal is published.
+- Both check results are recorded in the evidence artifact under `prechecks`.
+
+**Historical note:** The original Tier-2 run (schema 1.1, captured 2026-03-17,
+commit `8c75697`) was executed before these automated checks existed. Kill-switch
+state and runtime mode were not explicitly verified pre-run in that artifact; they
+are only inferable ex post from the FILLED result. Schema 1.1 runs remain honestly
+documented as lacking explicit pre-run verification. Schema 1.2 hardens future runs.
