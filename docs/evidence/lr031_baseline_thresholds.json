@@ -1,19 +1,19 @@
 {
   "schema_version": "1.0",
-  "calibration_status": "UNCALIBRATED",
-  "provenance": "Populate after first successful P5 dry run. null = threshold not yet calibrated.",
+  "calibration_status": "CALIBRATED",
+  "provenance": "Calibrated from lean shadow-soak run 23176247609 (2026-03-17, commit a9a62be0a4bdf552acc7466eaa890f2ac36ddd58, 5 min). Safety invariants remain strict; activity metrics use conservative minimum floors to tolerate normal runtime jitter. Originally calibrated in a9a62be, inadvertently reverted by 8d1076b — restored here from run evidence.",
   "thresholds": {
-    "signals_received":     { "min": null },
-    "orders_blocked":       { "min": null },
-    "shadow_blocked_total": { "min": null },
-    "orders_approved":      { "max": null },
-    "orders_filled":        { "exact": null },
-    "orders_received":      { "min": null },
-    "orders_rejected":      { "min": null },
-    "total_exposure":       { "max": null },
-    "has_live_data":        { "exact": null },
-    "zero_execution":       { "exact": null },
-    "zero_exposure":        { "exact": null },
-    "risk_blocked_all":     { "exact": null }
+    "signals_received":     { "min": 16 },
+    "orders_blocked":       { "min": 16 },
+    "shadow_blocked_total": { "min": 1 },
+    "orders_approved":      { "max": 0 },
+    "orders_filled":        { "exact": 0 },
+    "orders_received":      { "min": 1 },
+    "orders_rejected":      { "min": 1 },
+    "total_exposure":       { "max": 0.0 },
+    "has_live_data":        { "exact": true },
+    "zero_execution":       { "exact": true },
+    "zero_exposure":        { "exact": true },
+    "risk_blocked_all":     { "exact": true }
   }
 }
