@@ -1,4 +1,4 @@
-"""Unit tests for services/market/tools/v3_compare.py (Issue #1206 shadow compare)."""
+"""Unit tests for services/market/tools/v3_compare.py (Issue #1206 shadow compare/gate)."""
 
 import json
 from unittest.mock import MagicMock, patch
@@ -6,10 +6,13 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from services.market.tools.v3_compare import (
+    SCHEMA_VERSION,
     STALE_THRESHOLD_MS,
+    GateThresholds,
     build_report,
     collect_samples,
     compare_snapshot,
+    evaluate_gate,
     summarize,
 )
 
@@ -39,6 +42,43 @@ def _shadow(price: str = "50000.00", ts_ms: int = 1_700_000_001_000) -> dict:
         "trade_qty": "0.001",
         "side": "buy",
         "cached_at_ms": ts_ms + 2,
+    }
+
+
+def _make_summary(
+    total: int = 20,
+    comparable: int = 20,
+    missing_shadow: int = 0,
+    missing_live: int = 0,
+    stale_shadow: int = 0,
+    stale_live: int = 0,
+    price_delta_rel_pct_p95: float = 0.0,
+    price_delta_rel_pct_max: float = 0.0,
+    ts_delta_ms_p95: float = 100.0,
+) -> dict:
+    """Build a synthetic summary dict for gate tests — no real Redis needed."""
+    return {
+        "total_samples": total,
+        "comparable_samples": comparable,
+        "missing_live_count": missing_live,
+        "missing_shadow_count": missing_shadow,
+        "stale_live_count": stale_live,
+        "stale_shadow_count": stale_shadow,
+        "price_delta_abs": {"min": 0.0, "max": 0.0, "mean": 0.0, "p95": 0.0},
+        "price_delta_rel_pct": {
+            "min": 0.0,
+            "max": price_delta_rel_pct_max,
+            "mean": 0.0,
+            "p95": price_delta_rel_pct_p95,
+        },
+        "ts_delta_ms": {
+            "min": 0,
+            "max": ts_delta_ms_p95,
+            "mean": 50,
+            "p95": ts_delta_ms_p95,
+        },
+        "live_age_ms": {"min": 0, "max": 1000, "mean": 500, "p95": 900},
+        "shadow_age_ms": {"min": 0, "max": 1000, "mean": 500, "p95": 900},
     }
 
 
@@ -248,61 +288,304 @@ def test_summarize_p95_is_highest_when_single_sample():
     assert s["price_delta_abs"]["p95"] == pytest.approx(10.0)
 
 
-# ─── build_report ─────────────────────────────────────────────────────────────
+# ─── evaluate_gate: PASS ──────────────────────────────────────────────────────
 
 
 @pytest.mark.unit
-def test_build_report_schema_version_and_symbol():
+def test_evaluate_gate_pass_all_criteria_satisfied():
+    """All default thresholds satisfied → PASS."""
+    summary = _make_summary(
+        total=20,
+        comparable=20,
+        missing_shadow=0,
+        stale_shadow=0,
+        price_delta_rel_pct_p95=0.01,
+        price_delta_rel_pct_max=0.02,
+        ts_delta_ms_p95=500,
+    )
+    gate = evaluate_gate(summary, GateThresholds())
+    assert gate["gate_status"] == "PASS"
+    assert all(c["result"] in ("PASS", "SKIP") for c in gate["checks"])
+
+
+@pytest.mark.unit
+def test_evaluate_gate_pass_includes_all_criteria_in_checks():
+    """Checks list must contain all 6 criterion names when enough data."""
+    summary = _make_summary()
+    gate = evaluate_gate(summary, GateThresholds())
+    criteria = {c["criterion"] for c in gate["checks"]}
+    expected = {
+        "max_missing_shadow_pct",
+        "min_comparable_samples",
+        "max_stale_shadow_pct",
+        "max_price_delta_rel_p95_pct",
+        "max_price_delta_rel_max_pct",
+        "max_ts_delta_ms_p95",
+    }
+    assert expected <= criteria
+
+
+@pytest.mark.unit
+def test_evaluate_gate_checks_contain_threshold_and_measured():
+    """Each check record must expose threshold and measured values."""
+    summary = _make_summary()
+    gate = evaluate_gate(summary, GateThresholds())
+    for chk in gate["checks"]:
+        assert "threshold" in chk
+        assert "measured" in chk
+        assert "result" in chk
+
+
+@pytest.mark.unit
+def test_evaluate_gate_thresholds_included_in_result():
+    """Thresholds used must be reproduced verbatim in the gate result."""
+    t = GateThresholds(min_comparable_samples=30, max_missing_shadow_pct=0.02)
+    summary = _make_summary(total=30, comparable=30)
+    gate = evaluate_gate(summary, t)
+    assert gate["thresholds"]["min_comparable_samples"] == 30
+    assert gate["thresholds"]["max_missing_shadow_pct"] == 0.02
+
+
+# ─── evaluate_gate: INCONCLUSIVE ──────────────────────────────────────────────
+
+
+@pytest.mark.unit
+def test_evaluate_gate_inconclusive_when_too_few_comparable_samples():
+    """comparable < min_comparable_samples → INCONCLUSIVE (not FAIL)."""
+    summary = _make_summary(total=10, comparable=5)  # 5 < default 20
+    gate = evaluate_gate(summary, GateThresholds())
+    assert gate["gate_status"] == "INCONCLUSIVE"
+
+
+@pytest.mark.unit
+def test_evaluate_gate_inconclusive_skips_stats_checks():
+    """Stats-based criteria are SKIP when not enough comparable samples."""
+    summary = _make_summary(total=5, comparable=3)
+    gate = evaluate_gate(summary, GateThresholds())
+    skip_criteria = {c["criterion"] for c in gate["checks"] if c["result"] == "SKIP"}
+    assert "max_stale_shadow_pct" in skip_criteria
+    assert "max_price_delta_rel_p95_pct" in skip_criteria
+    assert "max_ts_delta_ms_p95" in skip_criteria
+
+
+@pytest.mark.unit
+def test_evaluate_gate_inconclusive_reason_mentions_sample_counts():
+    summary = _make_summary(total=5, comparable=3)
+    gate = evaluate_gate(summary, GateThresholds())
+    assert "3" in gate["gate_reason"] or "comparable" in gate["gate_reason"]
+
+
+# ─── evaluate_gate: FAIL ──────────────────────────────────────────────────────
+
+
+@pytest.mark.unit
+def test_evaluate_gate_fail_missing_shadow_exceeds_threshold():
+    """missing_shadow_pct > max_missing_shadow_pct → FAIL."""
+    # 3/20 = 15 % > 5 % default
+    summary = _make_summary(total=20, comparable=17, missing_shadow=3)
+    gate = evaluate_gate(summary, GateThresholds())
+    assert gate["gate_status"] == "FAIL"
+    failed = [c["criterion"] for c in gate["checks"] if c["result"] == "FAIL"]
+    assert "max_missing_shadow_pct" in failed
+
+
+@pytest.mark.unit
+def test_evaluate_gate_fail_missing_shadow_even_with_few_samples():
+    """Missing shadow FAIL is evaluated before the min_comparable_samples check."""
+    # Only 3 total samples, all shadow absent → FAIL (not INCONCLUSIVE)
+    summary = _make_summary(total=3, comparable=0, missing_shadow=3)
+    gate = evaluate_gate(summary, GateThresholds())
+    assert gate["gate_status"] == "FAIL"
+
+
+@pytest.mark.unit
+def test_evaluate_gate_fail_stale_shadow_exceeds_threshold():
+    """stale_shadow / comparable > max_stale_shadow_pct → FAIL."""
+    # 4/20 = 20 % > 5 % default
+    summary = _make_summary(total=20, comparable=20, stale_shadow=4)
+    gate = evaluate_gate(summary, GateThresholds())
+    assert gate["gate_status"] == "FAIL"
+    failed = [c["criterion"] for c in gate["checks"] if c["result"] == "FAIL"]
+    assert "max_stale_shadow_pct" in failed
+
+
+@pytest.mark.unit
+def test_evaluate_gate_fail_price_delta_rel_p95_exceeded():
+    """price_delta_rel_pct p95 > max → FAIL."""
+    summary = _make_summary(
+        total=20,
+        comparable=20,
+        price_delta_rel_pct_p95=0.06,  # > 0.05 default
+        price_delta_rel_pct_max=0.06,
+    )
+    gate = evaluate_gate(summary, GateThresholds())
+    assert gate["gate_status"] == "FAIL"
+    failed = [c["criterion"] for c in gate["checks"] if c["result"] == "FAIL"]
+    assert "max_price_delta_rel_p95_pct" in failed
+
+
+@pytest.mark.unit
+def test_evaluate_gate_fail_price_delta_rel_max_exceeded():
+    """price_delta_rel_pct max > max_price_delta_rel_max_pct → FAIL."""
+    # p95 passes but max exceeds the hard limit
+    summary = _make_summary(
+        total=20,
+        comparable=20,
+        price_delta_rel_pct_p95=0.04,  # PASS
+        price_delta_rel_pct_max=0.11,  # > 0.10 default → FAIL
+    )
+    gate = evaluate_gate(summary, GateThresholds())
+    assert gate["gate_status"] == "FAIL"
+    failed = [c["criterion"] for c in gate["checks"] if c["result"] == "FAIL"]
+    assert "max_price_delta_rel_max_pct" in failed
+
+
+@pytest.mark.unit
+def test_evaluate_gate_fail_ts_delta_p95_exceeded():
+    """ts_delta_ms p95 > max_ts_delta_ms_p95 → FAIL."""
+    summary = _make_summary(
+        total=20,
+        comparable=20,
+        ts_delta_ms_p95=12_000,  # > 10_000 default
+    )
+    gate = evaluate_gate(summary, GateThresholds())
+    assert gate["gate_status"] == "FAIL"
+    failed = [c["criterion"] for c in gate["checks"] if c["result"] == "FAIL"]
+    assert "max_ts_delta_ms_p95" in failed
+
+
+@pytest.mark.unit
+def test_evaluate_gate_reports_all_failing_criteria_at_once():
+    """Multiple failures must all appear in the checks list — no short-circuit."""
+    summary = _make_summary(
+        total=20,
+        comparable=20,
+        stale_shadow=8,  # 40 % > 5 %
+        price_delta_rel_pct_p95=0.5,  # >> 0.05 %
+        ts_delta_ms_p95=30_000,  # > 10 000 ms
+    )
+    gate = evaluate_gate(summary, GateThresholds())
+    assert gate["gate_status"] == "FAIL"
+    failed = [c["criterion"] for c in gate["checks"] if c["result"] == "FAIL"]
+    assert len(failed) >= 3
+
+
+# ─── build_report (updated for gate schema v1.1) ──────────────────────────────
+
+
+@pytest.mark.unit
+def test_build_report_schema_version():
     samples = [compare_snapshot(_live(), _shadow(), _NOW_MS)]
     summary = summarize(samples)
-    report = build_report("BTCUSDT", samples, summary, "2026-03-18T00:00:00+00:00")
-    assert report["schema_version"] == "1.0"
+    report = build_report(
+        "BTCUSDT",
+        samples,
+        summary,
+        "2026-03-18T00:00:00+00:00",
+        GateThresholds(min_comparable_samples=1),
+    )
+    assert report["schema_version"] == SCHEMA_VERSION
     assert report["symbol"] == "BTCUSDT"
 
 
 @pytest.mark.unit
-def test_build_report_overall_pass_when_comparable():
+def test_build_report_overall_pass_when_criteria_satisfied():
+    """With relaxed min_comparable_samples=1, a single good sample → PASS."""
     samples = [compare_snapshot(_live(), _shadow(), _NOW_MS)]
     summary = summarize(samples)
-    report = build_report("BTCUSDT", samples, summary, "2026-03-18T00:00:00+00:00")
+    report = build_report(
+        "BTCUSDT",
+        samples,
+        summary,
+        "2026-03-18T00:00:00+00:00",
+        GateThresholds(min_comparable_samples=1),
+    )
     assert report["overall"] == "PASS"
 
 
 @pytest.mark.unit
 def test_build_report_overall_fail_when_all_shadow_missing():
+    """3/3 shadow keys absent → missing_shadow_pct=1.0 > 0.05 → FAIL."""
     samples = [compare_snapshot(_live(), None, _NOW_MS)] * 3
     summary = summarize(samples)
-    report = build_report("BTCUSDT", samples, summary, "2026-03-18T00:00:00+00:00")
+    report = build_report(
+        "BTCUSDT",
+        samples,
+        summary,
+        "2026-03-18T00:00:00+00:00",
+    )
     assert report["overall"] == "FAIL"
-    assert "shadow key absent" in report["overall_reason"]
+    assert "max_missing_shadow_pct" in report["overall_reason"]
 
 
 @pytest.mark.unit
-def test_build_report_overall_fail_when_all_live_missing():
+def test_build_report_overall_inconclusive_when_all_live_missing():
+    """Live absent → 0 comparable; shadow_missing=0 → C1 passes; INCONCLUSIVE."""
     samples = [compare_snapshot(None, _shadow(), _NOW_MS)] * 3
-    summary = summarize(samples)
-    report = build_report("BTCUSDT", samples, summary, "2026-03-18T00:00:00+00:00")
-    assert report["overall"] == "FAIL"
-    assert "live key absent" in report["overall_reason"]
-
-
-@pytest.mark.unit
-def test_build_report_overall_inconclusive_when_no_comparable():
-    # One live missing, one shadow missing → 0 comparable
-    samples = [
-        compare_snapshot(None, _shadow(), _NOW_MS),
-        compare_snapshot(_live(), None, _NOW_MS),
-    ]
     summary = summarize(samples)
     report = build_report("BTCUSDT", samples, summary, "2026-03-18T00:00:00+00:00")
     assert report["overall"] == "INCONCLUSIVE"
 
 
 @pytest.mark.unit
+def test_build_report_overall_inconclusive_when_no_comparable_but_shadow_ok():
+    """1 live-miss + 1 shadow-miss, but tolerated → INCONCLUSIVE (not FAIL)."""
+    samples = [
+        compare_snapshot(None, _shadow(), _NOW_MS),
+        compare_snapshot(_live(), None, _NOW_MS),
+    ]
+    summary = summarize(samples)
+    # Allow up to 80 % missing shadow so C1 passes; comparable=0 < 20 → INCONCLUSIVE
+    report = build_report(
+        "BTCUSDT",
+        samples,
+        summary,
+        "2026-03-18T00:00:00+00:00",
+        GateThresholds(max_missing_shadow_pct=0.8),
+    )
+    assert report["overall"] == "INCONCLUSIVE"
+
+
+@pytest.mark.unit
+def test_build_report_includes_gate_block():
+    """Report must include a 'gate' key with checks and thresholds."""
+    samples = [compare_snapshot(_live(), _shadow(), _NOW_MS)]
+    summary = summarize(samples)
+    report = build_report(
+        "BTCUSDT",
+        samples,
+        summary,
+        "2026-03-18T00:00:00+00:00",
+        GateThresholds(min_comparable_samples=1),
+    )
+    assert "gate" in report
+    assert "checks" in report["gate"]
+    assert "thresholds" in report["gate"]
+    assert "gate_status" in report["gate"]
+
+
+@pytest.mark.unit
+def test_build_report_gate_thresholds_match_passed_thresholds():
+    """Thresholds in the report must match what was passed to build_report."""
+    t = GateThresholds(min_comparable_samples=5, max_ts_delta_ms_p95=3_000)
+    samples = [compare_snapshot(_live(), _shadow(), _NOW_MS)]
+    summary = summarize(samples)
+    report = build_report("BTCUSDT", samples, summary, "2026-03-18T00:00:00+00:00", t)
+    assert report["gate"]["thresholds"]["min_comparable_samples"] == 5
+    assert report["gate"]["thresholds"]["max_ts_delta_ms_p95"] == 3_000
+
+
+@pytest.mark.unit
 def test_build_report_contains_samples_list():
     samples = [compare_snapshot(_live(), _shadow(), _NOW_MS)]
     summary = summarize(samples)
-    report = build_report("BTCUSDT", samples, summary, "2026-03-18T00:00:00+00:00")
+    report = build_report(
+        "BTCUSDT",
+        samples,
+        summary,
+        "2026-03-18T00:00:00+00:00",
+        GateThresholds(min_comparable_samples=1),
+    )
     assert len(report["samples"]) == 1
     assert report["samples"][0]["ts_sample_ms"] == _NOW_MS
 

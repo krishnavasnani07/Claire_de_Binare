@@ -1,29 +1,42 @@
 #!/usr/bin/env python3
-"""Read-only compare tool: market_price:{symbol} (live) vs market_price_v3:{symbol} (V3 shadow).
+"""Read-only compare + Evidence Gate for market_price (live) vs market_price_v3 (shadow).
 
 Reads both Redis keys, records N samples over a configurable observation window,
-computes price/timestamp delta metrics, and writes a JSON evidence artefact.
+computes price/timestamp delta metrics, evaluates explicit gate criteria, and writes
+a JSON evidence artefact.
 
 Usage (standalone):
     python -m services.market.tools.v3_compare \\
-        --symbol BTCUSDT --samples 10 --interval 5 \\
+        --symbol BTCUSDT --samples 20 --interval 5 \\
         --out reports/v3_compare_BTCUSDT.json
 
-Environment variables (same as service.py):
-    REDIS_HOST      Redis hostname (default: localhost)
-    REDIS_PORT      Redis port    (default: 6379)
-    REDIS_PASSWORD  Redis password (default: empty)
+Gate thresholds (all have explicit defaults; override via CLI flags):
+    --min-comparable-samples      INT    default: 20
+    --max-missing-shadow-pct      FLOAT  default: 0.05   (5 %)
+    --max-stale-shadow-pct        FLOAT  default: 0.05   (5 %)
+    --max-price-delta-rel-p95-pct FLOAT  default: 0.05   (0.05 %)
+    --max-price-delta-rel-max-pct FLOAT  default: 0.10   (0.10 %)
+    --max-ts-delta-ms-p95         INT    default: 10000  (10 s)
+
+Environment variables (Redis connection):
+    REDIS_HOST      hostname   (default: localhost)
+    REDIS_PORT      port       (default: 6379)
+    REDIS_PASSWORD  password   (default: empty)
+
+Exit codes:
+    0 — gate PASS
+    1 — gate FAIL, INCONCLUSIVE, or runtime error
 
 Design:
-- Pure functions (compare_snapshot, summarize, build_report) — fully testable without Redis
-- collect_samples() accepts an injected redis client → mockable in tests
-- No writes to any key, no changes to live path
-- Fail-closed on missing keys (flagged, not skipped silently)
+- Pure functions (compare_snapshot, summarize, evaluate_gate, build_report) — no I/O
+- collect_samples() accepts an injected redis client → fully mockable in tests
+- No writes to any Redis key; live-path is never touched
 """
 
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import os
 import sys
@@ -34,14 +47,56 @@ from typing import Any
 
 # ─── Constants ────────────────────────────────────────────────────────────────
 
-SCHEMA_VERSION = "1.0"
+SCHEMA_VERSION = "1.1"
 LIVE_KEY_PREFIX = "market_price"
 SHADOW_KEY_PREFIX = "market_price_v3"
 
-# A key is stale when its age exceeds the TTL used by service.py (30 s).
-# Freshness threshold is intentionally set to the same TTL value so that
-# any entry approaching expiry is flagged in the report.
+# Keys are stale when their age exceeds the 30 s TTL used by service.py.
 STALE_THRESHOLD_MS: int = 30_000  # 30 seconds
+
+
+# ─── Gate thresholds ──────────────────────────────────────────────────────────
+
+
+@dataclasses.dataclass
+class GateThresholds:
+    """Explicit, named gate criteria for V3 shadow promotion readiness.
+
+    All defaults are intentionally conservative and documented below.
+    Override via CLI flags or direct instantiation.
+
+    Rationale for defaults (derived from first evidence run 2026-03-18):
+      max_missing_shadow_pct       5 % — tolerate brief Redis key eviction / restart lag
+      max_stale_shadow_pct         5 % — tolerate at most 1 stale entry per 20 samples
+      max_price_delta_rel_p95_pct  0.05 % — first run p95 was ~0 %; 0.05 % ≈ 16x headroom
+      max_price_delta_rel_max_pct  0.10 % — first run max was 0.003 %; 0.10 % ≈ 30x headroom
+      max_ts_delta_ms_p95          10 000 ms — first run max was 2976 ms; 10 s ≈ 3x headroom
+    """
+
+    # Minimum number of comparable samples before a PASS/FAIL decision is made.
+    # Below this the gate is INCONCLUSIVE — not enough data to trust the stats.
+    min_comparable_samples: int = 20
+
+    # Maximum fraction (0–1) of total samples where the shadow key is absent.
+    # Exceeding this is a hard FAIL regardless of sample count.
+    max_missing_shadow_pct: float = 0.05
+
+    # Maximum fraction (0–1) of *comparable* samples where shadow entry is stale
+    # (age > STALE_THRESHOLD_MS = 30 s).
+    max_stale_shadow_pct: float = 0.05
+
+    # Maximum p95 of relative price delta (percent).
+    max_price_delta_rel_p95_pct: float = 0.05
+
+    # Hard maximum of relative price delta (percent).
+    # A single outlier above this causes an immediate FAIL.
+    max_price_delta_rel_max_pct: float = 0.10
+
+    # Maximum p95 of ts_delta_ms (milliseconds).
+    max_ts_delta_ms_p95: int = 10_000
+
+    def to_dict(self) -> dict[str, Any]:
+        return dataclasses.asdict(self)
 
 
 # ─── Pure computation layer ───────────────────────────────────────────────────
@@ -59,16 +114,16 @@ def compare_snapshot(
     the sample, used to compute freshness.
 
     Returns a flat dict with:
-      comparable       — True only when both entries are present and numeric-parseable
-      live_missing     — True when the live key was absent
-      shadow_missing   — True when the shadow key was absent
-      price_delta_abs  — |live_price - shadow_price|  (float)
-      price_delta_rel_pct — delta / live_price * 100   (float, None when live=0)
-      ts_delta_ms      — |live_ts_ms - shadow_ts_ms|   (int)
-      live_age_ms      — now_ms - live_ts_ms            (int)
-      shadow_age_ms    — now_ms - shadow_ts_ms          (int)
-      live_stale       — live_age_ms > STALE_THRESHOLD_MS
-      shadow_stale     — shadow_age_ms > STALE_THRESHOLD_MS
+      comparable          — True only when both entries are present and parseable
+      live_missing        — True when the live key was absent
+      shadow_missing      — True when the shadow key was absent
+      price_delta_abs     — |live_price - shadow_price|  (float)
+      price_delta_rel_pct — delta / live_price * 100     (float, None when live=0)
+      ts_delta_ms         — |live_ts_ms - shadow_ts_ms|  (int)
+      live_age_ms         — now_ms - live_ts_ms           (int)
+      shadow_age_ms       — now_ms - shadow_ts_ms         (int)
+      live_stale          — live_age_ms > STALE_THRESHOLD_MS
+      shadow_stale        — shadow_age_ms > STALE_THRESHOLD_MS
     """
     result: dict[str, Any] = {
         "ts_sample_ms": now_ms,
@@ -187,25 +242,215 @@ def summarize(samples: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+# ─── Gate evaluation ──────────────────────────────────────────────────────────
+
+
+def _chk(
+    criterion: str,
+    threshold: Any,
+    measured: Any,
+    result: str,
+    note: str = "",
+) -> dict[str, Any]:
+    entry: dict[str, Any] = {
+        "criterion": criterion,
+        "threshold": threshold,
+        "measured": measured,
+        "result": result,
+    }
+    if note:
+        entry["note"] = note
+    return entry
+
+
+def evaluate_gate(
+    summary: dict[str, Any],
+    thresholds: GateThresholds,
+) -> dict[str, Any]:
+    """Evaluate gate criteria against a completed summary.
+
+    Evaluation order (determines overall status priority):
+      1. max_missing_shadow_pct  — FAIL even when comparable count is low
+      2. min_comparable_samples  — INCONCLUSIVE when not met (and no FAIL above)
+      3. max_stale_shadow_pct    — FAIL  (only when enough comparable data)
+      4. max_price_delta_rel_p95_pct  — FAIL
+      5. max_price_delta_rel_max_pct  — FAIL
+      6. max_ts_delta_ms_p95     — FAIL
+
+    Returns a dict with:
+      gate_status   — PASS / FAIL / INCONCLUSIVE
+      gate_reason   — human-readable summary
+      thresholds    — copy of the applied thresholds (for full transparency)
+      checks        — list of individual check records (criterion/threshold/measured/result)
+    """
+    total = summary["total_samples"]
+    comparable = summary["comparable_samples"]
+    checks: list[dict[str, Any]] = []
+
+    # ── C1: Missing shadow fraction ───────────────────────────────────────────
+    # Evaluated first and unconditionally; a systematically absent shadow key
+    # is always a hard FAIL regardless of how many samples we have.
+    msf = summary["missing_shadow_count"] / total if total > 0 else 0.0
+    c1_pass = msf <= thresholds.max_missing_shadow_pct
+    checks.append(
+        _chk(
+            "max_missing_shadow_pct",
+            thresholds.max_missing_shadow_pct,
+            round(msf, 6),
+            "PASS" if c1_pass else "FAIL",
+        )
+    )
+
+    # ── C2: Minimum comparable samples ───────────────────────────────────────
+    # INCONCLUSIVE (not FAIL) — insufficient data is a data-collection problem,
+    # not a correctness problem.
+    enough_data = comparable >= thresholds.min_comparable_samples
+    checks.append(
+        _chk(
+            "min_comparable_samples",
+            thresholds.min_comparable_samples,
+            comparable,
+            "PASS" if enough_data else "INCONCLUSIVE",
+            note="" if enough_data else "below minimum — stats not reliable",
+        )
+    )
+
+    if not enough_data:
+        # Skip stats-based checks; they're not meaningful with too few samples.
+        for crit in (
+            "max_stale_shadow_pct",
+            "max_price_delta_rel_p95_pct",
+            "max_price_delta_rel_max_pct",
+            "max_ts_delta_ms_p95",
+        ):
+            checks.append(
+                _chk(crit, None, None, "SKIP", note="insufficient comparable samples")
+            )
+    else:
+        # ── C3: Stale shadow fraction ─────────────────────────────────────────
+        ssf = summary["stale_shadow_count"] / comparable
+        checks.append(
+            _chk(
+                "max_stale_shadow_pct",
+                thresholds.max_stale_shadow_pct,
+                round(ssf, 6),
+                "PASS" if ssf <= thresholds.max_stale_shadow_pct else "FAIL",
+            )
+        )
+
+        # ── C4: Price delta rel p95 ───────────────────────────────────────────
+        rel_p95 = summary["price_delta_rel_pct"]["p95"]
+        if rel_p95 is None:
+            checks.append(
+                _chk(
+                    "max_price_delta_rel_p95_pct",
+                    thresholds.max_price_delta_rel_p95_pct,
+                    None,
+                    "FAIL",
+                    note="p95 unavailable (all live prices zero?)",
+                )
+            )
+        else:
+            checks.append(
+                _chk(
+                    "max_price_delta_rel_p95_pct",
+                    thresholds.max_price_delta_rel_p95_pct,
+                    round(rel_p95, 8),
+                    (
+                        "PASS"
+                        if rel_p95 <= thresholds.max_price_delta_rel_p95_pct
+                        else "FAIL"
+                    ),
+                )
+            )
+
+        # ── C5: Price delta rel max ───────────────────────────────────────────
+        rel_max = summary["price_delta_rel_pct"]["max"]
+        if rel_max is None:
+            checks.append(
+                _chk(
+                    "max_price_delta_rel_max_pct",
+                    thresholds.max_price_delta_rel_max_pct,
+                    None,
+                    "FAIL",
+                    note="max unavailable",
+                )
+            )
+        else:
+            checks.append(
+                _chk(
+                    "max_price_delta_rel_max_pct",
+                    thresholds.max_price_delta_rel_max_pct,
+                    round(rel_max, 8),
+                    (
+                        "PASS"
+                        if rel_max <= thresholds.max_price_delta_rel_max_pct
+                        else "FAIL"
+                    ),
+                )
+            )
+
+        # ── C6: ts_delta p95 ─────────────────────────────────────────────────
+        ts_p95 = summary["ts_delta_ms"]["p95"]
+        if ts_p95 is None:
+            checks.append(
+                _chk(
+                    "max_ts_delta_ms_p95",
+                    thresholds.max_ts_delta_ms_p95,
+                    None,
+                    "FAIL",
+                    note="p95 unavailable",
+                )
+            )
+        else:
+            checks.append(
+                _chk(
+                    "max_ts_delta_ms_p95",
+                    thresholds.max_ts_delta_ms_p95,
+                    round(ts_p95, 1),
+                    "PASS" if ts_p95 <= thresholds.max_ts_delta_ms_p95 else "FAIL",
+                )
+            )
+
+    # ── Determine overall gate status ─────────────────────────────────────────
+    results = {c["result"] for c in checks}
+    if "FAIL" in results:
+        failed_criteria = [c["criterion"] for c in checks if c["result"] == "FAIL"]
+        gate_status = "FAIL"
+        gate_reason = f"{len(failed_criteria)} criterion failed: {failed_criteria}"
+    elif "INCONCLUSIVE" in results:
+        gate_status = "INCONCLUSIVE"
+        gate_reason = (
+            f"insufficient data: "
+            f"{comparable}/{thresholds.min_comparable_samples} comparable samples"
+        )
+    else:
+        passed = sum(1 for c in checks if c["result"] == "PASS")
+        gate_status = "PASS"
+        gate_reason = f"all {passed} criteria satisfied"
+
+    return {
+        "gate_status": gate_status,
+        "gate_reason": gate_reason,
+        "thresholds": thresholds.to_dict(),
+        "checks": checks,
+    }
+
+
 def build_report(
     symbol: str,
     samples: list[dict[str, Any]],
     summary: dict[str, Any],
     generated_at: str,
+    thresholds: GateThresholds | None = None,
 ) -> dict[str, Any]:
-    """Wrap samples + summary into the canonical JSON evidence structure."""
-    overall = "PASS"
-    if summary["missing_shadow_count"] == summary["total_samples"]:
-        overall = "FAIL"
-        overall_reason = "shadow key absent for all samples"
-    elif summary["missing_live_count"] == summary["total_samples"]:
-        overall = "FAIL"
-        overall_reason = "live key absent for all samples"
-    elif summary["comparable_samples"] == 0:
-        overall = "INCONCLUSIVE"
-        overall_reason = "no comparable samples"
-    else:
-        overall_reason = f"{summary['comparable_samples']}/{summary['total_samples']} samples comparable"
+    """Wrap samples + summary + gate result into the canonical JSON evidence structure.
+
+    *thresholds* defaults to GateThresholds() (all conservative defaults) when None.
+    The gate result is the authoritative source of the ``overall`` status.
+    """
+    t = thresholds if thresholds is not None else GateThresholds()
+    gate = evaluate_gate(summary, t)
 
     return {
         "schema_version": SCHEMA_VERSION,
@@ -214,8 +459,9 @@ def build_report(
         "live_key_prefix": LIVE_KEY_PREFIX,
         "shadow_key_prefix": SHADOW_KEY_PREFIX,
         "stale_threshold_ms": STALE_THRESHOLD_MS,
-        "overall": overall,
-        "overall_reason": overall_reason,
+        "overall": gate["gate_status"],
+        "overall_reason": gate["gate_reason"],
+        "gate": gate,
         "summary": summary,
         "samples": samples,
     }
@@ -278,27 +524,87 @@ def _connect_redis() -> Any:
     return client
 
 
+def _print_gate_summary(gate: dict[str, Any]) -> None:
+    """Print a human-readable gate summary to stderr."""
+    status = gate["gate_status"]
+    print(f"\n[v3_compare] Gate verdict: {status}", file=sys.stderr)
+    print(f"             Reason     : {gate['gate_reason']}", file=sys.stderr)
+    print("[v3_compare] Checks:", file=sys.stderr)
+    for c in gate["checks"]:
+        result = c["result"]
+        crit = c["criterion"]
+        thresh = c.get("threshold")
+        measured = c.get("measured")
+        note = c.get("note", "")
+        suffix = f"  ({note})" if note else ""
+        print(
+            f"  {'✓' if result == 'PASS' else '✗' if result == 'FAIL' else '~'}"
+            f"  {crit:<35} threshold={thresh}  measured={measured}  → {result}{suffix}",
+            file=sys.stderr,
+        )
+
+
 def main() -> None:
+    defaults = GateThresholds()
     parser = argparse.ArgumentParser(
-        description="Read-only compare: market_price vs market_price_v3"
+        description="Read-only compare + Evidence Gate: market_price vs market_price_v3"
     )
-    parser.add_argument("--symbol", default="BTCUSDT", help="Symbol to compare")
-    parser.add_argument(
-        "--samples", type=int, default=10, help="Number of snapshots to collect"
+    parser.add_argument("--symbol", default="BTCUSDT")
+    parser.add_argument("--samples", type=int, default=20)
+    parser.add_argument("--interval", type=float, default=5.0)
+    parser.add_argument("--out", type=str, default=None)
+
+    # Gate threshold overrides — all documented with their defaults
+    g = parser.add_argument_group(
+        "gate thresholds",
+        "Override defaults; all values are documented in GateThresholds",
     )
-    parser.add_argument(
-        "--interval",
+    g.add_argument(
+        "--min-comparable-samples",
+        type=int,
+        default=defaults.min_comparable_samples,
+        metavar="N",
+    )
+    g.add_argument(
+        "--max-missing-shadow-pct",
         type=float,
-        default=5.0,
-        help="Seconds between snapshots",
+        default=defaults.max_missing_shadow_pct,
+        metavar="F",
     )
-    parser.add_argument(
-        "--out",
-        type=str,
-        default=None,
-        help="Output JSON file path (default: stdout only)",
+    g.add_argument(
+        "--max-stale-shadow-pct",
+        type=float,
+        default=defaults.max_stale_shadow_pct,
+        metavar="F",
+    )
+    g.add_argument(
+        "--max-price-delta-rel-p95-pct",
+        type=float,
+        default=defaults.max_price_delta_rel_p95_pct,
+        metavar="F",
+    )
+    g.add_argument(
+        "--max-price-delta-rel-max-pct",
+        type=float,
+        default=defaults.max_price_delta_rel_max_pct,
+        metavar="F",
+    )
+    g.add_argument(
+        "--max-ts-delta-ms-p95",
+        type=int,
+        default=defaults.max_ts_delta_ms_p95,
+        metavar="MS",
     )
     args = parser.parse_args()
+
+    thresholds = GateThresholds(
+        min_comparable_samples=args.min_comparable_samples,
+        max_missing_shadow_pct=args.max_missing_shadow_pct,
+        max_stale_shadow_pct=args.max_stale_shadow_pct,
+        max_price_delta_rel_p95_pct=args.max_price_delta_rel_p95_pct,
+        max_price_delta_rel_max_pct=args.max_price_delta_rel_max_pct,
+        max_ts_delta_ms_p95=args.max_ts_delta_ms_p95,
+    )
 
     try:
         r = _connect_redis()
@@ -308,13 +614,14 @@ def main() -> None:
 
     print(
         f"[v3_compare] Collecting {args.samples} samples for {args.symbol} "
-        f"(interval={args.interval}s) …"
+        f"(interval={args.interval}s) …",
+        file=sys.stderr,
     )
     samples = collect_samples(r, args.symbol, args.samples, args.interval)
 
     now_iso = datetime.now(tz=timezone.utc).isoformat()
     summary = summarize(samples)
-    report = build_report(args.symbol, samples, summary, now_iso)
+    report = build_report(args.symbol, samples, summary, now_iso, thresholds)
 
     report_json = json.dumps(report, indent=2)
     print(report_json)
@@ -325,8 +632,9 @@ def main() -> None:
         out_path.write_text(report_json, encoding="utf-8")
         print(f"[v3_compare] Report written to {out_path}", file=sys.stderr)
 
-    # Exit 1 when no comparable samples (e.g. shadow key never appeared)
-    if summary["comparable_samples"] == 0:
+    _print_gate_summary(report["gate"])
+
+    if report["overall"] != "PASS":
         sys.exit(1)
 
 
