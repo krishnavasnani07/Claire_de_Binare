@@ -1,0 +1,152 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-03-18T14:32:39.756642+00:00",
+  "symbol": "BTCUSDT",
+  "live_key_prefix": "market_price",
+  "shadow_key_prefix": "market_price_v3",
+  "stale_threshold_ms": 30000,
+  "overall": "PASS",
+  "overall_reason": "6/6 samples comparable",
+  "summary": {
+    "total_samples": 6,
+    "comparable_samples": 6,
+    "missing_live_count": 0,
+    "missing_shadow_count": 0,
+    "stale_live_count": 0,
+    "stale_shadow_count": 0,
+    "price_delta_abs": {
+      "min": 0.0,
+      "max": 2.279999999998836,
+      "mean": 0.379999999999806,
+      "p95": 0.0
+    },
+    "price_delta_rel_pct": {
+      "min": 0.0,
+      "max": 0.00318446,
+      "mean": 0.0005307433333333333,
+      "p95": 0.0
+    },
+    "ts_delta_ms": {
+      "min": 0,
+      "max": 2976,
+      "mean": 496.0,
+      "p95": 0
+    },
+    "live_age_ms": {
+      "min": -662,
+      "max": 803,
+      "mean": -58.5,
+      "p95": 764
+    },
+    "shadow_age_ms": {
+      "min": -591,
+      "max": 2314,
+      "mean": 437.5,
+      "p95": 803
+    }
+  },
+  "samples": [
+    {
+      "ts_sample_ms": 1773844344740,
+      "live_missing": false,
+      "shadow_missing": false,
+      "comparable": true,
+      "live_price": "71602.19",
+      "shadow_price": "71602.19",
+      "price_delta_abs": 0.0,
+      "price_delta_rel_pct": 0.0,
+      "live_ts_ms": 1773844345168,
+      "shadow_ts_ms": 1773844345168,
+      "ts_delta_ms": 0,
+      "live_age_ms": -428,
+      "shadow_age_ms": -428,
+      "live_stale": false,
+      "shadow_stale": false
+    },
+    {
+      "ts_sample_ms": 1773844347743,
+      "live_missing": false,
+      "shadow_missing": false,
+      "comparable": true,
+      "live_price": "71590.79",
+      "shadow_price": "71590.79",
+      "price_delta_abs": 0.0,
+      "price_delta_rel_pct": 0.0,
+      "live_ts_ms": 1773844348334,
+      "shadow_ts_ms": 1773844348334,
+      "ts_delta_ms": 0,
+      "live_age_ms": -591,
+      "shadow_age_ms": -591,
+      "live_stale": false,
+      "shadow_stale": false
+    },
+    {
+      "ts_sample_ms": 1773844350745,
+      "live_missing": false,
+      "shadow_missing": false,
+      "comparable": true,
+      "live_price": "71586.76",
+      "shadow_price": "71586.76",
+      "price_delta_abs": 0.0,
+      "price_delta_rel_pct": 0.0,
+      "live_ts_ms": 1773844350982,
+      "shadow_ts_ms": 1773844350982,
+      "ts_delta_ms": 0,
+      "live_age_ms": -237,
+      "shadow_age_ms": -237,
+      "live_stale": false,
+      "shadow_stale": false
+    },
+    {
+      "ts_sample_ms": 1773844353748,
+      "live_missing": false,
+      "shadow_missing": false,
+      "comparable": true,
+      "live_price": "71570.55",
+      "shadow_price": "71570.55",
+      "price_delta_abs": 0.0,
+      "price_delta_rel_pct": 0.0,
+      "live_ts_ms": 1773844352945,
+      "shadow_ts_ms": 1773844352945,
+      "ts_delta_ms": 0,
+      "live_age_ms": 803,
+      "shadow_age_ms": 803,
+      "live_stale": false,
+      "shadow_stale": false
+    },
+    {
+      "ts_sample_ms": 1773844356751,
+      "live_missing": false,
+      "shadow_missing": false,
+      "comparable": true,
+      "live_price": "71570.63",
+      "shadow_price": "71570.63",
+      "price_delta_abs": 0.0,
+      "price_delta_rel_pct": 0.0,
+      "live_ts_ms": 1773844355987,
+      "shadow_ts_ms": 1773844355987,
+      "ts_delta_ms": 0,
+      "live_age_ms": 764,
+      "shadow_age_ms": 764,
+      "live_stale": false,
+      "shadow_stale": false
+    },
+    {
+      "ts_sample_ms": 1773844359754,
+      "live_missing": false,
+      "shadow_missing": false,
+      "comparable": true,
+      "live_price": "71597.76",
+      "shadow_price": "71595.48",
+      "price_delta_abs": 2.279999999998836,
+      "price_delta_rel_pct": 0.00318446,
+      "live_ts_ms": 1773844360416,
+      "shadow_ts_ms": 1773844357440,
+      "ts_delta_ms": 2976,
+      "live_age_ms": -662,
+      "shadow_age_ms": 2314,
+      "live_stale": false,
+      "shadow_stale": false
+    }
+  ]
+}
