@@ -389,17 +389,22 @@ def market_price(symbol: str):
 
 # ─── Optional V3 client bootstrap ────────────────────────────────────────────
 #
-# Disabled by default.  Set MARKET_V3_CLIENT_ENABLED=true to activate.
-# When disabled: zero side effects, no import of websockets / protobuf.
-# When enabled and bootstrap fails: RuntimeError is raised → main() exits (fail-closed).
+# MARKET_V3_CLIENT_ENABLED (default false) — activates the V3 WebSocket client.
+#   false: zero side effects, no dep imports.
+#   true:  V3 client starts in daemon thread; bootstrap failure → RuntimeError (fail-closed).
 #
-# Shadow/compare mode (always):
-#   V3 events are validated and written to market_price_v3:{symbol} only.
-#   The live key market_price:{symbol} is owned exclusively by the cdb_ws PubSub path.
-#   market_state:{symbol} is never touched by the V3 path.
+# MARKET_V3_LIVE_WRITE (default false) — controls which Redis key the V3 callback writes.
+#   false (shadow mode): writes market_price_v3:{symbol} only; live key unaffected.
+#   true  (live mode):   writes market_price:{symbol} via _process_event(); cdb_ws PubSub
+#                        path continues in parallel (last-write-wins).
+#
+# Rollback: set MARKET_V3_LIVE_WRITE=false + redeploy → reverts to shadow-only immediately.
 
 MARKET_V3_CLIENT_ENABLED: bool = (
     os.getenv("MARKET_V3_CLIENT_ENABLED", "false").lower() == "true"
+)
+MARKET_V3_LIVE_WRITE: bool = (
+    os.getenv("MARKET_V3_LIVE_WRITE", "false").lower() == "true"
 )
 MARKET_V3_SYMBOL: str = os.getenv("MARKET_V3_SYMBOL", "BTCUSDT")
 MARKET_V3_PRICE_KEY_PREFIX: str = "market_price_v3"
@@ -441,17 +446,50 @@ def _v3_shadow_event(data: dict) -> None:
             logger.warning("[v3] shadow write failed for %s: %s", key, exc)
 
 
+def _v3_live_event(data: dict) -> None:
+    """Process one V3 client trade event in live-write mode.
+
+    Delegates directly to _process_event(), which:
+      - validates via sanitize_market_data()
+      - updates the in-memory price cache
+      - writes market_price:{symbol} with TTL
+      - updates market_state:{symbol}
+
+    cdb_ws PubSub path continues to write in parallel; last-write-wins semantics apply.
+    Only active when MARKET_V3_LIVE_WRITE=true.
+    Fail-safe: validation and Redis errors are handled by _process_event().
+    """
+    _process_event(data)
+
+
 def _start_v3_client_if_enabled() -> None:
     """Bootstrap MexcV3Client in a daemon thread, if MARKET_V3_CLIENT_ENABLED=true.
 
     Raises RuntimeError (fail-closed) if the flag is set but bootstrap fails,
     e.g. because websockets / protobuf dependencies are not installed.
     Sets module-level _v3_client so _sync_v3_metrics() can poll it on scrape.
+
+    Callback selection (MARKET_V3_LIVE_WRITE):
+      false (default) → _v3_shadow_event  — writes market_price_v3:{symbol} only
+      true            → _v3_live_event    — writes market_price:{symbol} via _process_event
     """
     global _v3_client
 
     if not MARKET_V3_CLIENT_ENABLED:
         return
+
+    if MARKET_V3_LIVE_WRITE:
+        callback = _v3_live_event
+        logger.warning(
+            "[v3] MARKET_V3_LIVE_WRITE=true — V3 writes to live key market_price:%s",
+            MARKET_V3_SYMBOL,
+        )
+    else:
+        callback = _v3_shadow_event
+        logger.info(
+            "[v3] shadow mode — V3 writes to market_price_v3:%s only",
+            MARKET_V3_SYMBOL,
+        )
 
     logger.info("[v3] MARKET_V3_CLIENT_ENABLED=true — bootstrapping V3 client")
     try:
@@ -462,10 +500,7 @@ def _start_v3_client_if_enabled() -> None:
             f"(websockets/protobuf missing?): {exc}"
         ) from exc
 
-    client = MexcV3Client(
-        symbol=MARKET_V3_SYMBOL,
-        on_trade=_v3_shadow_event,  # shadow mode: writes market_price_v3: only
-    )
+    client = MexcV3Client(symbol=MARKET_V3_SYMBOL, on_trade=callback)
     _v3_client = client
 
     def _run() -> None:

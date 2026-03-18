@@ -271,15 +271,18 @@ def test_v3_bootstrap_enabled_starts_daemon_thread():
 
 @pytest.mark.unit
 def test_v3_bootstrap_enabled_passes_shadow_event_as_callback():
-    """MexcV3Client must be instantiated with on_trade=_v3_shadow_event (shadow mode)."""
+    """With MARKET_V3_LIVE_WRITE=false (default), on_trade=_v3_shadow_event."""
     mock_module = MagicMock()
     mock_client = MagicMock()
     mock_module.MexcV3Client.return_value = mock_client
 
     with patch.object(svc, "MARKET_V3_CLIENT_ENABLED", True):
-        with patch.dict(sys.modules, {"services.market.mexc_v3_client": mock_module}):
-            with patch("services.market.service.threading.Thread"):
-                svc._start_v3_client_if_enabled()
+        with patch.object(svc, "MARKET_V3_LIVE_WRITE", False):
+            with patch.dict(
+                sys.modules, {"services.market.mexc_v3_client": mock_module}
+            ):
+                with patch("services.market.service.threading.Thread"):
+                    svc._start_v3_client_if_enabled()
 
     _, kwargs = mock_module.MexcV3Client.call_args
     assert kwargs.get("on_trade") is svc._v3_shadow_event
@@ -298,9 +301,12 @@ def test_v3_bootstrap_callback_writes_shadow_key():
     mock_module.MexcV3Client.side_effect = capture_client
 
     with patch.object(svc, "MARKET_V3_CLIENT_ENABLED", True):
-        with patch.dict(sys.modules, {"services.market.mexc_v3_client": mock_module}):
-            with patch("services.market.service.threading.Thread"):
-                svc._start_v3_client_if_enabled()
+        with patch.object(svc, "MARKET_V3_LIVE_WRITE", False):
+            with patch.dict(
+                sys.modules, {"services.market.mexc_v3_client": mock_module}
+            ):
+                with patch("services.market.service.threading.Thread"):
+                    svc._start_v3_client_if_enabled()
 
     on_trade = captured["on_trade"]
     assert on_trade is svc._v3_shadow_event
@@ -377,6 +383,104 @@ def test_v3_shadow_event_shadow_key_ttl_and_symbol():
     assert call_ttl == svc.MARKET_PRICE_TTL_SECONDS
     call_key = mock_redis.setex.call_args[0][0]
     assert call_key == f"{svc.MARKET_V3_PRICE_KEY_PREFIX}:BTCUSDT"
+
+
+# ─── V3 live-write mode (Issue #1206) ────────────────────────────────────────
+
+
+@pytest.mark.unit
+def test_v3_bootstrap_uses_live_event_when_live_write_enabled():
+    """When MARKET_V3_LIVE_WRITE=true, on_trade must be _v3_live_event."""
+    mock_module = MagicMock()
+    mock_module.MexcV3Client.return_value = MagicMock()
+
+    with patch.object(svc, "MARKET_V3_CLIENT_ENABLED", True):
+        with patch.object(svc, "MARKET_V3_LIVE_WRITE", True):
+            with patch.dict(
+                sys.modules, {"services.market.mexc_v3_client": mock_module}
+            ):
+                with patch("services.market.service.threading.Thread"):
+                    svc._start_v3_client_if_enabled()
+
+    _, kwargs = mock_module.MexcV3Client.call_args
+    assert kwargs.get("on_trade") is svc._v3_live_event
+
+
+@pytest.mark.unit
+def test_v3_bootstrap_uses_shadow_event_when_live_write_disabled():
+    """When MARKET_V3_LIVE_WRITE=false (default), on_trade must be _v3_shadow_event."""
+    mock_module = MagicMock()
+    mock_module.MexcV3Client.return_value = MagicMock()
+
+    with patch.object(svc, "MARKET_V3_CLIENT_ENABLED", True):
+        with patch.object(svc, "MARKET_V3_LIVE_WRITE", False):
+            with patch.dict(
+                sys.modules, {"services.market.mexc_v3_client": mock_module}
+            ):
+                with patch("services.market.service.threading.Thread"):
+                    svc._start_v3_client_if_enabled()
+
+    _, kwargs = mock_module.MexcV3Client.call_args
+    assert kwargs.get("on_trade") is svc._v3_shadow_event
+
+
+@pytest.mark.unit
+def test_v3_live_event_writes_live_key():
+    """_v3_live_event must write market_price:{symbol}, not the shadow key."""
+    mock_redis = MagicMock()
+    with patch.object(svc, "_redis_client", mock_redis):
+        svc._v3_live_event(_valid_dict())
+    mock_redis.setex.assert_called_once()
+    call_key = mock_redis.setex.call_args[0][0]
+    assert call_key == "market_price:BTCUSDT"
+
+
+@pytest.mark.unit
+def test_v3_live_event_does_not_write_shadow_key():
+    """_v3_live_event must never write to market_price_v3:{symbol}."""
+    mock_redis = MagicMock()
+    with patch.object(svc, "_redis_client", mock_redis):
+        svc._v3_live_event(_valid_dict())
+    for call_args in mock_redis.setex.call_args_list:
+        key = call_args[0][0]
+        assert not key.startswith("market_price_v3:"), f"shadow key written: {key!r}"
+
+
+@pytest.mark.unit
+def test_v3_live_event_updates_cache():
+    """_v3_live_event must populate the in-memory cache (via _process_event)."""
+    svc._v3_live_event(_valid_dict())
+    with svc._cache_lock:
+        entry = svc._cache.get("BTCUSDT")
+    assert entry is not None
+    assert entry["price"] == "50000.00"
+
+
+@pytest.mark.unit
+def test_v3_live_event_invalid_fails_safe():
+    """Invalid event (missing required field) → no exception, increments invalid stat."""
+    data = _valid_dict()
+    del data["price"]
+    mock_redis = MagicMock()
+    with patch.object(svc, "_redis_client", mock_redis):
+        svc._v3_live_event(data)  # must not raise
+    mock_redis.setex.assert_not_called()
+    assert svc._stats["messages_invalid"] == 1
+
+
+@pytest.mark.unit
+def test_v3_live_write_default_is_false():
+    """MARKET_V3_LIVE_WRITE must be False when the env var is absent or unset.
+
+    The constant is evaluated at import time.  This test checks that the
+    already-imported module did NOT pick up a truthy env var — guarding against
+    accidental activation in CI or a fresh local run.
+    """
+    import os
+
+    if os.environ.get("MARKET_V3_LIVE_WRITE", "").lower() == "true":
+        pytest.skip("MARKET_V3_LIVE_WRITE=true in environment — skipping default check")
+    assert svc.MARKET_V3_LIVE_WRITE is False
 
 
 # ─── V3 Prometheus metrics bridge (Issue #1206) ───────────────────────────────
