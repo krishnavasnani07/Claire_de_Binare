@@ -3,9 +3,9 @@
 # Usage: Used internally by stack_rollback.ps1
 # Set ROLLBACK_TAG environment variable before using
 #
-# Status (2025-12-28):
-# - Active services: cdb_signal, cdb_risk, cdb_execution, cdb_db_writer, cdb_ws, cdb_paper_runner
-# - Future services: cdb_allocation, cdb_regime, cdb_market (Dockerfiles exist, not active)
+# Status (2025-12-28, updated 2026-03-18):
+# - Active services: cdb_signal, cdb_risk, cdb_execution, cdb_db_writer, cdb_ws, cdb_paper_runner, cdb_market
+# - Future services: cdb_allocation, cdb_regime (Dockerfiles exist, not active)
 
 services:
   # === ACTIVE APPLICATION SERVICES ===
@@ -26,6 +26,18 @@ services:
     image: ${COMPOSE_PROJECT_NAME:-claire_de_binare}_cdb_db_writer:${ROLLBACK_TAG:-latest}
     build: null
 
+  cdb_market:
+    image: ${COMPOSE_PROJECT_NAME:-claire_de_binare}_cdb_market:${ROLLBACK_TAG:-latest}
+    build: null
+
+  cdb_ws:
+    image: ${COMPOSE_PROJECT_NAME:-claire_de_binare}_cdb_ws:${ROLLBACK_TAG:-latest}
+    build: null
+
+  cdb_paper_runner:
+    image: ${COMPOSE_PROJECT_NAME:-claire_de_binare}_cdb_paper_runner:${ROLLBACK_TAG:-latest}
+    build: null
+
   # === FUTURE SERVICES (Dockerfiles exist, awaiting configuration) ===
 
   cdb_allocation:
@@ -34,18 +46,4 @@ services:
 
   cdb_regime:
     image: ${COMPOSE_PROJECT_NAME:-claire_de_binare}_cdb_regime:${ROLLBACK_TAG:-latest}
-    build: null
-
-  cdb_market:
-    image: ${COMPOSE_PROJECT_NAME:-claire_de_binare}_cdb_market:${ROLLBACK_TAG:-latest}
-    build: null
-
-  # === ADDITIONAL ACTIVE SERVICES ===
-
-  cdb_ws:
-    image: ${COMPOSE_PROJECT_NAME:-claire_de_binare}_cdb_ws:${ROLLBACK_TAG:-latest}
-    build: null
-
-  cdb_paper_runner:
-    image: ${COMPOSE_PROJECT_NAME:-claire_de_binare}_cdb_paper_runner:${ROLLBACK_TAG:-latest}
     build: null

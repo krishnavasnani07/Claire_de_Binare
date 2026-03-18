@@ -169,7 +169,8 @@ def market_price(symbol: str):
 
 
 def _run_flask() -> None:
-    app.run(host="0.0.0.0", port=8004, debug=False)
+    port = int(os.getenv("MARKET_PORT", "8009"))
+    app.run(host="0.0.0.0", port=port, debug=False)
 
 
 def main() -> None:
@@ -186,7 +187,7 @@ def main() -> None:
 
     flask_thread = threading.Thread(target=_run_flask, daemon=True)
     flask_thread.start()
-    logger.info("Flask API started on port 8004")
+    logger.info("Flask API started on port %s", os.getenv("MARKET_PORT", "8009"))
 
     if _redis_client is None:
         logger.warning("No Redis connection — cannot subscribe; service in degraded mode")
