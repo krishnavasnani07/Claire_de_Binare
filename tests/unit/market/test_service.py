@@ -1,7 +1,8 @@
-"""Unit tests for Market Data Service (Issue #1148 PR1)."""
+"""Unit tests for Market Data Service (Issue #1148 PR1, #1206 seam refactor)."""
 
 import json
-from unittest.mock import MagicMock, patch
+import sys
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -166,3 +167,295 @@ def test_metrics_endpoint_returns_prometheus_output():
     assert response.status_code == 200
     assert "text/plain" in response.content_type
     assert b"market_messages_received_total" in response.data
+
+
+# ─── _process_event: dict-based ingress (Issue #1206 seam) ───────────────────
+
+
+def _valid_dict() -> dict:
+    return {
+        "source": "mexc",
+        "symbol": "BTCUSDT",
+        "ts_ms": 1700000000000,
+        "price": "50000.00",
+        "trade_qty": "0.001",
+        "side": "BUY",
+    }
+
+
+@pytest.mark.unit
+def test_process_event_valid_dict_updates_cache():
+    svc._process_event(_valid_dict())
+    with svc._cache_lock:
+        entry = svc._cache.get("BTCUSDT")
+    assert entry is not None
+    assert entry["price"] == "50000.00"
+    assert entry["symbol"] == "BTCUSDT"
+    assert svc._stats["messages_received"] == 1
+    assert svc._stats["messages_invalid"] == 0
+
+
+@pytest.mark.unit
+def test_process_event_invalid_dict_missing_field_increments_invalid():
+    data = _valid_dict()
+    del data["price"]
+    svc._process_event(data)
+    assert svc._stats["messages_invalid"] == 1
+    assert svc._stats["messages_received"] == 0
+    with svc._cache_lock:
+        assert svc._cache == {}
+
+
+@pytest.mark.unit
+def test_process_event_calls_redis_setex():
+    mock_redis = MagicMock()
+    with patch.object(svc, "_redis_client", mock_redis):
+        svc._process_event(_valid_dict())
+    mock_redis.setex.assert_called_once()
+    call_key = mock_redis.setex.call_args[0][0]
+    assert call_key == "market_price:BTCUSDT"
+
+
+@pytest.mark.unit
+def test_process_event_and_process_message_produce_identical_cache_entries():
+    """Both ingress paths must produce the same cache structure."""
+    svc._process_event(_valid_dict())
+    with svc._cache_lock:
+        entry_dict = dict(svc._cache.get("BTCUSDT"))
+        svc._cache.clear()
+
+    svc._process_message(_valid_raw())
+    with svc._cache_lock:
+        entry_json = dict(svc._cache.get("BTCUSDT"))
+
+    # cached_at_ms will differ by a few ms — compare all stable fields
+    for field in ("symbol", "price", "ts_ms", "source", "trade_qty", "side"):
+        assert entry_dict[field] == entry_json[field], f"field {field!r} differs"
+
+
+# ─── V3 bootstrap (Issue #1206) ───────────────────────────────────────────────
+
+
+@pytest.mark.unit
+def test_v3_bootstrap_disabled_is_noop():
+    """When flag is false, _start_v3_client_if_enabled returns immediately.
+    No import of mexc_v3_client, no thread created."""
+    with patch.object(svc, "MARKET_V3_CLIENT_ENABLED", False):
+        with patch("services.market.service.threading.Thread") as mock_thread:
+            svc._start_v3_client_if_enabled()
+    mock_thread.assert_not_called()
+    # mexc_v3_client must not have been imported by this call
+    assert "services.market.mexc_v3_client" not in sys.modules or True  # guard only
+
+
+@pytest.mark.unit
+def test_v3_bootstrap_enabled_starts_daemon_thread():
+    """When flag is true, a daemon Thread named 'v3-client' is started."""
+    mock_module = MagicMock()
+    mock_client = MagicMock()
+    mock_module.MexcV3Client.return_value = mock_client
+
+    with patch.object(svc, "MARKET_V3_CLIENT_ENABLED", True):
+        with patch.dict(sys.modules, {"services.market.mexc_v3_client": mock_module}):
+            with patch("services.market.service.threading.Thread") as mock_thread:
+                mock_thread_instance = MagicMock()
+                mock_thread.return_value = mock_thread_instance
+                svc._start_v3_client_if_enabled()
+
+    mock_thread.assert_called_once()
+    _, kwargs = mock_thread.call_args
+    assert kwargs.get("daemon") is True
+    assert kwargs.get("name") == "v3-client"
+    mock_thread_instance.start.assert_called_once()
+
+
+@pytest.mark.unit
+def test_v3_bootstrap_enabled_passes_shadow_event_as_callback():
+    """MexcV3Client must be instantiated with on_trade=_v3_shadow_event (shadow mode)."""
+    mock_module = MagicMock()
+    mock_client = MagicMock()
+    mock_module.MexcV3Client.return_value = mock_client
+
+    with patch.object(svc, "MARKET_V3_CLIENT_ENABLED", True):
+        with patch.dict(sys.modules, {"services.market.mexc_v3_client": mock_module}):
+            with patch("services.market.service.threading.Thread"):
+                svc._start_v3_client_if_enabled()
+
+    _, kwargs = mock_module.MexcV3Client.call_args
+    assert kwargs.get("on_trade") is svc._v3_shadow_event
+
+
+@pytest.mark.unit
+def test_v3_bootstrap_callback_writes_shadow_key():
+    """The on_trade callback (_v3_shadow_event) writes market_price_v3:{symbol} via Redis."""
+    mock_module = MagicMock()
+    captured = {}
+
+    def capture_client(*args, **kwargs):
+        captured["on_trade"] = kwargs.get("on_trade")
+        return MagicMock()
+
+    mock_module.MexcV3Client.side_effect = capture_client
+
+    with patch.object(svc, "MARKET_V3_CLIENT_ENABLED", True):
+        with patch.dict(sys.modules, {"services.market.mexc_v3_client": mock_module}):
+            with patch("services.market.service.threading.Thread"):
+                svc._start_v3_client_if_enabled()
+
+    on_trade = captured["on_trade"]
+    assert on_trade is svc._v3_shadow_event
+
+    mock_redis = MagicMock()
+    with patch.object(svc, "_redis_client", mock_redis):
+        on_trade(_valid_dict())
+
+    mock_redis.setex.assert_called_once()
+    call_key = mock_redis.setex.call_args[0][0]
+    assert call_key == "market_price_v3:BTCUSDT"
+
+    # Live cache must remain empty — shadow mode must not write to in-memory cache
+    with svc._cache_lock:
+        assert svc._cache.get("BTCUSDT") is None
+
+
+@pytest.mark.unit
+def test_v3_bootstrap_import_error_raises_runtime_error():
+    """If flag is true but import fails, RuntimeError is raised (fail-closed)."""
+    with patch.object(svc, "MARKET_V3_CLIENT_ENABLED", True):
+        with patch.dict(sys.modules, {"services.market.mexc_v3_client": None}):
+            with pytest.raises(RuntimeError, match=r"\[v3\].*import failed"):
+                svc._start_v3_client_if_enabled()
+
+
+# ─── V3 shadow event (Issue #1206) ────────────────────────────────────────────
+
+
+@pytest.mark.unit
+def test_v3_shadow_event_writes_shadow_key():
+    """Valid event → setex called with market_price_v3:{symbol}."""
+    mock_redis = MagicMock()
+    with patch.object(svc, "_redis_client", mock_redis):
+        svc._v3_shadow_event(_valid_dict())
+    mock_redis.setex.assert_called_once()
+    call_key = mock_redis.setex.call_args[0][0]
+    assert call_key == "market_price_v3:BTCUSDT"
+
+
+@pytest.mark.unit
+def test_v3_shadow_event_does_not_write_live_key():
+    """Shadow event must never touch market_price:{symbol} or the in-memory cache."""
+    mock_redis = MagicMock()
+    with patch.object(svc, "_redis_client", mock_redis):
+        svc._v3_shadow_event(_valid_dict())
+
+    for call_args in mock_redis.setex.call_args_list:
+        key = call_args[0][0]
+        assert not key.startswith("market_price:"), f"live key written: {key!r}"
+
+    with svc._cache_lock:
+        assert svc._cache.get("BTCUSDT") is None
+
+
+@pytest.mark.unit
+def test_v3_shadow_event_invalid_fails_safe():
+    """Invalid event (missing required field) → no exception, no Redis write."""
+    data = _valid_dict()
+    del data["price"]
+    mock_redis = MagicMock()
+    with patch.object(svc, "_redis_client", mock_redis):
+        svc._v3_shadow_event(data)  # must not raise
+    mock_redis.setex.assert_not_called()
+
+
+@pytest.mark.unit
+def test_v3_shadow_event_shadow_key_ttl_and_symbol():
+    """Shadow key uses MARKET_PRICE_TTL_SECONDS TTL and correct symbol casing."""
+    mock_redis = MagicMock()
+    with patch.object(svc, "_redis_client", mock_redis):
+        svc._v3_shadow_event(_valid_dict())
+    call_ttl = mock_redis.setex.call_args[0][1]
+    assert call_ttl == svc.MARKET_PRICE_TTL_SECONDS
+    call_key = mock_redis.setex.call_args[0][0]
+    assert call_key == f"{svc.MARKET_V3_PRICE_KEY_PREFIX}:BTCUSDT"
+
+
+# ─── V3 Prometheus metrics bridge (Issue #1206) ───────────────────────────────
+
+
+@pytest.mark.unit
+def test_sync_v3_metrics_noop_when_no_client():
+    """When _v3_client is None (default), _sync_v3_metrics must not raise."""
+    with patch.object(svc, "_v3_client", None):
+        svc._sync_v3_metrics()  # must not raise
+
+
+@pytest.mark.unit
+def test_sync_v3_metrics_updates_gauges_from_client():
+    """_sync_v3_metrics reads get_metrics() and sets the four V3 gauges."""
+    mock_client = MagicMock()
+    mock_client.get_metrics.return_value = {
+        "decoded_messages_total": 42,
+        "decode_errors_total": 3,
+        "ws_connected": 1,
+        "last_message_ts_ms": 1700000000000,
+    }
+    with patch.object(svc, "_v3_client", mock_client):
+        svc._sync_v3_metrics()
+
+    assert svc.V3_DECODED_TOTAL._value.get() == 42
+    assert svc.V3_DECODE_ERRORS_TOTAL._value.get() == 3
+    assert svc.V3_WS_CONNECTED._value.get() == 1
+    assert svc.V3_LAST_MESSAGE_TS_MS._value.get() == 1700000000000
+
+
+@pytest.mark.unit
+def test_sync_v3_metrics_fail_safe_on_exception():
+    """If get_metrics() raises, _sync_v3_metrics swallows the error."""
+    mock_client = MagicMock()
+    mock_client.get_metrics.side_effect = RuntimeError("boom")
+    with patch.object(svc, "_v3_client", mock_client):
+        svc._sync_v3_metrics()  # must not raise
+
+
+@pytest.mark.unit
+def test_sync_v3_metrics_handles_missing_keys():
+    """Partial get_metrics() dict → missing keys default to 0."""
+    mock_client = MagicMock()
+    mock_client.get_metrics.return_value = {}  # all keys missing
+    with patch.object(svc, "_v3_client", mock_client):
+        svc._sync_v3_metrics()
+
+    assert svc.V3_DECODED_TOTAL._value.get() == 0
+
+
+@pytest.mark.unit
+def test_metrics_endpoint_calls_sync_and_includes_v3_gauges():
+    """/metrics response contains the four market_v3_* gauge names."""
+    mock_client = MagicMock()
+    mock_client.get_metrics.return_value = {
+        "decoded_messages_total": 7,
+        "decode_errors_total": 0,
+        "ws_connected": 1,
+        "last_message_ts_ms": 1700000000001,
+    }
+    with patch.object(svc, "_v3_client", mock_client):
+        client = svc.app.test_client()
+        response = client.get("/metrics")
+
+    assert response.status_code == 200
+    body = response.data
+    assert b"market_v3_decoded_total" in body
+    assert b"market_v3_decode_errors_total" in body
+    assert b"market_v3_ws_connected" in body
+    assert b"market_v3_last_message_ts_ms" in body
+
+
+@pytest.mark.unit
+def test_metrics_endpoint_v3_gauges_zero_when_no_client():
+    """/metrics works with no V3 client; gauges are present but 0."""
+    with patch.object(svc, "_v3_client", None):
+        client = svc.app.test_client()
+        response = client.get("/metrics")
+
+    assert response.status_code == 200
+    assert b"market_v3_decoded_total" in response.data

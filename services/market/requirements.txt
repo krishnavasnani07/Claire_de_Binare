@@ -4,3 +4,11 @@ werkzeug>=3.1.4  # Security: Fix CVEs in Dependabot alerts #339
 redis==5.0.1
 psycopg2-binary==2.9.9
 prometheus_client==0.21.1
+
+# Optional V3 direct MEXC path (mexc_v3_client.py, Issue #1206).
+# Only active when MARKET_V3_CLIENT_ENABLED=true; default path does not import these.
+# websockets: pinned to match services/ws/requirements.txt (same MEXC WS endpoint).
+# protobuf: exact pin required — mexc_proto_gen pb2 files were generated with 6.31.1
+#   and call ValidateProtobufRuntimeVersion(major=6); any other major version fails.
+websockets==13.1
+protobuf==6.31.1

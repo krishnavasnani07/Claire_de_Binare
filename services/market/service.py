@@ -39,7 +39,9 @@ MARKET_CANDLES_STREAM = os.getenv("MARKET_CANDLES_STREAM", "stream.candles_1m")
 MARKET_REGIME_STREAM = os.getenv("MARKET_REGIME_STREAM", "stream.regime_signals")
 MARKET_STATE_KEY_PREFIX = os.getenv("MARKET_STATE_KEY_PREFIX", "market_state_shadow")
 MARKET_STATE_TTL_SECONDS = int(os.getenv("MARKET_STATE_TTL_SECONDS", "120"))
-MARKET_REGIME_STALENESS_SECONDS = int(os.getenv("MARKET_REGIME_STALENESS_SECONDS", "300"))
+MARKET_REGIME_STALENESS_SECONDS = int(
+    os.getenv("MARKET_REGIME_STALENESS_SECONDS", "300")
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -66,6 +68,24 @@ CACHE_SIZE = Gauge(
     "Number of symbols currently held in the in-memory price cache",
 )
 
+# V3 client metrics — always registered; stay at 0 when V3 path is disabled.
+V3_DECODED_TOTAL = Gauge(
+    "market_v3_decoded_total",
+    "Total Protobuf messages decoded by the MEXC V3 WebSocket client",
+)
+V3_DECODE_ERRORS_TOTAL = Gauge(
+    "market_v3_decode_errors_total",
+    "Total Protobuf decode errors in the MEXC V3 WebSocket client",
+)
+V3_WS_CONNECTED = Gauge(
+    "market_v3_ws_connected",
+    "1 if the MEXC V3 WebSocket client is currently connected, 0 otherwise",
+)
+V3_LAST_MESSAGE_TS_MS = Gauge(
+    "market_v3_last_message_ts_ms",
+    "Epoch milliseconds of the last message received by the MEXC V3 WebSocket client",
+)
+
 app = Flask(__name__)
 
 # In-memory cache: symbol (uppercase str) -> last sanitized entry (dict)
@@ -83,6 +103,28 @@ _redis_client: redis.Redis | None = None
 _redis_connected: bool = False
 _subscription_active: bool = False
 
+# Set by _start_v3_client_if_enabled(); None when V3 path is disabled (default).
+_v3_client = None
+
+
+def _sync_v3_metrics() -> None:
+    """Sync V3 client runtime counters into Prometheus gauges.
+
+    Called from the /metrics handler on every scrape.
+    No-op when _v3_client is None (V3 path disabled or not yet started).
+    Fail-safe: any error is logged and swallowed — never breaks /metrics.
+    """
+    if _v3_client is None:
+        return
+    try:
+        m = _v3_client.get_metrics()
+        V3_DECODED_TOTAL.set(m.get("decoded_messages_total", 0))
+        V3_DECODE_ERRORS_TOTAL.set(m.get("decode_errors_total", 0))
+        V3_WS_CONNECTED.set(m.get("ws_connected", 0))
+        V3_LAST_MESSAGE_TS_MS.set(m.get("last_message_ts_ms", 0))
+    except Exception as exc:
+        logger.warning("[v3] metrics sync error: %s", exc)
+
 
 def _build_redis_client() -> redis.Redis:
     host = os.getenv("REDIS_HOST", "localhost")
@@ -91,15 +133,16 @@ def _build_redis_client() -> redis.Redis:
     return redis.Redis(host=host, port=port, password=password, decode_responses=True)
 
 
-def _process_message(raw: str) -> None:
-    """Parse, validate, cache, and persist one PubSub message."""
-    try:
-        data = json.loads(raw)
-    except (json.JSONDecodeError, TypeError):
-        _stats["messages_invalid"] += 1
-        MESSAGES_INVALID.inc()
-        return
+def _process_event(data: dict) -> None:
+    """Validate, cache, and persist one already-decoded market event.
 
+    Dict-based ingress point shared by all data paths:
+    - Redis PubSub path: called from _process_message after JSON parsing
+    - Future direct path: can be called directly from mexc_v3_client on_trade callback
+
+    Caller is responsible for passing a dict; non-dict input will propagate
+    TypeError from sanitize_market_data (existing behaviour, not changed here).
+    """
     try:
         sanitized = sanitize_market_data(data)
     except ValueError as exc:
@@ -135,6 +178,21 @@ def _process_message(raw: str) -> None:
         except redis.RedisError as exc:
             logger.warning("Redis write failed for %s: %s", key, exc)
         _update_market_state(key, entry["ts_ms"], _redis_client)
+
+
+def _process_message(raw: str) -> None:
+    """Parse a JSON PubSub message and forward to _process_event.
+
+    Thin wrapper: handles JSON decode errors only.
+    All business logic lives in _process_event.
+    """
+    try:
+        data = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        _stats["messages_invalid"] += 1
+        MESSAGES_INVALID.inc()
+        return
+    _process_event(data)
 
 
 # ─── Market State V1 ─────────────────────────────────────────────────────────
@@ -223,7 +281,9 @@ def _update_market_state(
         if len(candles) < 6:
             _stats["market_state_skipped"] += 1
             logger.debug(
-                "market_state skip: %s has only %d candles (need 6)", symbol, len(candles)
+                "market_state skip: %s has only %d candles (need 6)",
+                symbol,
+                len(candles),
             )
             return
 
@@ -290,7 +350,10 @@ def health():
         issues.append("redis unavailable")
     if not _subscription_active:
         issues.append("no active subscription")
-    return jsonify({"status": "degraded", "service": "market_data", "detail": issues}), 503
+    return (
+        jsonify({"status": "degraded", "service": "market_data", "detail": issues}),
+        503,
+    )
 
 
 @app.route("/status", methods=["GET"])
@@ -310,6 +373,7 @@ def status():
 
 @app.route("/metrics", methods=["GET"])
 def metrics():
+    _sync_v3_metrics()
     return generate_latest(), 200, {"Content-Type": CONTENT_TYPE_LATEST}
 
 
@@ -321,6 +385,97 @@ def market_price(symbol: str):
     if entry is None:
         return jsonify({"error": f"no data for symbol {key!r}"}), 404
     return jsonify(entry)
+
+
+# ─── Optional V3 client bootstrap ────────────────────────────────────────────
+#
+# Disabled by default.  Set MARKET_V3_CLIENT_ENABLED=true to activate.
+# When disabled: zero side effects, no import of websockets / protobuf.
+# When enabled and bootstrap fails: RuntimeError is raised → main() exits (fail-closed).
+#
+# Shadow/compare mode (always):
+#   V3 events are validated and written to market_price_v3:{symbol} only.
+#   The live key market_price:{symbol} is owned exclusively by the cdb_ws PubSub path.
+#   market_state:{symbol} is never touched by the V3 path.
+
+MARKET_V3_CLIENT_ENABLED: bool = (
+    os.getenv("MARKET_V3_CLIENT_ENABLED", "false").lower() == "true"
+)
+MARKET_V3_SYMBOL: str = os.getenv("MARKET_V3_SYMBOL", "BTCUSDT")
+MARKET_V3_PRICE_KEY_PREFIX: str = "market_price_v3"
+
+
+def _v3_shadow_event(data: dict) -> None:
+    """Process one V3 client trade event in shadow/compare mode.
+
+    Validates via sanitize_market_data(), then writes to market_price_v3:{symbol}.
+    Does NOT write to market_price:{symbol} or market_state:{symbol}.
+    _process_event() (the live path) is never called from here.
+    Fail-safe: validation errors and Redis errors are logged and swallowed.
+    """
+    try:
+        sanitized = sanitize_market_data(data)
+    except ValueError as exc:
+        logger.debug("[v3] shadow rejected: %s", exc)
+        return
+
+    key = str(sanitized["symbol"]).upper()
+    entry = {
+        "symbol": key,
+        "price": sanitized["price"],
+        "ts_ms": sanitized["ts_ms"],
+        "source": sanitized["source"],
+        "trade_qty": sanitized["trade_qty"],
+        "side": sanitized["side"],
+        "cached_at_ms": int(time.time() * 1000),
+    }
+    if _redis_client is not None:
+        try:
+            _redis_client.setex(
+                f"{MARKET_V3_PRICE_KEY_PREFIX}:{key}",
+                MARKET_PRICE_TTL_SECONDS,
+                json.dumps(entry),
+            )
+            logger.debug("[v3] shadow write: %s:%s", MARKET_V3_PRICE_KEY_PREFIX, key)
+        except redis.RedisError as exc:
+            logger.warning("[v3] shadow write failed for %s: %s", key, exc)
+
+
+def _start_v3_client_if_enabled() -> None:
+    """Bootstrap MexcV3Client in a daemon thread, if MARKET_V3_CLIENT_ENABLED=true.
+
+    Raises RuntimeError (fail-closed) if the flag is set but bootstrap fails,
+    e.g. because websockets / protobuf dependencies are not installed.
+    Sets module-level _v3_client so _sync_v3_metrics() can poll it on scrape.
+    """
+    global _v3_client
+
+    if not MARKET_V3_CLIENT_ENABLED:
+        return
+
+    logger.info("[v3] MARKET_V3_CLIENT_ENABLED=true — bootstrapping V3 client")
+    try:
+        from services.market.mexc_v3_client import MexcV3Client  # lazy import
+    except ImportError as exc:
+        raise RuntimeError(
+            f"[v3] MARKET_V3_CLIENT_ENABLED=true but import failed "
+            f"(websockets/protobuf missing?): {exc}"
+        ) from exc
+
+    client = MexcV3Client(
+        symbol=MARKET_V3_SYMBOL,
+        on_trade=_v3_shadow_event,  # shadow mode: writes market_price_v3: only
+    )
+    _v3_client = client
+
+    def _run() -> None:
+        import asyncio
+
+        asyncio.run(client.run())
+
+    thread = threading.Thread(target=_run, daemon=True, name="v3-client")
+    thread.start()
+    logger.info("[v3] client thread started for symbol=%s", MARKET_V3_SYMBOL)
 
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
@@ -342,15 +497,21 @@ def main() -> None:
         _redis_connected = True
         logger.info("Redis connected at %s", os.getenv("REDIS_HOST", "localhost"))
     except redis.RedisError as exc:
-        logger.warning("Redis unavailable at startup: %s — running in degraded mode", exc)
+        logger.warning(
+            "Redis unavailable at startup: %s — running in degraded mode", exc
+        )
         _redis_client = None
 
     flask_thread = threading.Thread(target=_run_flask, daemon=True)
     flask_thread.start()
     logger.info("Flask API started on port %d", _FLASK_PORT)
 
+    _start_v3_client_if_enabled()  # no-op when MARKET_V3_CLIENT_ENABLED=false
+
     if _redis_client is None:
-        logger.warning("No Redis connection — cannot subscribe; service in degraded mode")
+        logger.warning(
+            "No Redis connection — cannot subscribe; service in degraded mode"
+        )
         while True:
             time.sleep(60)
 
