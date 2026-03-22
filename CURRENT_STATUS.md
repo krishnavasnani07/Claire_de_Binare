@@ -3,21 +3,21 @@
 **Status Class**: Working Repo / Engineering Status
 **Authority**: Current repo/main/test/dependency snapshot; not the canonical live-readiness or Echtgeld Go/No-Go source.
 **Operational Canon**: `docs/live-readiness/LR-AUDIT-STATUS-2026-03-05.md`
-**Last Updated**: 2026-03-22
-**Latest Commit**: d27c408
+**Last Updated**: 2026-03-22 (Session 3)
+**Latest Commit**: df169f4
 
 ---
 
 ## Repo / Engineering Status (2026-03-22)
 
-- **main**: green, 5 open PRs
-- **Commits seit letztem Update (2026-02-21)**: ~244
+- **main**: green, 4 open PRs
+- **Commits seit letztem Update (2026-02-21)**: ~246
 - **Open PRs**:
   - #1237: LR-040 runtime env prep (verdict anchor)
-  - #1226: P5 prestart normalization
   - #1217: fix(digest): auto-close weekly digest
   - #1207: feat(market): V3 shadow mode — cdb_market write path
   - #1180: deps: ruff 0.15.6 bump
+- **Merged (Session 3, 2026-03-22)**: #1226 P5 prestart normalization (df169f4)
 
 ---
 
@@ -52,6 +52,18 @@
 - Makefile: docker-* Targets auf kanonischen BLUE/RED Pfad migriert (#1219)
 - Backup: Automatisierungs-Runbook + SurrealDB-Drill (#1175, #1130)
 - Governance: TODO/Placeholder-Lifecycle formalisiert (#1239)
+
+### Observability / Grafana (2026-03-22)
+- Dashboard-Footprint: 15 → 2 Dashboards (#1251, Commit 6bb4532)
+  - entfernt: 13 ARCHIVED + 1 Platzhalter-Huelle (cdb_money_result_owner_v1)
+  - verbleibend: `cdb_system_health_owner_v1` (Prometheus, nicht bereinigt), `cdb_trading_performance_v1` (neu, minimal)
+- `cdb_trading_performance_v1.json`: Prometheus (system health, circuit breaker, kill switch, trade pipeline) + PostgreSQL (equity, daily PnL, realized PnL, equity curve)
+- Publish-Kette geschlossen (#1255, Commit c26b08d): `paper_runner` publiziert jetzt stündlich (konfigurierbar) Portfolio-Snapshots auf Redis-Channel `portfolio_snapshots` → `db_writer` → PostgreSQL → Grafana
+- CLAUDE.md im Repo-Root angelegt (Commit 1116275)
+- Restunsicherheiten Observability:
+  - `max_drawdown_pct` im Snapshot aktuell Platzhalter (0.0)
+  - `cdb_system_health_owner_v1.json`: 43 Panels, viele Platzhalter — kein eigener Cleanup-Issue
+  - `infrastructure/monitoring/grafana/DASHBOARD_IMPORT.md` veraltet
 
 ---
 
