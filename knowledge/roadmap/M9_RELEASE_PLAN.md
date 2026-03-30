@@ -15,14 +15,14 @@
 
 **Timeline:** 2-3 weeks (after M8 Security completion)
 **Critical Path:** M6 ✅ → M7 ✅ → M8 ✅ → M9 (Release) 🔄
-**Resource Need:** 1 SRE/DevOps lead, 1-2 developers (on-call), infra team support
+**Resource Need:** 1 designated human maintainer with deployment access; explicit human gate for live-risk decisions
 
 **Success Criteria:**
 - ✅ Production deployment successful (zero rollback)
 - ✅ 0 P0 issues in first 7 days
 - ✅ SLA targets met (uptime, latency, throughput)
 - ✅ Rollback plan validated and ready
-- ✅ On-call rotation staffed and trained
+- ✅ Solo-maintainer monitoring plan documented and ready
 
 ---
 
@@ -38,7 +38,7 @@
 - [ ] DNS configured (production domain)
 - [ ] SSL/TLS certificates provisioned and installed
 - [ ] Firewall rules configured (allow only necessary traffic)
-- [ ] VPN/bastion access configured for ops team
+- [ ] VPN/bastion access configured for designated maintainer
 
 **Security Sign-Off (M8 Complete):**
 - [ ] Penetration test report clean (all P0/P1 findings remediated)
@@ -50,7 +50,7 @@
 **Monitoring & Observability:**
 - [ ] Production Grafana dashboards deployed
 - [ ] Prometheus scraping all services
-- [ ] Alerts configured and tested (on-call team notified)
+- [ ] Alerts configured and tested (notify maintainer directly)
 - [ ] Log aggregation operational (Loki or equivalent)
 - [ ] Tracing enabled (if using distributed tracing)
 - [ ] Synthetic monitoring configured (uptime checks)
@@ -70,7 +70,7 @@
 - [ ] Error tracking configured (Sentry, Rollbar, or equivalent)
 
 **Operational Readiness:**
-- [ ] On-call rotation staffed (24/7 coverage for first 2 weeks)
+- [ ] Monitoring coverage defined for the first 2 weeks (no implicit 24/7 claim)
 - [ ] Runbooks published (deployment, rollback, incident response)
 - [ ] Deployment pipeline tested (CI/CD from main → staging → production)
 - [ ] Rollback plan validated (can rollback in <15 minutes)
@@ -110,9 +110,9 @@
 - ✅ Rollback plan tested and validated
 
 **Resource Needs:**
-- 1 SRE/DevOps lead (deployment orchestration)
-- 1-2 developers (on-call for issues)
-- Infra team (production access provisioning)
+- 1 designated human maintainer (deployment orchestration)
+- Direct alert routing to the maintainer
+- Production access validated before the deployment window
 
 **Risks:**
 - Staging tests fail → Fix P0 bugs, re-test (may delay Week 1 by 1-2d)
@@ -140,13 +140,13 @@
    - Smoke tests: All critical paths functional (health checks, auth, trading)
    - Performance validation: Latency and throughput within SLO
    - Monitoring validation: All dashboards green, no alerts firing
-   - User validation: Canary users (internal team) test production
+   - User validation: controlled canary checks run by the maintainer
 
 3. **Intensive Monitoring (Day 1-2):**
-   - On-call team monitoring 24/7
+   - Maintainer monitors defined check windows during the first 48 hours
    - Check dashboards every 30 minutes (first 24 hours)
    - Triage any P1/P2 issues immediately
-   - Daily standup with leadership (status update)
+   - Record status updates in the deployment log
 
 4. **First 7 Days Monitoring:**
    - Monitor error rates (target: <0.1% error rate)
@@ -161,9 +161,9 @@
 - ✅ 7-day monitoring complete (SLA targets met)
 
 **Resource Needs:**
-- On-call team (24/7 coverage for first 7 days)
-- SRE/DevOps lead (deployment execution + monitoring)
-- Developer support (bug fixes if needed)
+- Designated human maintainer (deployment execution + monitoring)
+- Direct alert routing to the maintainer
+- Time reserved for rollback or hotfix work if needed
 
 **Risks:**
 - Deployment fails mid-execution → Rollback immediately (validated in Week 1)
@@ -193,10 +193,10 @@
    - Conduct post-deployment retrospective
    - Document what went well vs. what could improve
    - Update deployment runbook with improvements
-   - Share lessons with team (knowledge transfer)
+   - Record lessons directly in repo docs and issue history
 
 3. **Transition to BAU Operations (ongoing):**
-   - Reduce on-call intensity (from 24/7 → normal rotation)
+   - Reduce heightened monitoring (from go-live window → normal scheduled checks)
    - Transition from reactive → proactive monitoring
    - Schedule regular health checks (weekly/monthly)
    - Plan next iteration (features, optimizations, tech debt)
@@ -210,12 +210,12 @@
 **Deliverables:**
 - ✅ All P1/P2 issues resolved or mitigated
 - ✅ Retrospective completed and lessons documented
-- ✅ BAU operations transitioned (normal on-call rotation)
+- ✅ BAU operations transitioned (normal scheduled monitoring)
 - ✅ M9 success criteria validated (0 P0 issues, SLA met)
 
 **Resource Needs:**
-- On-call team (reduced intensity in Week 3)
-- SRE/DevOps lead (stabilization + BAU transition)
+- Designated human maintainer (Week 3 stabilization)
+- Scheduled monitoring plus runbook upkeep
 
 **Risks:**
 - P1 issues discovered late → Extends Week 3 for fixes
@@ -230,7 +230,7 @@
 2. Final staging validation (all tests passing)
 3. Communication: Notify users of deployment window
 4. Backup: Snapshot all production databases
-5. Team ready: On-call team on standby
+5. Maintainer ready: deployment window, rollback commands, and monitoring checklist confirmed
 
 ### Deployment Steps (Production Go-Live)
 1. **Step 1:** Stop traffic to old version (drain connections, ~2 min)
@@ -282,7 +282,7 @@
 
 | Severity | Definition | Response Time | Example |
 |----------|-----------|---------------|---------|
-| **P0** | System down, data loss, security breach | Immediate (page on-call) | Database down, API returning 500s, secret leaked |
+| **P0** | System down, data loss, security breach | Immediate (maintainer action; fail-closed) | Database down, API returning 500s, secret leaked |
 | **P1** | Critical feature broken, major perf degradation | <15 minutes | Trading disabled, >2x latency, Redis failover |
 | **P2** | Important feature degraded, minor perf issue | <2 hours | Non-critical endpoint slow, minor UI bug |
 | **P3** | Minor issue, cosmetic bug | <24 hours | Typo in UI, log noise, non-urgent optimization |
@@ -296,7 +296,7 @@
 - [ ] 0 P0 issues in first 7 days
 - [ ] SLA targets met (99.9% uptime, <100ms p50 latency)
 - [ ] Rollback plan validated (tested in Week 1, ready for use)
-- [ ] On-call rotation staffed and operational
+- [ ] Monitoring plan documented and operational
 
 ### Should-Have (Important but Not Blocking)
 - [ ] <3 P1 issues in first 7 days
@@ -316,8 +316,8 @@
 | Deployment fails mid-execution | LOW | CRITICAL | Test in staging (Week 1), have rollback ready |
 | P0 issue in first 7 days | MEDIUM | HIGH | Intensive monitoring, fast hotfix process |
 | Performance degrades in production | LOW | MEDIUM | Load testing in M7, quick optimization if needed |
-| User feedback negative | LOW | LOW | Pre-release validation with canary users |
-| On-call team unavailable | LOW | HIGH | Cross-train backups, maintain clear runbooks |
+| User feedback negative | LOW | LOW | Pre-release validation with controlled canary checks |
+| Maintainer unavailable | LOW | HIGH | Do not deploy; move the window until the human owner is available |
 
 **Overall Risk:** MEDIUM (production deployment always carries risk, but mitigations in place)
 
@@ -347,7 +347,7 @@ After M9 close, transition to continuous improvement:
 **Plan Status:** ✅ REFINED (v2.0)
 **Last Updated:** 2025-12-27
 **Next Review:** Start of M9 (after M8 complete)
-**Owner:** SRE/DevOps Lead (TBD) + Claude (Session Lead) per Issue #107
+**Owner:** Designated human maintainer (TBD)
 
 ---
 

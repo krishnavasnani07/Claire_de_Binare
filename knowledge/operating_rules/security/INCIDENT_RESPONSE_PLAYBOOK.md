@@ -24,13 +24,13 @@ Define a minimal, actionable incident response flow for Claire de Binare.
 3. Classify severity: SEV1 (prod outage), SEV2 (degraded), SEV3 (minor).
 
 ## Escalation Matrix
-- SEV1: immediate paging of on-call + lead
-- SEV2: on-call + notify lead within 30 minutes
-- SEV3: ticket and notify lead in daily sync
+- SEV1: immediate maintainer action; keep the system fail-closed until impact is contained
+- SEV2: maintainer acknowledges and records status within 30 minutes
+- SEV3: ticket, log the issue, and review in the next maintainer work block
 
 ## Communication
-- Internal status updates every 30 minutes (SEV1) / 60 minutes (SEV2)
-- External communications only after lead approval
+- Incident log updates every 30 minutes (SEV1) / 60 minutes (SEV2)
+- External communications or live-risk recovery steps require explicit human decision
 
 ## Recovery Procedures
 - Contain: isolate affected services or networks

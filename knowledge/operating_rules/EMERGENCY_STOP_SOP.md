@@ -376,13 +376,13 @@ ks.deactivate("test_operator", "Test complete")
 
 ## Escalation Matrix
 
-| Scenario | Action | Contact |
-|----------|--------|---------|
-| Kill-switch auto-activated | Acknowledge, investigate, follow SOP | On-call engineer |
-| Cannot deactivate | Escalate to senior engineer | Tech lead |
-| Repeated auto-activations | Review trading strategy / risk limits | Risk manager |
-| State file corruption | Follow recovery procedure | DevOps / SRE |
-| Production incident | Activate manually, investigate | Incident commander |
+| Scenario | Action | Actor / Decision Path |
+|----------|--------|-----------------------|
+| Kill-switch auto-activated | Acknowledge, investigate, follow SOP | Maintainer / operator |
+| Cannot deactivate | Keep kill-switch active, capture evidence, do not resume trading without explicit human decision | Maintainer, fail-closed |
+| Repeated auto-activations | Review trading strategy / risk limits and keep trading constrained until root cause is understood | Maintainer / operator |
+| State file corruption | Keep kill-switch active, capture state/log evidence, follow recovery procedure, no re-enable without explicit human decision | Maintainer, fail-closed |
+| Production incident | Activate manually, investigate, keep system in safe state, and require explicit human decision before recovery to live activity | Maintainer, fail-closed |
 
 ---
 
