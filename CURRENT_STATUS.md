@@ -4,8 +4,8 @@
 **Authority**: Current repo/main/test/dependency snapshot; not the canonical live-readiness or Echtgeld Go/No-Go source.
 **Operational Canon**: `docs/live-readiness/LR-AUDIT-STATUS-2026-03-05.md`
 **Last Updated**: 2026-04-05
-**Latest Main Commit**: 9d4a92c4 — docs(status): reconcile P5 proof status after #1423 handoff (#1437)
-**Previous**: 1f3ec548 — fix(emoji-filter): compact auto-issue body to summary + artifact link (#1438)
+**Latest Main Commit**: e4d664e5 — chore(session): close session #28 — #1427 tests · #1426 fix · #1418 parent-close (#1439)
+**Previous**: 9d4a92c4 — docs(status): reconcile P5 proof status after #1423 handoff (#1437)
 
 ---
 
@@ -41,6 +41,7 @@
   - **Merged (Session 27, 2026-04-05)**: #1390 — emoji-filter: compact auto-issue body zu Summary + Artifact-Link. PR #1438 (1f3ec548). #1390 geschlossen.
   - **Session 28 (2026-04-05)**: #1418 — P5-Proof-Anchor geschlossen (alle Child-Issues CLOSED, manifest self-konsistent). #1426 Issue-Closure verifiziert (PR #1430 war bereits in Session 24 gemergt).
   - **Merged (Session 29, 2026-04-05)**: #1427 — soak-monitor Docker-Disk-Fallback. PR #1429 (ba2b13e4). #1427 geschlossen.
+  - **Merged (Session 30, 2026-04-05)**: PRs #1438/#1437/#1439 — Session-Close-Batch: emoji-filter compact body, P5-Status-Reconciliation, Session-28/29-Close + Merge-Konflikt-Auflösung + SHA-Korrekturen. PR #1439 (e4d664e5).
 
 ---
 
@@ -122,4 +123,4 @@ Neue Testdatei: `tests/unit/scripts/test_grafana_alerting_provisioning.py` (21 T
 ## Postmortem / Session Logs
 
 - `knowledge/logs/sessions/` — aktuelle Session-Logs
-- `docs/live-readiness/LR-AUDIT-STATUS-2026-03-05.md` — operativer Live-Readiness-Verdict (letzte Reconciliation 2026-04-05)
+- `docs/live-readiness/LR-AUDIT-STATUS-2026-03-05.md` — operativer Live-Readiness-Verdict (letzte Reconciliation 2026-04-05, PR #1437)
