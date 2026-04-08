@@ -7,10 +7,56 @@ Note: Placeholder tests marked with @pytest.mark.skip (Issue #308)
 """
 
 import json
+import sys
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 
+try:
+    import prometheus_client  # noqa: F401
+except ImportError:
+    _dummy_metrics = []
+
+    class _DummyMetric:
+        def __init__(self, name: str):
+            self.name = name
+            self.value = 0
+            self._callback = None
+
+        def labels(self, **kwargs):
+            return self
+
+        def inc(self, amount=1):
+            self.value += amount
+            return None
+
+        def set(self, value):
+            self.value = value
+            return None
+
+        def set_function(self, func):
+            self._callback = func
+            return None
+
+        def render(self) -> str:
+            value = self._callback() if self._callback is not None else self.value
+            return f"{self.name} {value}\n"
+
+    def _make_metric(name, *args, **kwargs):
+        metric = _DummyMetric(name)
+        _dummy_metrics.append(metric)
+        return metric
+
+    sys.modules["prometheus_client"] = SimpleNamespace(
+        Counter=_make_metric,
+        Gauge=_make_metric,
+        generate_latest=lambda *args, **kwargs: "".join(
+            metric.render() for metric in _dummy_metrics
+        ).encode(),
+        CONTENT_TYPE_LATEST="text/plain; version=0.0.4",
+        start_http_server=lambda *args, **kwargs: None,
+    )
 from services.db_writer.db_writer import DatabaseWriter
 
 
@@ -48,6 +94,37 @@ def test_signal_type_mapping_from_side():
         assert (
             signal_type == expected
         ), f"Payload {payload} should map to '{expected}', got '{signal_type}'"
+
+
+@pytest.mark.unit
+def test_normalize_metadata_parses_json_object_string():
+    metadata = DatabaseWriter.normalize_metadata('{"strategy_id":"paper"}')
+
+    assert metadata == {"strategy_id": "paper"}
+
+
+@pytest.mark.unit
+def test_process_signal_event_persists_metadata_object(mock_postgres):
+    writer = DatabaseWriter()
+    writer.db_conn = mock_postgres
+    cursor = mock_postgres.cursor.return_value
+    cursor.fetchone.return_value = (1,)
+
+    writer.process_signal_event(
+        {
+            "symbol": "BTCUSDT",
+            "side": "BUY",
+            "price": 50000.0,
+            "timestamp": 1700000000,
+            "metadata": '{"strategy_id":"paper","signal_reason":"Momentum"}',
+        }
+    )
+
+    params = cursor.execute.call_args[0][1]
+    assert json.loads(params[6]) == {
+        "strategy_id": "paper",
+        "signal_reason": "Momentum",
+    }
 
 
 @pytest.mark.unit

@@ -315,6 +315,7 @@ class DatabaseWriter:
         """
         try:
             cursor = self.db_conn.cursor()
+            metadata = self.normalize_metadata(data.get("metadata"))
 
             # Convert timestamp (handles Unix timestamps and ISO strings)
             timestamp = self.convert_timestamp(data.get("timestamp"))
@@ -338,7 +339,7 @@ class DatabaseWriter:
                     data.get("confidence", 0.5),
                     timestamp,
                     data.get("source", "signal_engine"),
-                    json.dumps(data.get("metadata", {})),
+                    json.dumps(metadata),
                 ),
             )
             signal_id = cursor.fetchone()[0]
@@ -362,6 +363,7 @@ class DatabaseWriter:
         try:
             # Get limit price (NULL for market orders without limit)
             order_price = self.get_order_price(data)
+            metadata = self.normalize_metadata(data.get("metadata"))
 
             # Convert timestamp (handles Unix timestamps and ISO strings)
             timestamp = self.convert_timestamp(data.get("timestamp"))
@@ -383,7 +385,7 @@ class DatabaseWriter:
                     data.get("approved", False),
                     data.get("rejection_reason"),
                     data.get("status", "pending"),
-                    json.dumps(self.normalize_metadata(data.get("metadata"))),
+                    json.dumps(metadata),
                     timestamp,
                 ),
             )
@@ -454,6 +456,7 @@ class DatabaseWriter:
 
             # Convert timestamp
             timestamp = self.convert_timestamp(data.get("timestamp"))
+            metadata = self.normalize_metadata(data.get("metadata"))
 
             # Calculate slippage in basis points (if target_price available)
             slippage_bps = None
@@ -489,7 +492,7 @@ class DatabaseWriter:
                     data.get("fees", 0.0),
                     timestamp,
                     data.get("exchange", "MEXC"),
-                    json.dumps(self.normalize_metadata(data.get("metadata"))),
+                    json.dumps(metadata),
                 ),
             )
             trade_id = cursor.fetchone()[0]
@@ -542,12 +545,10 @@ class DatabaseWriter:
             execution_price = self._get_positive_decimal(
                 data.get("price") or data.get("execution_price"),
                 "execution_price",
-                data
+                data,
             )
             execution_qty = self._get_positive_decimal(
-                data.get("quantity") or data.get("size"),
-                "execution_quantity",
-                data
+                data.get("quantity") or data.get("size"), "execution_quantity", data
             )
             timestamp = self.convert_timestamp(data.get("timestamp"))
 
@@ -560,7 +561,7 @@ class DatabaseWriter:
                 FROM positions
                 WHERE symbol = %s AND closed_at IS NULL
                 """,
-                (symbol,)
+                (symbol,),
             )
             existing = cursor.fetchone()
 
@@ -574,11 +575,20 @@ class DatabaseWriter:
                         (symbol, side, size, entry_price, current_price, opened_at, updated_at)
                         VALUES (%s, 'long', %s, %s, %s, %s, %s)
                         """,
-                        (symbol, execution_qty, execution_price, execution_price, timestamp, timestamp)
+                        (
+                            symbol,
+                            execution_qty,
+                            execution_price,
+                            execution_price,
+                            timestamp,
+                            timestamp,
+                        ),
                     )
                     logger.info(
                         "✅ Position opened: %s LONG %.8f @ %s",
-                        symbol, execution_qty, execution_price
+                        symbol,
+                        execution_qty,
+                        execution_price,
                     )
                 else:
                     # Add to existing position (recalculate weighted avg entry price)
@@ -586,7 +596,9 @@ class DatabaseWriter:
                     new_size = old_size + execution_qty
 
                     # Weighted average entry price
-                    new_entry = (old_size * old_entry + execution_qty * execution_price) / new_size
+                    new_entry = (
+                        old_size * old_entry + execution_qty * execution_price
+                    ) / new_size
 
                     cursor.execute(
                         """
@@ -594,11 +606,15 @@ class DatabaseWriter:
                         SET size = %s, entry_price = %s, current_price = %s, updated_at = %s
                         WHERE symbol = %s AND closed_at IS NULL
                         """,
-                        (new_size, new_entry, execution_price, timestamp, symbol)
+                        (new_size, new_entry, execution_price, timestamp, symbol),
                     )
                     logger.info(
                         "✅ Position increased: %s %.8f→%.8f @ %s (avg entry: %s)",
-                        symbol, old_size, new_size, execution_price, new_entry
+                        symbol,
+                        old_size,
+                        new_size,
+                        execution_price,
+                        new_entry,
                     )
 
             elif side == "sell":
@@ -606,7 +622,7 @@ class DatabaseWriter:
                 if existing is None:
                     logger.warning(
                         "⚠️ SELL order for %s but no open position exists - skipping position update",
-                        symbol
+                        symbol,
                     )
                     return
 
@@ -625,11 +641,14 @@ class DatabaseWriter:
                             updated_at = %s
                         WHERE symbol = %s AND closed_at IS NULL
                         """,
-                        (execution_price, realized_pnl, timestamp, timestamp, symbol)
+                        (execution_price, realized_pnl, timestamp, timestamp, symbol),
                     )
                     logger.info(
                         "✅ Position closed: %s %.8f @ %s (PnL: %.2f USD)",
-                        symbol, old_size, execution_price, realized_pnl
+                        symbol,
+                        old_size,
+                        execution_price,
+                        realized_pnl,
                     )
                 else:
                     # Partial close
@@ -646,18 +665,20 @@ class DatabaseWriter:
                             updated_at = %s
                         WHERE symbol = %s AND closed_at IS NULL
                         """,
-                        (new_size, execution_price, new_rpnl, timestamp, symbol)
+                        (new_size, execution_price, new_rpnl, timestamp, symbol),
                     )
                     logger.info(
                         "✅ Position reduced: %s %.8f→%.8f @ %s (partial PnL: %.2f USD)",
-                        symbol, old_size, new_size, execution_price, partial_pnl
+                        symbol,
+                        old_size,
+                        new_size,
+                        execution_price,
+                        partial_pnl,
                     )
 
         except ValueError as e:
             logger.error(
-                "Validation error updating position for %s: %s",
-                data.get("symbol"),
-                e
+                "Validation error updating position for %s: %s", data.get("symbol"), e
             )
         except Exception as e:
             logger.error("Failed to update position for %s: %s", data.get("symbol"), e)
@@ -671,6 +692,7 @@ class DatabaseWriter:
         """
         try:
             cursor = self.db_conn.cursor()
+            metadata = self.normalize_metadata(data.get("metadata"))
 
             # Convert timestamp (handles Unix timestamps and ISO strings)
             timestamp = self.convert_timestamp(data.get("timestamp"))
@@ -695,7 +717,7 @@ class DatabaseWriter:
                     self.normalize_exposure_pct(data.get("total_exposure_pct", 0.0)),
                     data.get("max_drawdown_pct", 0),
                     data.get("num_positions", data.get("open_positions", 0)),
-                    json.dumps(data.get("metadata", {})),
+                    json.dumps(metadata),
                 ),
             )
             snapshot_id = cursor.fetchone()[0]

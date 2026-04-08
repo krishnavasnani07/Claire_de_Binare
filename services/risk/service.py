@@ -220,6 +220,20 @@ def _parse_int(value) -> int | None:
     return int(parsed)
 
 
+def _compact_metadata(value):
+    if isinstance(value, dict):
+        compacted = {}
+        for key, item in value.items():
+            if item is None:
+                continue
+            nested = _compact_metadata(item)
+            if nested in (None, {}, []):
+                continue
+            compacted[key] = nested
+        return compacted
+    return value
+
+
 def decide_trade(
     signal,
     market_state,
@@ -364,7 +378,7 @@ def decide_trade(
     return DECISION_ALLOW, None, evidence
 
 
-def _build_order_metadata(evidence: dict) -> dict:
+def _build_order_timing_metadata(evidence: dict) -> dict:
     """Build a compact metadata contract for downstream execution/persistence."""
     timestamps_ms = copy.deepcopy(evidence.get("timestamps_ms") or {})
     return {
@@ -828,6 +842,53 @@ class RiskManager:
                 pass
             self._envelope_redis_client = None
             self._envelope_publisher = None
+
+    def _build_order_metadata(
+        self,
+        *,
+        order: Order,
+        decision: str,
+        reason_code: str | None,
+        evidence: dict,
+    ) -> dict:
+        timestamps_ms = evidence.get("timestamps_ms")
+        return _compact_metadata(
+            {
+                "signal_id": order.signal_id,
+                "strategy_id": order.strategy_id,
+                "decision_id": order.decision_id,
+                "trace_id": order.trace_id,
+                "decision": decision,
+                "reason_code": reason_code,
+                "decision_context": evidence.get("decision_context"),
+                "thresholds": evidence.get("thresholds"),
+                "policy_id": getattr(order, "policy_id", None),
+                "policy_hash": getattr(order, "policy_hash", None),
+                "input_hash": getattr(order, "input_hash", None),
+                "output_hash": getattr(order, "output_hash", None),
+                "policy_snapshot": getattr(order, "policy_snapshot", None),
+                "market_context": {
+                    "regime_id": evidence.get("regime_id"),
+                    "return_1m": evidence.get("return_1m"),
+                    "return_5m": evidence.get("return_5m"),
+                    "price_change_5m": evidence.get("price_change_5m"),
+                },
+                "account_context": {
+                    "daily_drawdown_pct": evidence.get("daily_drawdown_pct"),
+                    "total_exposure_pct": evidence.get("total_exposure_pct"),
+                },
+                "execution_context": {
+                    "slippage_pct": evidence.get("slippage_pct"),
+                },
+                "freshness": {
+                    "staleness_s": evidence.get("staleness_s"),
+                    "data_silence_s": evidence.get("data_silence_s"),
+                    "timestamps_ms": (
+                        timestamps_ms if isinstance(timestamps_ms, dict) else None
+                    ),
+                },
+            }
+        )
 
     def _get_postgres_conn(self) -> Optional[psycopg2.extensions.connection]:
         try:
@@ -1813,7 +1874,7 @@ class RiskManager:
             output_hash=evidence.get("output_hash"),
             # Issue #748 Slice 2: Policy snapshot (None when toggle OFF)
             policy_snapshot=policy_snapshot,
-            metadata=_build_order_metadata(evidence),
+            metadata=_build_order_timing_metadata(evidence),
         )
 
         # PR #619: HARD EXPOSURE GATE - Block order if projected exposure exceeds limit
@@ -1884,6 +1945,13 @@ class RiskManager:
             stats["orders_blocked"] += 1
             risk_state.signals_blocked += 1
             return None
+
+        order.metadata = self._build_order_metadata(
+            order=order,
+            decision=decision,
+            reason_code=reason_code,
+            evidence=evidence,
+        )
 
         logger.info(
             f"✅ Order freigegeben: {order.symbol} {order.side} qty={order.quantity:.4f}"
@@ -2517,7 +2585,12 @@ if _FLASK_AVAILABLE:
         ks = KillSwitch(state_file)
         ok = ks.deactivate(operator, justification)
         if not ok:
-            return jsonify({"error": "deactivation failed (check operator/justification)"}), 400
+            return (
+                jsonify(
+                    {"error": "deactivation failed (check operator/justification)"}
+                ),
+                400,
+            )
         active_after, _, _, _ = get_kill_switch_details(
             state_file=state_file, create_if_missing=False
         )
