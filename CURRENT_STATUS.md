@@ -13,11 +13,7 @@
 
 - **main**: green
 - **Open PRs (relevant/current focus)**:
-  - #1375: docs: close #1374 #1373 #1372 (noch OPEN, faktisch supersediert)
-  - #1285: fix(soak-monitor): use df -P (#1282)
-  - #1237: LR-040 runtime env prep (BLOCKIERT)
-  - #1217: fix(digest): auto-close weekly digest
-  - #1207: feat(market): V3 shadow mode
+  - keine
   - **Merged (Session 3, 2026-03-22)**: #1226 P5 prestart normalization (df169f4)
   - **Merged (Session 4, 2026-03-22)**: #1257 fix(lr031): liveness floor min=1 (a407838)
   - **Merged (Session 5+6, 2026-03-24)**: #1270/#1271 (soak env_interruption/timeline), #1273 (batch soak+alerting fixes, af0f21e), #1274 (docs, ee29e99)
@@ -58,6 +54,7 @@
   - **Session 47 (2026-04-08)**: #1509 GitHub-Reconciliation abgeschlossen. Der fruehere `prometheus_client`-Stub-Leak blockiert die gemeinsame Collection auf `main` nicht mehr; effektive Landing-Evidenz laeuft ueber die gemergten Folge-PRs #1516/#1519 statt ueber den urspruenglichen Branch-Commit. Abschlusskommentar in #1509 gepostet; Issue geschlossen.
   - **Merged (Session 48, 2026-04-09)**: Cleanup-Strang #1536/#1537/#1538 fachlich in Reihenfolge gelandet: PR #1539 (ac3e92d3) entfernt den stale `cdb_paper_runner`-Scrape fail-closed, PR #1540 (8838a161) zieht `COMPOSE_LAYERS.md` auf den repo-backed dev-Overlay-Status, PR #1541 (4159066d) reconciled `alerts.yml` gegen die aktuelle Metrics-SSOT und zieht `METRICS_MATRIX.md` ohne Drift-Reanimation nach. Issues #1536/#1537/#1538 geschlossen.
   - **Merged (Session 49, 2026-04-09)**: #1543 — `gemini-scheduled-triage.yml` fail-closed geparkt. Weekly `schedule` entfernt, `workflow_dispatch` bewusst erhalten, `CONTROL_REGISTER.md` auf `manuell (geparkt fail-closed)` nachgezogen.
+  - **Session 50 (2026-04-09)**: Wochenfokus-Abgleich fuer Fr 2026-04-10 repo-backed nachgezogen. Der frueher genannte Dependabot-Batch #1367/#1366/#1365 ist obsolet (#1367 + #1365 MERGED, #1366 CLOSED); aktuell keine offenen PRs und kein kleiner neuer PR-Hygiene-/Evidence-Handoff-Blocker belegt.
 
 ---
 
@@ -127,7 +124,7 @@ Neue Testdatei: `tests/unit/scripts/test_grafana_alerting_provisioning.py` (21 T
 6. **#1269 (midnight-rollover):** Geschlossen (2026-03-27). Live-Evidence aus `soak_test_20260325_121250`: beide UTC-Mitternachts-Grenzen (Hour 11 @ 2026-03-26 00:00, Hour 35 @ 2026-03-27 00:00) ohne Fragmentierung passiert. #1278 Pointer-Mechanismus bestätigt wirksam. Hour-29-Lücke = bekannte Umgebungsunterbrechung (2026-03-26 18:00 UTC). Formales Gate-Ergebnis: INCONCLUSIVE (s. Eintrag 3).
 7. **Grafana circuit_breaker alert aktiv:** Sendet gerade Alerts (laut Log), da circuit_breaker_active evaluiert wird. Normal — kein Blocker.
 8. **Human Gate:** GRANTED (2026-04-04). GO fuer kontrollierten P5-Shadow-/Stabilitaetsschritt. Keine Live-Aktivierung, keine Produktionsfreigabe. Formalisiert in `decision_record.yaml` via PR #1434 (1a0ebaba).
-9. **#1375:** Offene Sammel-PR ist durch die Einzelmerges #1383/#1384/#1386 fachlich ueberholt; entscheiden, ob schliessen oder sauber neu ausrichten.
+9. **#1375:** Historischer Resthinweis. Die Sammel-PR ist auf GitHub zwar noch OPEN, fuer den aktuellen Repo-/Engineering-Fokus aber fachlich supersediert; sie zaehlt daher nicht zur aktiven Open-PR-Liste.
 10. **#1423 (Lean Shadow Evidence Run):** Abgeschlossen (2026-04-05). Run 24001373890 PASS (10/10 Checks). Evidence-Handoff unter `reports/p5_canary/2026-04-04/lean_shadow_evidence_handoff.yaml`. PR #1435 (468414fd). Parent-Anchor #1418 ist CLOSED.
 11. **P4 DONE:** LR-040 PASS + LR-041/042 CLOSED mit Evidence. LR-AUDIT-STATUS reconciled (2026-04-05).
 12. **#1391/#1398 (compose canon drift):** CLOSED (2026-04-06). PR #1398 gemergt (26d91693). Legacy-Stubs fail-closed, $secretDir-Fix, aktive Docs bereinigt. Issues #1391 + #1442 geschlossen.
