@@ -258,11 +258,11 @@ def send_email(subject, body_html):
             smtp.login(smtp_user, smtp_password)
             smtp.send_message(msg)
 
-        print(f"[INFO] Email sent successfully to {to_address}")
+        print("[INFO] Email sent successfully")
         return True
 
     except Exception as e:
-        print(f"[ERROR] Email send failed: {e}")
+        print(f"[ERROR] Email send failed: {type(e).__name__}")
         return False
 
 
