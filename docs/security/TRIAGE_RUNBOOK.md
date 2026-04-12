@@ -66,7 +66,7 @@ Scope: artifacts/ | Reviewed: YYYY-MM-DD | Issue: #1651
 Cluster: gosu-base-image
 Rationale: Go stdlib CVEs in gosu-Binary der Redis/Postgres-Basisimages.
 Startup-only Binary ohne Netzwerk-Exposition. Upstream-Tracking aktiv (docker-library/{redis,postgres}).
-Dokumentiert in: docs/security/SECURITY_BASELINE.md | Reviewed: YYYY-MM-DD | Issue: #1651
+Dokumentiert in: docs/security/TRIAGE_RUNBOOK.md (§5) | Reviewed: YYYY-MM-DD | Issue: #1651
 ```
 
 ### Cluster: test-fixture-secret
