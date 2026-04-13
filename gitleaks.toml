@@ -30,7 +30,7 @@ keywords = ["trading_api", "exchange_api", "broker_api"]
 
 # Allowlist - files/patterns that should be ignored
 [allowlist]
-description = "Global allowlist for canonical CI artifacts"
+description = "Global allowlist for canonical CI artifacts and non-productive repo paths"
 paths = [
     # Test fixtures with fake secrets
     '''tests/fixtures/.*''',
@@ -52,6 +52,37 @@ paths = [
     '''infrastructure/.*\.yaml''',
     # All tests that may include simulated secrets
     '''tests/.*''',
+    # --- Non-productive repo paths (#1653): artefacts, reports, logs, tmp ---
+    # Anchored to repo root (^) so production paths like services/reports/... are NOT excluded.
+    # Soak/backtest/governance artefacts — not production code
+    '''^artifacts/.*''',
+    # Generated MD/JSON reports — no real secrets, only operational data
+    '''^reports/.*''',
+    # Paper-trading and service logs
+    '''^logs/.*''',
+    # Temporary work directories
+    '''^tmp/.*''',
+    '''^tmp_artifacts/.*''',
+    # CI run artefact directories (e.g. run_NNN/)
+    '''^run_\d+/.*''',
+    # Historical analysis snapshots
+    '''^_analysis_[^/]+/.*''',
+    '''^_cip_[^/]+/.*''',
+    '''^_zip_[^/]+/.*''',
+    # Governance workpack scratch directories
+    '''^governance_[^/]+_work/.*''',
+    # Evidence and emoji run artefacts
+    '''^evidence-run/.*''',
+    '''^emoji-report/.*''',
+    # MCP navpack and copilot briefing content
+    '''^mcp_navpack_working_repo/.*''',
+    '''^copilot_briefing/.*''',
+    # Codex worktree
+    '''^\.codex/.*''',
+    # Root-level log/sarif files (scanner outputs, not source)
+    '''.*\.log''',
+    '''.*\.sarif''',
+    '''emoji-report\.json''',
 ]
 values = [
     '''claire_db_secret_2024''',
