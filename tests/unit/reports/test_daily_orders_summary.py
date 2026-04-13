@@ -1,8 +1,8 @@
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from services.reports.daily_orders_summary import fetch_summary, format_email_body
+from services.reports.daily_orders_summary import fetch_summary, format_email_body, send_email
 
 
 @pytest.mark.unit
@@ -43,3 +43,38 @@ def test_format_email_body_includes_positive_trade_metrics():
     assert "Trades Made:</strong> 4" in html
     assert "Positive Trades:</strong> 3" in html
     assert "Positive Trade Rate:</strong> 75.0%" in html
+
+
+@pytest.mark.unit
+def test_send_email_success_log_does_not_contain_recipient(capsys):
+    """Regression: success log must not expose recipient address (#1652 CodeQL fix)."""
+    recipient = "private_recipient@example.com"
+    with patch("services.reports.daily_orders_summary.read_secret") as mock_secret, \
+         patch("services.reports.daily_orders_summary.smtplib.SMTP") as mock_smtp:
+        mock_secret.side_effect = ["user@smtp.com", "pass", "from@smtp.com", recipient]
+        smtp_instance = MagicMock()
+        mock_smtp.return_value.__enter__ = MagicMock(return_value=smtp_instance)
+        mock_smtp.return_value.__exit__ = MagicMock(return_value=False)
+
+        result = send_email("Subject", "<html/>")
+
+    captured = capsys.readouterr()
+    assert result is True
+    assert recipient not in captured.out
+
+
+@pytest.mark.unit
+def test_send_email_error_log_exposes_only_exception_type(capsys):
+    """Regression: error log must contain only exception type, not raw details (#1652 CodeQL fix)."""
+    sensitive_detail = "smtp_password_leak_xyz_secret"
+    with patch("services.reports.daily_orders_summary.read_secret") as mock_secret, \
+         patch("services.reports.daily_orders_summary.smtplib.SMTP") as mock_smtp:
+        mock_secret.side_effect = ["user@smtp.com", "pass", "from@smtp.com", "to@example.com"]
+        mock_smtp.side_effect = Exception(sensitive_detail)
+
+        result = send_email("Subject", "<html/>")
+
+    captured = capsys.readouterr()
+    assert result is False
+    assert sensitive_detail not in captured.out
+    assert "Exception" in captured.out

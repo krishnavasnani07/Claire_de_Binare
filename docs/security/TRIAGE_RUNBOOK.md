@@ -109,7 +109,7 @@ Gruppierung nach:
 | `services/*/requirements.txt` CVE ohne Fix | Needs Review | Issue erstellen |
 | `services/*/requirements.txt` CVE mit Fix | Echter Fix | Update Dependency |
 | Non-prod Pfad (artifacts/, logs/ etc.) | Historischer Noise | Dismiss + Kommentar |
-| Base image gosu | Historischer Noise | Dismiss + Kommentar (SECURITY_BASELINE.md) |
+| Base image gosu | Historischer Noise | Dismiss + Kommentar (→ Cluster: gosu-base-image, §4) |
 | `.trivyignore`-würdiger unfixbarer CVE | False Positive | `.trivyignore`-Eintrag + Kommentar |
 
 ### Stop-Regel

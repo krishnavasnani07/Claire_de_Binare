@@ -53,31 +53,32 @@ paths = [
     # All tests that may include simulated secrets
     '''tests/.*''',
     # --- Non-productive repo paths (#1653): artefacts, reports, logs, tmp ---
+    # Anchored to repo root (^) so production paths like services/reports/... are NOT excluded.
     # Soak/backtest/governance artefacts — not production code
-    '''artifacts/.*''',
+    '''^artifacts/.*''',
     # Generated MD/JSON reports — no real secrets, only operational data
-    '''reports/.*''',
+    '''^reports/.*''',
     # Paper-trading and service logs
-    '''logs/.*''',
+    '''^logs/.*''',
     # Temporary work directories
-    '''tmp/.*''',
-    '''tmp_artifacts/.*''',
-    # CI run artefact directories (e.g. run_20683890826/)
-    '''run_\d+/.*''',
+    '''^tmp/.*''',
+    '''^tmp_artifacts/.*''',
+    # CI run artefact directories (e.g. run_NNN/)
+    '''^run_\d+/.*''',
     # Historical analysis snapshots
-    '''_analysis_[^/]+/.*''',
-    '''_cip_[^/]+/.*''',
-    '''_zip_[^/]+/.*''',
+    '''^_analysis_[^/]+/.*''',
+    '''^_cip_[^/]+/.*''',
+    '''^_zip_[^/]+/.*''',
     # Governance workpack scratch directories
-    '''governance_[^/]+_work/.*''',
+    '''^governance_[^/]+_work/.*''',
     # Evidence and emoji run artefacts
-    '''evidence-run/.*''',
-    '''emoji-report/.*''',
+    '''^evidence-run/.*''',
+    '''^emoji-report/.*''',
     # MCP navpack and copilot briefing content
-    '''mcp_navpack_working_repo/.*''',
-    '''copilot_briefing/.*''',
+    '''^mcp_navpack_working_repo/.*''',
+    '''^copilot_briefing/.*''',
     # Codex worktree
-    '''\.codex/.*''',
+    '''^\.codex/.*''',
     # Root-level log/sarif files (scanner outputs, not source)
     '''.*\.log''',
     '''.*\.sarif''',
