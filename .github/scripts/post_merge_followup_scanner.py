@@ -329,6 +329,10 @@ def classify_finding(
             f"input={finding.classification_input}",
         ]
     )
+    if not raw.strip():
+        raise RuntimeError(
+            "gh models run returned empty response — models API unavailable or quota exceeded"
+        )
     payload = json.loads(raw)
     if payload.get("classification") not in {"report_only", "follow_up_issue", "unclear"}:
         raise RuntimeError("classifier returned invalid classification")
