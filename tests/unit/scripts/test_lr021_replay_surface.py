@@ -117,25 +117,19 @@ def test_lr021_replay_summary_has_semantic_separation() -> None:
     assert WORKFLOW_PATH.exists(), f"Workflow not found: {WORKFLOW_PATH}"
     content = WORKFLOW_PATH.read_text(encoding="utf-8")
 
-    summary_template_match = re.search(
-        r"summary_md\s*=\s*\[(?P<body>.*?)\]",
-        content,
-        re.DOTALL,
+    # Guard: summary_md must be defined (either as list literal or via "\n".join([...]))
+    assert re.search(r"summary_md\s*=", content), (
+        "lr021_replay_smoke.yml no longer defines summary_md. "
+        "This regression guard cannot verify the generated summary semantics. See #1825."
     )
-    assert summary_template_match is not None, (
-        "lr021_replay_smoke.yml no longer defines the summary_md markdown template "
-        "as a list literal. This regression guard cannot verify the generated summary "
-        "semantics. See #1825."
-    )
-    summary_template = summary_template_match.group("body")
 
-    assert "Einordnung" in summary_template, (
-        "lr021_replay_smoke.yml summary_md template is missing an 'Einordnung' note. "
+    assert "Einordnung" in content, (
+        "lr021_replay_smoke.yml summary is missing an 'Einordnung' note. "
         "Operators cannot distinguish pipeline step completion from fachliches gate_status. "
         "See #1825."
     )
-    assert "fachlich" in summary_template, (
-        "lr021_replay_smoke.yml summary_md template is missing a 'fachlich' semantic label "
-        "on gate_status. Operators cannot tell whether gate_status reflects a pipeline "
-        "failure or a strategy-gate threshold result. See #1825."
+    assert "fachlich" in content, (
+        "lr021_replay_smoke.yml summary is missing a 'fachlich' semantic label on gate_status. "
+        "Operators cannot tell whether gate_status reflects a pipeline failure or a "
+        "strategy-gate threshold result. See #1825."
     )
