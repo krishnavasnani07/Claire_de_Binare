@@ -64,9 +64,9 @@ def test_makefile_has_replay_shadow_run_target() -> None:
     assert MAKEFILE_PATH.exists(), f"Makefile not found: {MAKEFILE_PATH}"
     content = MAKEFILE_PATH.read_text(encoding="utf-8")
 
-    # Verify .PHONY declaration (word-boundary match to avoid partial hits)
-    assert re.search(r"\breplay-shadow-run\b", content), (
-        "Makefile is missing 'replay-shadow-run' in .PHONY or body. "
+    # Verify .PHONY declaration contains replay-shadow-run
+    assert re.search(r"^\.PHONY[^#\n]*\breplay-shadow-run\b", content, re.MULTILINE), (
+        "Makefile .PHONY declaration is missing 'replay-shadow-run'. "
         "`make replay-shadow-run` will fail. See #1824."
     )
 
