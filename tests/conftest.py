@@ -254,7 +254,8 @@ E2E_EXPECTED_COUNT = 5
 
 # Issue #430: Threshold reflects actual CI baseline (254/302 PASS, 48 SKIPPED)
 # Skipped tests: e2e (containers), local_only (destructive), chaos, slow, external
-TOTAL_MIN_PASS = 254
+# +4 added by #1824/#1825: test_lr021_replay_surface (4 unit tests)
+TOTAL_MIN_PASS = 258
 
 
 @dataclass
