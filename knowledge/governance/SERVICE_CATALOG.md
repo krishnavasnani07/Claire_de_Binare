@@ -65,10 +65,11 @@ Hinweis: Der Config-Default fuer `SIGNAL_PORT` liegt in `services/signal/config.
 | **Dataset Spec** | `core/replay/dataset_spec.py` | **AKTIV** (PR #1856) | Frozen request-spec für historische Replay-Datasets (ARVP §4.2); Fingerprint via canonical_hash |
 | **Dataset Provider** | `core/replay/dataset_provider.py` | **AKTIV** (PR #1856) | FileBackedDatasetProvider (JSON/JSONL) + DBBackedDatasetProvider (candles_1m Postgres); ARVP §4.2 |
 | **Replay Scheduler** | `core/replay/scheduler.py` | **AKTIV** (PR #1859) | Event-time replay scheduler mit deterministischen Speed-Profilen, Warmup/Live-Split und fail-closed Boundary-Validation |
+| **Shadow Compare Core** | `core/replay/shadow_compare.py` | **AKTIV** (PR #1871) | Replay-/Validation-Core fuer offline, deterministischen Vergleich von Replay-Output-Fenstern gegen explizite Paper-Referenzfenster; `PaperReferenceWindow` und `ReplayOutputWindow` caller-supplied, `compare_windows()` pure, fail-closed bei missing reference, symbol mismatch, strategy mismatch und fehlendem temporal overlap; deterministischer `comparison_fingerprint`, `shadow_comparison.json` als comparison/provenance artifact surface, `build_calibration_summary()` fuer operator-readable summaries; kein Runtime-Service und kein DB/Redis-/CLI-/Reporter-Wiring |
 | **Replay Reporter** | `services/validation/replay_reporter.py` | **AKTIV** (PR #1808) | Artifact bundle writer (report.json, manifest.json, audit.log) |
 | **Replay CLI** | `services/validation/strategy_replay_runner.py` | **AKTIV** (PR #1808, PR #1859) | Thin operator entry-point; fail-closed `speedup_profile` validation und Scheduler-Metadaten unter `dataset_summary["scheduler"]`; Exit Codes 0/1/2 |
 
-**Interne Abhängigkeiten:** Nutzen `core/replay/canonical_json.py` (deterministic serialization), `core/replay/envelopes.py` (envelope tracking).
+**Interne Abhängigkeiten:** Nutzen `core/replay/canonical_json.py` (deterministic serialization), `core/replay/envelopes.py` (envelope tracking). `core/replay/shadow_compare.py` bleibt dabei eine Core-Library-Surface fuer Replay/Validation und fuehrt weder Runtime-Service-Registrierung noch zusaetzliche DB/Redis-/CLI-/Reporter-Wiring-Pfade ein.
 
 **Externe Abhängigkeiten:** `core/domain/` (models, events), `core/clients/` (MEXC API), `core/indicators/` (technical indicators), `core/contracts/` (decision contracts).
 
@@ -188,3 +189,4 @@ docker compose -f infrastructure/compose/compose.red.yml up -d
 | 2026-04-20 | PR #1808 Nachzug: LR-021 deterministic replay infrastructure (core/replay/ + services/validation/) als Core Libraries dokumentiert; 6 Modules + 2 Components + 453 Tests (Issue #1809) | Codex |
 | 2026-04-22 | PR #1856 Nachzug: ARVP §4.2 DatasetSpec + DatasetProvider (FileBackedDatasetProvider + DBBackedDatasetProvider) in Core Libraries ergänzt; DB-Writer Candle-Persistence (candle_normalizer.py → candles_1m) nachgezogen (Issue #1857) | Codex |
 | 2026-04-22 | PR #1859 Nachzug: `core/replay/scheduler.py` und minimaler Replay-CLI-Scheduler-Pfad (`speedup_profile`, `dataset_summary["scheduler"]`) im Replay-Katalog ergänzt (Issue #1860) | Codex |
+| 2026-04-22 | PR #1871 / Issue #1872 Nachzug: `core/replay/shadow_compare.py` als Replay-/Validation-Core mit caller-supplied windows, pure `compare_windows()`, fail-closed alignment guards und `shadow_comparison.json` comparison/provenance surface im Abschnitt Core Libraries (nicht runtime-services) ergänzt | Codex |

@@ -151,8 +151,9 @@ cdb_reports           Up (healthy)
 | **Dataset Spec** | `core/replay/dataset_spec.py` | Frozen request-spec für historische Replay-Datasets (ARVP §4.2); Fingerprint via canonical_hash | **AKTIV** (PR #1856) |
 | **Dataset Provider** | `core/replay/dataset_provider.py` | FileBackedDatasetProvider (JSON/JSONL) + DBBackedDatasetProvider (candles_1m Postgres); ARVP §4.2 | **AKTIV** (PR #1856) |
 | **Replay Scheduler** | `core/replay/scheduler.py` | Event-time replay scheduler mit deterministischen Speed-Profilen, Warmup/Live-Split und fail-closed Boundary-Validation | **AKTIV** (PR #1859) |
+| **Shadow Compare Core** | `core/replay/shadow_compare.py` | ARVP replay-vs-paper shadow comparison core: offline, deterministischer Vergleich von Replay-Output-Fenstern gegen explizite Paper-Referenzfenster; `PaperReferenceWindow` und `ReplayOutputWindow` sind caller-supplied structs, `compare_windows()` ist pure, fail-closed bei missing reference, symbol mismatch, strategy mismatch und fehlendem temporal overlap; deterministischer `comparison_fingerprint`, `shadow_comparison.json` als comparison/provenance artifact surface, `build_calibration_summary()` fuer operator-readable summaries | **AKTIV** (PR #1871) |
 
-**Nutzung:** Shadow replay (accelerated backtesting, validation, gate evaluation offline) ohne live/paper/Redis-Runtime-Integration; ARVP §4.2 datasets können über `DBBackedDatasetProvider` aus `candles_1m` (Postgres) bezogen werden.
+**Nutzung:** Shadow replay (accelerated backtesting, validation, gate evaluation offline) ohne live/paper/Redis-Runtime-Integration; ARVP §4.2 datasets können über `DBBackedDatasetProvider` aus `candles_1m` (Postgres) bezogen werden. `core/replay/shadow_compare.py` bleibt dabei Core Library / Validation-Tooling und fuehrt keine Runtime-Services, keine DB/Redis-Collectors, keinen live data access, keine CLI-Wiring und keine Reporter/Runner-Modifikationen ein.
 
 **Reporter & CLI:**
 | Component | File | Funktion | Status |
@@ -212,3 +213,4 @@ Legacy-Layer (base.yml, dev.yml, tls.yml, etc.) existieren noch, sind nicht mehr
 | 2026-04-20 | PR #1808 Nachzug: LR-021 deterministic replay infrastructure (core/replay + services/validation reporter/CLI) als Core Libraries dokumentiert (Issue #1809) | Codex |
 | 2026-04-22 | PR #1856 Nachzug: ARVP §4.2 DatasetSpec + DatasetProvider (FileBackedDatasetProvider + DBBackedDatasetProvider) ergänzt (Issue #1857) | Codex |
 | 2026-04-22 | PR #1859 Nachzug: `core/replay/scheduler.py` und minimaler Replay-CLI-Scheduler-Pfad (`speedup_profile`, `dataset_summary["scheduler"]`) ergänzt (Issue #1860) | Codex |
+| 2026-04-22 | PR #1871 / Issue #1872 Nachzug: `core/replay/shadow_compare.py` als offline replay-vs-paper comparison core mit caller-supplied window structs, pure `compare_windows()`, fail-closed alignment guards, deterministischem `comparison_fingerprint` und `shadow_comparison.json` artifact surface im Replay-/Validation-Bereich ergänzt | Codex |
