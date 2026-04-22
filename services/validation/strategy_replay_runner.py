@@ -50,10 +50,11 @@ import re
 import subprocess
 import sys
 from dataclasses import dataclass
+from datetime import timezone
 from pathlib import Path
 from typing import Any
 
-from core.replay.canonical_json import canonical_hash
+from core.replay.canonical_json import canonical_hash, canonical_json_dumps
 from core.replay.dataset_provider import DatasetResult
 from core.replay.dataset_spec import DatasetSpec
 from core.replay.historical_bridge import (
@@ -61,6 +62,7 @@ from core.replay.historical_bridge import (
     PrimaryBreakoutBridgeConfig,
     PRIMARY_BREAKOUT_STRATEGY_ID,
     PRIMARY_BREAKOUT_SYMBOL,
+    build_primary_breakout_historical_bridge,
 )
 from core.replay.replay_contracts import (
     EnvelopeSummary,
@@ -75,10 +77,20 @@ from core.replay.scheduler import (
     SchedulerConfig,
     SchedulerError,
 )
+from core.replay.run_registry import (
+    ReplayRunRecord,
+    ReplayRunRegistry,
+    RunRegistryError,
+    build_operator_summary,
+    build_replay_provenance_fingerprint,
+    build_replay_run_id,
+)
+from core.utils.clock import utcnow
 from services.validation.replay_reporter import ReplayReporter, ReplayReporterError
 from services.validation.strategy_backtest_runner import (
     PrimaryBreakoutBacktestError,
     PrimaryBreakoutBacktestRunConfig,
+    _deterministic_run_id,
     run_primary_breakout_backtest,
 )
 
@@ -93,6 +105,7 @@ _DEFAULT_OUTPUT_DIR = "artifacts/replay_reports"
 _DEFAULT_STRATEGY_ID = PRIMARY_BREAKOUT_STRATEGY_ID
 _DEFAULT_SYMBOL = PRIMARY_BREAKOUT_SYMBOL
 _DEFAULT_ADAPTER_ID = "primary_breakout_runner_v1"
+_DEFAULT_REPLAY_MODE = "baseline"
 
 _CODE_COMMIT_RE = re.compile(r"^[a-f0-9]{7,40}$")
 _FALLBACK_CODE_COMMIT = "0000000"
@@ -288,14 +301,31 @@ def _redact_env() -> dict[str, str]:
     return {k: v for k, v in os.environ.items() if k in _SAFE_ENV_KEYS}
 
 
-def _build_scheduler_metadata(
+def _utc_now_iso() -> str:
+    return utcnow().replace(tzinfo=timezone.utc).isoformat()
+
+
+def _build_provenance_config_snapshot(
+    config: AcceleratedShadowReplayConfig,
+) -> dict[str, Any]:
+    return {
+        "order_size": config.order_size,
+        "order_book_depth_multiplier": config.order_book_depth_multiplier,
+        "entry_lookback_minutes": config.entry_lookback_minutes,
+        "exit_lookback_minutes": config.exit_lookback_minutes,
+        "breakout_buffer": config.breakout_buffer,
+        "min_minutes_between_entries": config.min_minutes_between_entries,
+    }
+
+
+def _build_dataset_result(
     candles: list[dict[str, Any]],
     *,
     input_path: Path,
     config: AcceleratedShadowReplayConfig,
     warmup_count: int,
-) -> dict[str, Any]:
-    """Derive deterministic scheduler metadata from the loaded candle series."""
+) -> DatasetResult:
+    """Build the deterministic dataset result used by scheduler and runner layers."""
     if len(candles) <= warmup_count:
         raise ReplayRunnerError(
             f"scheduler requires at least {warmup_count + 1} candles for "
@@ -321,19 +351,94 @@ def _build_scheduler_metadata(
     )
     try:
         spec.validate()
-        dataset_result = DatasetResult(
+        return DatasetResult(
             spec=spec,
             candles=tuple(dict(candle) for candle in candles),
             fingerprint=spec.fingerprint(),
             warmup_count=warmup_count,
             effective_candle_count=len(candles) - warmup_count,
         )
+    except (TypeError, ValueError) as exc:
+        raise ReplayRunnerError(f"dataset validation failed: {exc}") from exc
+
+
+def _build_scheduler_metadata(
+    dataset_result: DatasetResult,
+    *,
+    speedup_profile: str,
+) -> dict[str, Any]:
+    """Derive deterministic scheduler metadata from a validated dataset result."""
+    try:
         return ReplayScheduler().schedule(
             dataset_result,
-            SchedulerConfig(profile=config.speedup_profile),
+            SchedulerConfig(profile=speedup_profile),
         ).to_dict()
     except (TypeError, ValueError) as exc:
         raise ReplayRunnerError(f"scheduler validation failed: {exc}") from exc
+
+
+def _build_execution_provenance_id(
+    candles: list[dict[str, Any]],
+    *,
+    run_config: PrimaryBreakoutBacktestRunConfig,
+    code_commit: str,
+) -> str:
+    """Precompute the deterministic backtest provenance id for the runner record."""
+    try:
+        bridge_requests = build_primary_breakout_historical_bridge(
+            candles, config=run_config.bridge
+        )
+        return _deterministic_run_id(bridge_requests, run_config, code_commit)
+    except Exception as exc:
+        raise ReplayRunnerError(
+            f"failed to derive execution provenance id: {exc}"
+        ) from exc
+
+
+def _write_operator_summary_artifact(
+    bundle_dir: Path,
+    record: ReplayRunRecord,
+) -> None:
+    summary_path = bundle_dir / "operator_summary.json"
+    summary_path.write_text(
+        canonical_json_dumps(build_operator_summary(record)),
+        encoding="utf-8",
+    )
+
+
+def _append_failed_record(
+    registry: ReplayRunRegistry,
+    *,
+    run_id: str,
+    strategy_id: str,
+    symbol: str,
+    dataset_fingerprint: str,
+    scheduler_profile: str,
+    execution_provenance_id: str,
+    artifact_root: str,
+    deterministic_replay_ok: bool,
+    started_at_utc: str,
+    failure_reason: str,
+    gate_status: str | None = None,
+) -> ReplayRunRecord:
+    record = ReplayRunRecord(
+        run_id=run_id,
+        status="failed",
+        mode=_DEFAULT_REPLAY_MODE,
+        strategy_id=strategy_id,
+        symbol=symbol,
+        dataset_fingerprint=dataset_fingerprint,
+        scheduler_profile=scheduler_profile,
+        execution_provenance_id=execution_provenance_id,
+        artifact_root=artifact_root,
+        gate_status=gate_status,
+        deterministic_replay_ok=deterministic_replay_ok,
+        failure_reason=failure_reason,
+        started_at_utc=started_at_utc,
+        finished_at_utc=_utc_now_iso(),
+    )
+    registry.append(record)
+    return record
 
 
 def _build_replay_report_input(
@@ -342,6 +447,10 @@ def _build_replay_report_input(
     code_commit: str,
     output_dir: Path,
     scheduler_metadata: dict[str, Any] | None = None,
+    *,
+    runner_run_id: str | None = None,
+    execution_provenance_id: str | None = None,
+    dataset_fingerprint: str | None = None,
 ) -> ReplayReportInput:
     """Bridge a backtest runner report to a ReplayReportInput.
 
@@ -351,11 +460,21 @@ def _build_replay_report_input(
 
     No metrics are recalculated; all values are derived from the backtest report.
     """
-    run_id: str = backtest_report["run_metadata"]["run_id"]
+    execution_run_id: str = execution_provenance_id or backtest_report["run_metadata"]["run_id"]
+    run_id: str = runner_run_id or execution_run_id
     dataset: dict[str, Any] = dict(backtest_report["dataset_summary"])
+    if dataset_fingerprint is not None:
+        dataset["dataset_fingerprint"] = dataset_fingerprint
     if scheduler_metadata is not None:
         dataset["scheduler"] = dict(scheduler_metadata)
     metrics: dict[str, Any] = backtest_report["metrics"]
+    run_spec_metadata: dict[str, Any] = {
+        "mode": _DEFAULT_REPLAY_MODE,
+        "execution_provenance_id": execution_run_id,
+        "scheduler_profile": config.speedup_profile,
+    }
+    if dataset_fingerprint is not None:
+        run_spec_metadata["dataset_fingerprint"] = dataset_fingerprint
 
     run_spec = ReplayRunSpec(
         replay_run_id=run_id,
@@ -365,6 +484,7 @@ def _build_replay_report_input(
         end_ts_ms=int(dataset["period_end_ts_ms"]),
         code_commit=code_commit,
         run_mode="shadow",
+        metadata=run_spec_metadata,
     )
 
     exec_result = ReplayExecutionResult(
@@ -406,6 +526,11 @@ def _build_replay_report_input(
         envelope_log_uri="none",
         event_loop_states_uri="none",
         report_artifact_uri=str(bundle_dir / "report.json"),
+        supplementary_artifacts={
+            "config_resolved_uri": str(bundle_dir / "config.resolved.json"),
+            "env_redacted_uri": str(bundle_dir / "env_redacted.txt"),
+            "operator_summary_uri": str(bundle_dir / "operator_summary.json"),
+        },
     )
 
     return ReplayReportInput(
@@ -493,6 +618,8 @@ def run_accelerated_shadow_replay(config: AcceleratedShadowReplayConfig) -> int:
         )
         return 0
 
+    output_dir = Path(config.output_directory)
+    code_commit = _get_code_commit()
     run_cfg = PrimaryBreakoutBacktestRunConfig(
         bridge=PrimaryBreakoutBridgeConfig(
             entry_lookback_minutes=config.entry_lookback_minutes,
@@ -508,18 +635,62 @@ def run_accelerated_shadow_replay(config: AcceleratedShadowReplayConfig) -> int:
         run_cfg.bridge.exit_lookback_minutes,
     )
     try:
-        scheduler_metadata = _build_scheduler_metadata(
+        dataset_result = _build_dataset_result(
             candles,
             input_path=input_path,
             config=config,
             warmup_count=warmup_count,
         )
-    except ReplayRunnerError as exc:
+        scheduler_metadata = _build_scheduler_metadata(
+            dataset_result,
+            speedup_profile=config.speedup_profile,
+        )
+        execution_provenance_id = _build_execution_provenance_id(
+            candles,
+            run_config=run_cfg,
+            code_commit=code_commit,
+        )
+        provenance_fingerprint = build_replay_provenance_fingerprint(
+            strategy_id=config.strategy_id,
+            symbol=config.symbol,
+            adapter_id=config.adapter_id,
+            dataset_fingerprint=dataset_result.fingerprint,
+            scheduler_profile=config.speedup_profile,
+            execution_provenance_id=execution_provenance_id,
+            code_commit=code_commit,
+            mode=_DEFAULT_REPLAY_MODE,
+            config_snapshot=_build_provenance_config_snapshot(config),
+        )
+        registry = ReplayRunRegistry(output_dir / "run_registry.jsonl")
+        run_id = build_replay_run_id(
+            provenance_fingerprint,
+            registry.next_attempt(provenance_fingerprint),
+        )
+    except (ReplayRunnerError, RunRegistryError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
 
-    output_dir = Path(config.output_directory)
-    code_commit = _get_code_commit()
+    started_at_utc = _utc_now_iso()
+    artifact_root = str(output_dir / run_id)
+    try:
+        registry.append(
+            ReplayRunRecord(
+                run_id=run_id,
+                status="running",
+                mode=_DEFAULT_REPLAY_MODE,
+                strategy_id=config.strategy_id,
+                symbol=config.symbol,
+                dataset_fingerprint=dataset_result.fingerprint,
+                scheduler_profile=config.speedup_profile,
+                execution_provenance_id=execution_provenance_id,
+                artifact_root=artifact_root,
+                deterministic_replay_ok=False,
+                started_at_utc=started_at_utc,
+            )
+        )
+    except RunRegistryError as exc:
+        print(f"ERROR: Failed to write running run record: {exc}", file=sys.stderr)
+        return 2
 
     # Delegate to the existing backtest surface (business logic lives here)
     try:
@@ -529,9 +700,47 @@ def run_accelerated_shadow_replay(config: AcceleratedShadowReplayConfig) -> int:
             code_commit=code_commit,
         )
     except (HistoricalBridgeError, PrimaryBreakoutBacktestError) as exc:
+        try:
+            _append_failed_record(
+                registry,
+                run_id=run_id,
+                strategy_id=config.strategy_id,
+                symbol=config.symbol,
+                dataset_fingerprint=dataset_result.fingerprint,
+                scheduler_profile=config.speedup_profile,
+                execution_provenance_id=execution_provenance_id,
+                artifact_root=artifact_root,
+                deterministic_replay_ok=False,
+                started_at_utc=started_at_utc,
+                failure_reason=f"Replay execution failed: {exc}",
+            )
+        except RunRegistryError as registry_exc:
+            print(
+                f"ERROR: Failed to write failed run record: {registry_exc}",
+                file=sys.stderr,
+            )
         print(f"ERROR: Replay execution failed: {exc}", file=sys.stderr)
         return 2
     except Exception as exc:
+        try:
+            _append_failed_record(
+                registry,
+                run_id=run_id,
+                strategy_id=config.strategy_id,
+                symbol=config.symbol,
+                dataset_fingerprint=dataset_result.fingerprint,
+                scheduler_profile=config.speedup_profile,
+                execution_provenance_id=execution_provenance_id,
+                artifact_root=artifact_root,
+                deterministic_replay_ok=False,
+                started_at_utc=started_at_utc,
+                failure_reason=f"Unexpected runtime failure: {exc}",
+            )
+        except RunRegistryError as registry_exc:
+            print(
+                f"ERROR: Failed to write failed run record: {registry_exc}",
+                file=sys.stderr,
+            )
         print(f"ERROR: Unexpected runtime failure: {exc}", file=sys.stderr)
         return 2
 
@@ -543,8 +752,30 @@ def run_accelerated_shadow_replay(config: AcceleratedShadowReplayConfig) -> int:
             code_commit,
             output_dir,
             scheduler_metadata=scheduler_metadata,
+            runner_run_id=run_id,
+            execution_provenance_id=execution_provenance_id,
+            dataset_fingerprint=dataset_result.fingerprint,
         )
     except Exception as exc:
+        try:
+            _append_failed_record(
+                registry,
+                run_id=run_id,
+                strategy_id=config.strategy_id,
+                symbol=config.symbol,
+                dataset_fingerprint=dataset_result.fingerprint,
+                scheduler_profile=config.speedup_profile,
+                execution_provenance_id=execution_provenance_id,
+                artifact_root=artifact_root,
+                deterministic_replay_ok=False,
+                started_at_utc=started_at_utc,
+                failure_reason=f"Failed to build replay report input: {exc}",
+            )
+        except RunRegistryError as registry_exc:
+            print(
+                f"ERROR: Failed to write failed run record: {registry_exc}",
+                file=sys.stderr,
+            )
         print(f"ERROR: Failed to build replay report input: {exc}", file=sys.stderr)
         return 2
 
@@ -553,21 +784,59 @@ def run_accelerated_shadow_replay(config: AcceleratedShadowReplayConfig) -> int:
     try:
         bundle_dir = reporter.write_bundle(report_input, output_dir)
     except ReplayReporterError as exc:
+        try:
+            _append_failed_record(
+                registry,
+                run_id=run_id,
+                strategy_id=config.strategy_id,
+                symbol=config.symbol,
+                dataset_fingerprint=dataset_result.fingerprint,
+                scheduler_profile=config.speedup_profile,
+                execution_provenance_id=execution_provenance_id,
+                artifact_root=artifact_root,
+                deterministic_replay_ok=False,
+                started_at_utc=started_at_utc,
+                failure_reason=f"Replay reporter failed: {exc}",
+            )
+        except RunRegistryError as registry_exc:
+            print(
+                f"ERROR: Failed to write failed run record: {registry_exc}",
+                file=sys.stderr,
+            )
         print(f"ERROR: Replay reporter failed: {exc}", file=sys.stderr)
         return 2
 
     # Write supplementary artifacts (CLI layer, not part of canonical hash)
+    artifact_root = str(bundle_dir)
     try:
         _write_supplementary_artifacts(bundle_dir, config, code_commit)
     except OSError as exc:
+        try:
+            _append_failed_record(
+                registry,
+                run_id=run_id,
+                strategy_id=config.strategy_id,
+                symbol=config.symbol,
+                dataset_fingerprint=dataset_result.fingerprint,
+                scheduler_profile=config.speedup_profile,
+                execution_provenance_id=execution_provenance_id,
+                artifact_root=artifact_root,
+                deterministic_replay_ok=False,
+                started_at_utc=started_at_utc,
+                failure_reason=f"Failed to write supplementary artifacts: {exc}",
+            )
+        except RunRegistryError as registry_exc:
+            print(
+                f"ERROR: Failed to write failed run record: {registry_exc}",
+                file=sys.stderr,
+            )
         print(f"ERROR: Failed to write supplementary artifacts: {exc}", file=sys.stderr)
         return 2
 
     # Determinism check
     metrics = backtest_report.get("metrics", {})
     deterministic_replay_ok = bool(metrics.get("deterministic_replay_ok", False))
-    gate_status = (backtest_report.get("gate_result") or {}).get("status", "UNKNOWN")
-    run_id = report_input.run_spec.replay_run_id
+    gate_status = (backtest_report.get("gate_result") or {}).get("status")
 
     if not deterministic_replay_ok:
         print(
@@ -576,14 +845,97 @@ def run_accelerated_shadow_replay(config: AcceleratedShadowReplayConfig) -> int:
             file=sys.stderr,
         )
         if config.deterministic_verify:
+            failed_record: ReplayRunRecord | None = None
+            try:
+                failed_record = _append_failed_record(
+                    registry,
+                    run_id=run_id,
+                    strategy_id=config.strategy_id,
+                    symbol=config.symbol,
+                    dataset_fingerprint=dataset_result.fingerprint,
+                    scheduler_profile=config.speedup_profile,
+                    execution_provenance_id=execution_provenance_id,
+                    artifact_root=artifact_root,
+                    gate_status=gate_status,
+                    deterministic_replay_ok=False,
+                    started_at_utc=started_at_utc,
+                    failure_reason=(
+                        "--deterministic-verify set and deterministic_replay_ok=False"
+                    ),
+                )
+            except RunRegistryError as registry_exc:
+                print(
+                    f"ERROR: Failed to write failed run record: {registry_exc}",
+                    file=sys.stderr,
+                )
+            if failed_record is not None:
+                try:
+                    _write_operator_summary_artifact(bundle_dir, failed_record)
+                except OSError as exc:
+                    print(
+                        f"ERROR: Failed to write operator summary: {exc}",
+                        file=sys.stderr,
+                    )
             print(
                 "ERROR: --deterministic-verify is set; aborting with exit code 2.",
                 file=sys.stderr,
             )
             return 2
 
+    completed_record = ReplayRunRecord(
+        run_id=run_id,
+        status="completed",
+        mode=_DEFAULT_REPLAY_MODE,
+        strategy_id=config.strategy_id,
+        symbol=config.symbol,
+        dataset_fingerprint=dataset_result.fingerprint,
+        scheduler_profile=config.speedup_profile,
+        execution_provenance_id=execution_provenance_id,
+        artifact_root=artifact_root,
+        gate_status=gate_status,
+        deterministic_replay_ok=deterministic_replay_ok,
+        started_at_utc=started_at_utc,
+        finished_at_utc=_utc_now_iso(),
+    )
+    try:
+        registry.append(completed_record)
+    except RunRegistryError as exc:
+        print(f"ERROR: Failed to write completed run record: {exc}", file=sys.stderr)
+        return 2
+
+    try:
+        _write_operator_summary_artifact(bundle_dir, completed_record)
+    except OSError as exc:
+        try:
+            _append_failed_record(
+                registry,
+                run_id=run_id,
+                strategy_id=config.strategy_id,
+                symbol=config.symbol,
+                dataset_fingerprint=dataset_result.fingerprint,
+                scheduler_profile=config.speedup_profile,
+                execution_provenance_id=execution_provenance_id,
+                artifact_root=artifact_root,
+                gate_status=gate_status,
+                deterministic_replay_ok=deterministic_replay_ok,
+                started_at_utc=started_at_utc,
+                failure_reason=f"Failed to write operator summary: {exc}",
+            )
+        except RunRegistryError as registry_exc:
+            print(
+                f"ERROR: Failed to write failed run record: {registry_exc}",
+                file=sys.stderr,
+            )
+        print(f"ERROR: Failed to write operator summary: {exc}", file=sys.stderr)
+        return 2
+
     print(f"Shadow replay complete: run_id={run_id}")
-    print(f"  gate_result={gate_status}")
+    print("  status=completed")
+    print(f"  mode={_DEFAULT_REPLAY_MODE}")
+    print(f"  execution_provenance_id={execution_provenance_id}")
+    print(f"  dataset_fingerprint={dataset_result.fingerprint}")
+    print(f"  scheduler_profile={config.speedup_profile}")
+    print(f"  gate_result={gate_status or 'UNKNOWN'}")
     print(f"  deterministic_replay_ok={deterministic_replay_ok}")
     print(f"  bundle_dir={bundle_dir}")
     return 0
