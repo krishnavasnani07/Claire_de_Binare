@@ -151,8 +151,9 @@ cdb_reports           Up (healthy)
 | **Dataset Spec** | `core/replay/dataset_spec.py` | Frozen request-spec für historische Replay-Datasets (ARVP §4.2); Fingerprint via canonical_hash | **AKTIV** (PR #1856) |
 | **Dataset Provider** | `core/replay/dataset_provider.py` | FileBackedDatasetProvider (JSON/JSONL) + DBBackedDatasetProvider (candles_1m Postgres); ARVP §4.2 | **AKTIV** (PR #1856) |
 | **Replay Scheduler** | `core/replay/scheduler.py` | Event-time replay scheduler mit deterministischen Speed-Profilen, Warmup/Live-Split und fail-closed Boundary-Validation | **AKTIV** (PR #1859) |
+| **ARVP Gate Core** | `core/replay/arvp_gate.py` | Machine-readable ARVP gate/evidence core: `ARVPEvidenceBundle` ist caller-supplied, `build_arvp_gate_verdict()` ist pure, `write_gate_verdict_artifact()` der einzige I/O-Pfad; deterministischer `verdict_fingerprint`, `arvp_gate_verdict.json` als verdict artifact surface; `ReplayRunRecord` ist required artifact, `running` blockiert den Verdict, `failed`, `deterministic_replay_ok == False` und `ShadowComparisonResult.alignment_issue` erzeugen blocking findings, waehrend Scenario/Regime/ausgerichtete Shadow-Signale nur informational bleiben | **AKTIV** (PR #1873) |
 
-**Nutzung:** Shadow replay (accelerated backtesting, validation, gate evaluation offline) ohne live/paper/Redis-Runtime-Integration; ARVP §4.2 datasets können über `DBBackedDatasetProvider` aus `candles_1m` (Postgres) bezogen werden.
+**Nutzung:** Shadow replay (accelerated backtesting, validation, gate evaluation offline) ohne live/paper/Redis-Runtime-Integration; ARVP §4.2 datasets können über `DBBackedDatasetProvider` aus `candles_1m` (Postgres) bezogen werden. `core/replay/arvp_gate.py` bleibt dabei Core Library / Validation-Tooling und fuehrt keine Runtime-Services, keine Runner-/Reporter-Wiring-Pfade, kein Dashboard/UI und keine CI-/Workflow-Integration jenseits des Verdict-Artefakts ein.
 
 **Reporter & CLI:**
 | Component | File | Funktion | Status |
@@ -212,3 +213,4 @@ Legacy-Layer (base.yml, dev.yml, tls.yml, etc.) existieren noch, sind nicht mehr
 | 2026-04-20 | PR #1808 Nachzug: LR-021 deterministic replay infrastructure (core/replay + services/validation reporter/CLI) als Core Libraries dokumentiert (Issue #1809) | Codex |
 | 2026-04-22 | PR #1856 Nachzug: ARVP §4.2 DatasetSpec + DatasetProvider (FileBackedDatasetProvider + DBBackedDatasetProvider) ergänzt (Issue #1857) | Codex |
 | 2026-04-22 | PR #1859 Nachzug: `core/replay/scheduler.py` und minimaler Replay-CLI-Scheduler-Pfad (`speedup_profile`, `dataset_summary["scheduler"]`) ergänzt (Issue #1860) | Codex |
+| 2026-04-23 | PR #1873 / Issue #1874 Nachzug: `core/replay/arvp_gate.py` als machine-readable replay gate core mit caller-supplied `ARVPEvidenceBundle`, pure `build_arvp_gate_verdict()`, deterministischem `verdict_fingerprint` und `arvp_gate_verdict.json` artifact surface im Replay-/Validation-Bereich ergänzt | Codex |

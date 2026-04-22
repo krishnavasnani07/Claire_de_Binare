@@ -65,10 +65,11 @@ Hinweis: Der Config-Default fuer `SIGNAL_PORT` liegt in `services/signal/config.
 | **Dataset Spec** | `core/replay/dataset_spec.py` | **AKTIV** (PR #1856) | Frozen request-spec für historische Replay-Datasets (ARVP §4.2); Fingerprint via canonical_hash |
 | **Dataset Provider** | `core/replay/dataset_provider.py` | **AKTIV** (PR #1856) | FileBackedDatasetProvider (JSON/JSONL) + DBBackedDatasetProvider (candles_1m Postgres); ARVP §4.2 |
 | **Replay Scheduler** | `core/replay/scheduler.py` | **AKTIV** (PR #1859) | Event-time replay scheduler mit deterministischen Speed-Profilen, Warmup/Live-Split und fail-closed Boundary-Validation |
+| **ARVP Gate Core** | `core/replay/arvp_gate.py` | **AKTIV** (PR #1873) | Replay-/Validation-Core fuer machine-readable gate verdicts aus caller-supplied `ARVPEvidenceBundle`; `ReplayRunRecord` ist required artifact, `build_arvp_gate_verdict()` pure, `write_gate_verdict_artifact()` einziger I/O-Pfad, deterministischer `verdict_fingerprint`, `arvp_gate_verdict.json` als verdict artifact surface; `running` ergibt `blocked`, `failed`, `deterministic_replay_ok == False` und `ShadowComparisonResult.alignment_issue` sind blocking, Scenario/Regime/aligned shadow findings bleiben informational; kein Runtime-Service und kein Runner-/Reporter-/UI-/CI-Wiring |
 | **Replay Reporter** | `services/validation/replay_reporter.py` | **AKTIV** (PR #1808) | Artifact bundle writer (report.json, manifest.json, audit.log) |
 | **Replay CLI** | `services/validation/strategy_replay_runner.py` | **AKTIV** (PR #1808, PR #1859) | Thin operator entry-point; fail-closed `speedup_profile` validation und Scheduler-Metadaten unter `dataset_summary["scheduler"]`; Exit Codes 0/1/2 |
 
-**Interne Abhängigkeiten:** Nutzen `core/replay/canonical_json.py` (deterministic serialization), `core/replay/envelopes.py` (envelope tracking).
+**Interne Abhängigkeiten:** Nutzen `core/replay/canonical_json.py` (deterministic serialization), `core/replay/envelopes.py` (envelope tracking). `core/replay/arvp_gate.py` konsumiert optional Replay-Artefakte als Evidence-Inputs und fuehrt dabei weder Runtime-Service-Registrierung noch zusaetzliche Runner-/Reporter-/UI-/CI-Wiring-Pfade ein.
 
 **Externe Abhängigkeiten:** `core/domain/` (models, events), `core/clients/` (MEXC API), `core/indicators/` (technical indicators), `core/contracts/` (decision contracts).
 
@@ -188,3 +189,4 @@ docker compose -f infrastructure/compose/compose.red.yml up -d
 | 2026-04-20 | PR #1808 Nachzug: LR-021 deterministic replay infrastructure (core/replay/ + services/validation/) als Core Libraries dokumentiert; 6 Modules + 2 Components + 453 Tests (Issue #1809) | Codex |
 | 2026-04-22 | PR #1856 Nachzug: ARVP §4.2 DatasetSpec + DatasetProvider (FileBackedDatasetProvider + DBBackedDatasetProvider) in Core Libraries ergänzt; DB-Writer Candle-Persistence (candle_normalizer.py → candles_1m) nachgezogen (Issue #1857) | Codex |
 | 2026-04-22 | PR #1859 Nachzug: `core/replay/scheduler.py` und minimaler Replay-CLI-Scheduler-Pfad (`speedup_profile`, `dataset_summary["scheduler"]`) im Replay-Katalog ergänzt (Issue #1860) | Codex |
+| 2026-04-23 | PR #1873 / Issue #1874 Nachzug: `core/replay/arvp_gate.py` als Replay-/Validation-Core mit caller-supplied `ARVPEvidenceBundle`, pure `build_arvp_gate_verdict()`, blocking vs informational findings und `arvp_gate_verdict.json` verdict surface im Abschnitt Core Libraries (nicht runtime-services) ergänzt | Codex |
