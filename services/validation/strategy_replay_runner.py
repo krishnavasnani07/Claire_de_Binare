@@ -50,7 +50,7 @@ import re
 import subprocess
 import sys
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import timezone
 from pathlib import Path
 from typing import Any
 
@@ -85,6 +85,7 @@ from core.replay.run_registry import (
     build_replay_provenance_fingerprint,
     build_replay_run_id,
 )
+from core.utils.clock import utcnow
 from services.validation.replay_reporter import ReplayReporter, ReplayReporterError
 from services.validation.strategy_backtest_runner import (
     PrimaryBreakoutBacktestError,
@@ -301,7 +302,7 @@ def _redact_env() -> dict[str, str]:
 
 
 def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return utcnow().replace(tzinfo=timezone.utc).isoformat()
 
 
 def _build_provenance_config_snapshot(
