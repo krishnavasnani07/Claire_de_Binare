@@ -151,14 +151,23 @@ cdb_reports           Up (healthy)
 | **Dataset Spec** | `core/replay/dataset_spec.py` | Frozen request-spec für historische Replay-Datasets (ARVP §4.2); Fingerprint via canonical_hash | **AKTIV** (PR #1856) |
 | **Dataset Provider** | `core/replay/dataset_provider.py` | FileBackedDatasetProvider (JSON/JSONL) + DBBackedDatasetProvider (candles_1m Postgres); ARVP §4.2 | **AKTIV** (PR #1856) |
 | **Replay Scheduler** | `core/replay/scheduler.py` | Event-time replay scheduler mit deterministischen Speed-Profilen, Warmup/Live-Split und fail-closed Boundary-Validation | **AKTIV** (PR #1859) |
+| **Run Registry** | `core/replay/run_registry.py` | File-backed append-only Replay-Bookkeeping unter `artifacts/replay_reports/run_registry.jsonl`; provenance-fingerprint-gebundene, runner-owned deterministische Replay-Run-IDs; Lifecycle `running` / `completed` / `failed`; Verknüpfung zu `execution_provenance_id` und `operator_summary.json` | **AKTIV** (PR #1862) |
+| **Scenario Harness** | `core/replay/scenario_harness.py` | Deterministische Multi-Variant-Orchestrierung via `ScenarioSpec`, `ScenarioRunResult`, `ScenarioGroupManifest`; deterministische `group_id`-/`group_fingerprint`-Ableitung; schreibt `scenario_group_manifest.json`; fail-closed bei empty groups, duplicate scenario ids, invalid group ids oder invalid `run_fn` returns | **AKTIV** (PR #1865) |
+| **Scenario Packs** | `core/replay/scenario_packs.py` | Kanonische Built-in-Scenario-Pack-Library für `baseline`, `pessimistic_execution`, `delayed_execution`, `low_liquidity`, `feed_gap`; schreibt Provenance-Artefakt `scenario_specs.json` | **AKTIV** (PR #1867) |
 
-**Nutzung:** Shadow replay (accelerated backtesting, validation, gate evaluation offline) ohne live/paper/Redis-Runtime-Integration; ARVP §4.2 datasets können über `DBBackedDatasetProvider` aus `candles_1m` (Postgres) bezogen werden.
+**Nutzung:** Shadow replay (accelerated backtesting, validation, gate evaluation offline) ohne live/paper/Redis-Runtime-Integration; ARVP §4.2 datasets können über `DBBackedDatasetProvider` aus `candles_1m` (Postgres) bezogen werden. Run Registry, Scenario Harness und Scenario Packs bleiben Core Libraries bzw. Validation-Tooling, keine Runtime-Services.
 
 **Reporter & CLI:**
 | Component | File | Funktion | Status |
 |-----------|------|----------|--------|
 | **Replay Reporter** | `services/validation/replay_reporter.py` | Deterministic artifact bundle writer (report.json, manifest.json, audit.log) | **AKTIV** (PR #1808) |
-| **Replay CLI** | `services/validation/strategy_replay_runner.py` | Thin operator entry-point; fail-closed `speedup_profile` validation und Scheduler-Metadaten unter `dataset_summary["scheduler"]` | **AKTIV** (PR #1808, PR #1859) |
+| **Replay CLI** | `services/validation/strategy_replay_runner.py` | Operator-facing Replay-Orchestrierung; fail-closed Config-/Input-/Scheduler-Validation, Provenance-Fingerprint plus `execution_provenance_id`-Linkage, Lifecycle-Tracking + Registry-Writes, Reporter-Bundle + Supplementary-Artefakte (`config.resolved.json`, `env_redacted.txt`, `operator_summary.json`) sowie Scheduler-Metadaten unter `dataset_summary["scheduler"]` | **AKTIV** (PR #1808, PR #1859, PR #1862) |
+
+**Replay-Artefakte:**
+- `artifacts/replay_reports/run_registry.jsonl`: append-only, file-backed Replay-Bookkeeping-Surface; keine DB-Registry.
+- `operator_summary.json`: knappe operator-facing Run-Zusammenfassung aus der Replay CLI.
+- `scenario_group_manifest.json`: Group-Outcome-/Provenance-Artefakt für deterministische Multi-Variant-Runs.
+- `scenario_specs.json`: Provenance-Artefakt für kanonische Built-in-Scenario-Packs; keine Runtime-Feature-Aktivierung.
 
 ---
 
@@ -212,3 +221,4 @@ Legacy-Layer (base.yml, dev.yml, tls.yml, etc.) existieren noch, sind nicht mehr
 | 2026-04-20 | PR #1808 Nachzug: LR-021 deterministic replay infrastructure (core/replay + services/validation reporter/CLI) als Core Libraries dokumentiert (Issue #1809) | Codex |
 | 2026-04-22 | PR #1856 Nachzug: ARVP §4.2 DatasetSpec + DatasetProvider (FileBackedDatasetProvider + DBBackedDatasetProvider) ergänzt (Issue #1857) | Codex |
 | 2026-04-22 | PR #1859 Nachzug: `core/replay/scheduler.py` und minimaler Replay-CLI-Scheduler-Pfad (`speedup_profile`, `dataset_summary["scheduler"]`) ergänzt (Issue #1860) | Codex |
+| 2026-04-22 | PR-Nachzug #1862/#1865/#1867: Run Registry, Scenario Harness und Built-in Scenario Packs im Replay-Katalog ergänzt; Replay-CLI- und Artefakt-Surfaces präzisiert (Issues #1863/#1866/#1868) | Codex |

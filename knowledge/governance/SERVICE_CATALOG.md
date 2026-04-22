@@ -52,7 +52,7 @@ Hinweis: Der Config-Default fuer `SIGNAL_PORT` liegt in `services/signal/config.
 
 **Pfad:** `core/replay/`, `services/validation/` (reporter + CLI)
 
-**Funktion:** Deterministic shadow replay stack für accelerated backtesting, validation und gate evaluation offline, ohne live/paper/Redis-Runtime-Integration; ARVP §4.2 datasets können über `DBBackedDatasetProvider` aus `candles_1m` (Postgres) bezogen werden.
+**Funktion:** Deterministic shadow replay stack für accelerated backtesting, validation und gate evaluation offline, ohne live/paper/Redis-Runtime-Integration; ARVP §4.2 datasets können über `DBBackedDatasetProvider` aus `candles_1m` (Postgres) bezogen werden. Der Replay-Stack bleibt eine offline/shadow/validation surface; die hier gelisteten Bausteine sind Core Libraries und Validation-Tooling, keine Runtime-Service-Inventarisierung.
 
 | Module/Component | Code-Pfad | Status | Beschreibung |
 |---|---|---|---|
@@ -65,14 +65,22 @@ Hinweis: Der Config-Default fuer `SIGNAL_PORT` liegt in `services/signal/config.
 | **Dataset Spec** | `core/replay/dataset_spec.py` | **AKTIV** (PR #1856) | Frozen request-spec für historische Replay-Datasets (ARVP §4.2); Fingerprint via canonical_hash |
 | **Dataset Provider** | `core/replay/dataset_provider.py` | **AKTIV** (PR #1856) | FileBackedDatasetProvider (JSON/JSONL) + DBBackedDatasetProvider (candles_1m Postgres); ARVP §4.2 |
 | **Replay Scheduler** | `core/replay/scheduler.py` | **AKTIV** (PR #1859) | Event-time replay scheduler mit deterministischen Speed-Profilen, Warmup/Live-Split und fail-closed Boundary-Validation |
+| **Run Registry** | `core/replay/run_registry.py` | **AKTIV** (PR #1862) | Kleine file-backed Replay-Bookkeeping-Surface unter `artifacts/replay_reports/run_registry.jsonl`; provenance-fingerprint-gebundene, runner-owned deterministische Replay-Run-IDs; Lifecycle `running` / `completed` / `failed`; keine DB-backed Registry |
+| **Scenario Harness** | `core/replay/scenario_harness.py` | **AKTIV** (PR #1865) | Deterministische Multi-Variant-Orchestrierung via `ScenarioSpec`, `ScenarioRunResult`, `ScenarioGroupManifest`; deterministische `group_id`-/`group_fingerprint`-Ableitung; schreibt `scenario_group_manifest.json`; fail-closed bei empty groups, duplicate scenario ids, invalid group ids oder invalid `run_fn` returns |
+| **Scenario Packs** | `core/replay/scenario_packs.py` | **AKTIV** (PR #1867) | Kanonische Built-in Replay-Variants `baseline`, `pessimistic_execution`, `delayed_execution`, `low_liquidity`, `feed_gap`; schreibt Provenance-Artefakt `scenario_specs.json`; keine Live-/Paper-Runtime-Features |
 | **Replay Reporter** | `services/validation/replay_reporter.py` | **AKTIV** (PR #1808) | Artifact bundle writer (report.json, manifest.json, audit.log) |
-| **Replay CLI** | `services/validation/strategy_replay_runner.py` | **AKTIV** (PR #1808, PR #1859) | Thin operator entry-point; fail-closed `speedup_profile` validation und Scheduler-Metadaten unter `dataset_summary["scheduler"]`; Exit Codes 0/1/2 |
+| **Replay CLI** | `services/validation/strategy_replay_runner.py` | **AKTIV** (PR #1808, PR #1859, PR #1862) | Operator-facing Offline-Validation-Entry-Point; nicht nur thin wrapper: fail-closed Config-/Input-/Scheduler-Validation, Provenance-Fingerprint + `execution_provenance_id`-Linkage, Lifecycle-Tracking, Registry-Writes, Reporter-Bundle + `config.resolved.json` / `env_redacted.txt` / `operator_summary.json`, Exit Codes 0/1/2 |
 
 **Interne Abhängigkeiten:** Nutzen `core/replay/canonical_json.py` (deterministic serialization), `core/replay/envelopes.py` (envelope tracking).
 
 **Externe Abhängigkeiten:** `core/domain/` (models, events), `core/clients/` (MEXC API), `core/indicators/` (technical indicators), `core/contracts/` (decision contracts).
 
-**Tests:** 453 unit tests (core/replay/ + services/validation/ replay-specific tests), alle grün.
+**Artifact-/Provenance-Surfaces:**
+- `artifacts/replay_reports/run_registry.jsonl`: kleine file-backed Replay-Bookkeeping-Surface; keine DB-backed Registry.
+- `scenario_group_manifest.json` und `scenario_specs.json`: Artefakt-/Provenance-Surfaces für Scenario-Groups bzw. kanonische Built-in-Packs; keine Runtime-Service-Aktivierung.
+- `operator_summary.json`: knappe operator-facing Run-Zusammenfassung aus der Replay CLI.
+
+**Tests:** Replay-/Scenario-Unit-Tests unter `tests/unit/replay/`, `tests/unit/validation/test_strategy_replay_runner.py` und `tests/unit/scripts/test_lr021_replay_surface.py` decken Registry, Harness, Packs und CLI repo-backed ab.
 
 ---
 
@@ -188,3 +196,4 @@ docker compose -f infrastructure/compose/compose.red.yml up -d
 | 2026-04-20 | PR #1808 Nachzug: LR-021 deterministic replay infrastructure (core/replay/ + services/validation/) als Core Libraries dokumentiert; 6 Modules + 2 Components + 453 Tests (Issue #1809) | Codex |
 | 2026-04-22 | PR #1856 Nachzug: ARVP §4.2 DatasetSpec + DatasetProvider (FileBackedDatasetProvider + DBBackedDatasetProvider) in Core Libraries ergänzt; DB-Writer Candle-Persistence (candle_normalizer.py → candles_1m) nachgezogen (Issue #1857) | Codex |
 | 2026-04-22 | PR #1859 Nachzug: `core/replay/scheduler.py` und minimaler Replay-CLI-Scheduler-Pfad (`speedup_profile`, `dataset_summary["scheduler"]`) im Replay-Katalog ergänzt (Issue #1860) | Codex |
+| 2026-04-22 | PR-Nachzug #1862/#1865/#1867: Run Registry, Scenario Harness und Built-in Scenario Packs im Core-Library-Katalog ergänzt; Replay-CLI-/Artefakt-Surfaces präzisiert (Issues #1863/#1866/#1868) | Codex |
