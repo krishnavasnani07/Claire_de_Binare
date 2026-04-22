@@ -16,6 +16,8 @@ from unittest.mock import patch
 
 import pytest
 
+from core.replay.run_registry import ReplayRunRegistry, RunRegistryError
+from core.replay.dataset_spec import DatasetSpec
 from services.validation.replay_reporter import ReplayReporter
 from services.validation.strategy_replay_runner import (
     _DEFAULT_ADAPTER_ID,
@@ -393,12 +395,19 @@ class TestRunAcceleratedShadowReplay:
         f.write_text(json.dumps(candles), encoding="utf-8")
         return f
 
+    def _mock_bundle_dir(self, mock_write, tmp_path: Path):
+        def _side_effect(report_input, output_dir):
+            bundle_dir = Path(output_dir) / report_input.run_spec.replay_run_id
+            bundle_dir.mkdir(parents=True, exist_ok=True)
+            return bundle_dir
+
+        mock_write.side_effect = _side_effect
+
     @patch("services.validation.strategy_replay_runner.run_primary_breakout_backtest")
     @patch.object(ReplayReporter, "write_bundle")
     def test_successful_run_returns_0(self, mock_write, mock_backtest, tmp_path):
         mock_backtest.return_value = _minimal_backtest_report()
-        mock_write.return_value = tmp_path / "bt-abc1234567890123"
-        (tmp_path / "bt-abc1234567890123").mkdir()
+        self._mock_bundle_dir(mock_write, tmp_path)
 
         f = self._make_candles_file(tmp_path)
         cfg = AcceleratedShadowReplayConfig(
@@ -411,10 +420,8 @@ class TestRunAcceleratedShadowReplay:
     @patch("services.validation.strategy_replay_runner.run_primary_breakout_backtest")
     @patch.object(ReplayReporter, "write_bundle")
     def test_supplementary_artifacts_written(self, mock_write, mock_backtest, tmp_path):
-        bundle_dir = tmp_path / "bt-abc1234567890123"
-        bundle_dir.mkdir()
         mock_backtest.return_value = _minimal_backtest_report()
-        mock_write.return_value = bundle_dir
+        self._mock_bundle_dir(mock_write, tmp_path)
 
         f = self._make_candles_file(tmp_path)
         cfg = AcceleratedShadowReplayConfig(
@@ -423,6 +430,8 @@ class TestRunAcceleratedShadowReplay:
         )
         run_accelerated_shadow_replay(cfg)
 
+        report_input = mock_write.call_args.args[0]
+        bundle_dir = Path(tmp_path) / report_input.run_spec.replay_run_id
         assert (bundle_dir / "config.resolved.json").exists()
         assert (bundle_dir / "env_redacted.txt").exists()
 
@@ -431,10 +440,8 @@ class TestRunAcceleratedShadowReplay:
     def test_scheduler_metadata_embedded_in_report_input(
         self, mock_write, mock_backtest, tmp_path
     ):
-        bundle_dir = tmp_path / "bt-abc1234567890123"
-        bundle_dir.mkdir()
         mock_backtest.return_value = _minimal_backtest_report()
-        mock_write.return_value = bundle_dir
+        self._mock_bundle_dir(mock_write, tmp_path)
 
         f = self._make_candles_file(tmp_path)
         cfg = AcceleratedShadowReplayConfig(
@@ -449,6 +456,142 @@ class TestRunAcceleratedShadowReplay:
         assert report_input.dataset_summary is not None
         assert report_input.dataset_summary["scheduler"]["profile"] == "2x"
         assert report_input.dataset_summary["scheduler"]["warmup_count"] == 240
+
+    @patch("services.validation.strategy_replay_runner.run_primary_breakout_backtest")
+    @patch.object(ReplayReporter, "write_bundle")
+    def test_successful_run_writes_running_completed_and_operator_summary(
+        self, mock_write, mock_backtest, tmp_path
+    ):
+        mock_backtest.return_value = _minimal_backtest_report(deterministic_ok=True)
+        self._mock_bundle_dir(mock_write, tmp_path)
+
+        f = self._make_candles_file(tmp_path)
+        cfg = AcceleratedShadowReplayConfig(
+            input_candles_file=str(f),
+            output_directory=str(tmp_path),
+            speedup_profile="5x",
+        )
+
+        exit_code = run_accelerated_shadow_replay(cfg)
+
+        assert exit_code == 0
+        report_input = mock_write.call_args.args[0]
+        run_id = report_input.run_spec.replay_run_id
+        registry = ReplayRunRegistry(tmp_path / "run_registry.jsonl")
+        records = registry.load_all()
+        assert [record.status for record in records] == ["running", "completed"]
+        assert all(record.run_id == run_id for record in records)
+        summary_path = tmp_path / run_id / "operator_summary.json"
+        assert summary_path.exists()
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        assert summary["run_id"] == run_id
+        assert summary["status"] == "completed"
+        assert summary["scheduler_profile"] == "5x"
+
+    @patch("services.validation.strategy_replay_runner.run_primary_breakout_backtest")
+    def test_failed_run_writes_failed_state_with_reason(self, mock_backtest, tmp_path):
+        from services.validation.strategy_backtest_runner import PrimaryBreakoutBacktestError
+
+        mock_backtest.side_effect = PrimaryBreakoutBacktestError("boom")
+        f = self._make_candles_file(tmp_path)
+        cfg = AcceleratedShadowReplayConfig(
+            input_candles_file=str(f),
+            output_directory=str(tmp_path),
+        )
+
+        exit_code = run_accelerated_shadow_replay(cfg)
+
+        assert exit_code == 2
+        records = ReplayRunRegistry(tmp_path / "run_registry.jsonl").load_all()
+        assert [record.status for record in records] == ["running", "failed"]
+        assert "boom" in records[-1].failure_reason
+
+    @patch("services.validation.strategy_replay_runner.run_primary_breakout_backtest")
+    @patch.object(ReplayReporter, "write_bundle")
+    def test_summary_and_registry_include_dataset_fingerprint_and_scheduler_profile(
+        self, mock_write, mock_backtest, tmp_path
+    ):
+        mock_backtest.return_value = _minimal_backtest_report()
+        self._mock_bundle_dir(mock_write, tmp_path)
+
+        f = self._make_candles_file(tmp_path)
+        cfg = AcceleratedShadowReplayConfig(
+            input_candles_file=str(f),
+            output_directory=str(tmp_path),
+            speedup_profile="10x",
+        )
+
+        exit_code = run_accelerated_shadow_replay(cfg)
+
+        assert exit_code == 0
+        registry = ReplayRunRegistry(tmp_path / "run_registry.jsonl")
+        completed = registry.load_all()[-1]
+        expected_fingerprint = DatasetSpec(
+            symbol="BTCUSDT",
+            timeframe="1m",
+            start_ts_ms=1_000_000 + 240 * 60_000,
+            end_ts_ms=1_000_000 + 299 * 60_000,
+            warmup_candles=240,
+            source="file",
+            file_path=str(f),
+        ).fingerprint()
+        assert completed.dataset_fingerprint == expected_fingerprint
+        assert completed.scheduler_profile == "10x"
+
+        summary_path = tmp_path / completed.run_id / "operator_summary.json"
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        assert summary["dataset_fingerprint"] == completed.dataset_fingerprint
+        assert summary["scheduler_profile"] == "10x"
+
+    @patch("services.validation.strategy_replay_runner.run_primary_breakout_backtest")
+    @patch.object(ReplayReporter, "write_bundle")
+    def test_existing_bundle_behavior_stays_compatible(
+        self, mock_write, mock_backtest, tmp_path
+    ):
+        mock_backtest.return_value = _minimal_backtest_report()
+        self._mock_bundle_dir(mock_write, tmp_path)
+
+        f = self._make_candles_file(tmp_path)
+        cfg = AcceleratedShadowReplayConfig(
+            input_candles_file=str(f),
+            output_directory=str(tmp_path),
+        )
+
+        exit_code = run_accelerated_shadow_replay(cfg)
+
+        assert exit_code == 0
+        report_input = mock_write.call_args.args[0]
+        assert report_input.run_spec.replay_run_id.startswith("replay-")
+        assert report_input.run_spec.metadata["execution_provenance_id"].startswith("bt-")
+        assert Path(report_input.artifact_manifest.report_artifact_uri).name == "report.json"
+        assert (
+            Path(
+                report_input.artifact_manifest.supplementary_artifacts[
+                    "operator_summary_uri"
+                ]
+            ).name
+            == "operator_summary.json"
+        )
+
+    @patch("services.validation.strategy_replay_runner.run_primary_breakout_backtest")
+    @patch.object(ReplayReporter, "write_bundle")
+    @patch("services.validation.strategy_replay_runner.ReplayRunRegistry.append")
+    def test_registry_write_failure_returns_2(
+        self, mock_append, mock_write, mock_backtest, tmp_path
+    ):
+        mock_backtest.return_value = _minimal_backtest_report()
+        self._mock_bundle_dir(mock_write, tmp_path)
+        mock_append.side_effect = [None, RunRegistryError("disk full")]
+
+        f = self._make_candles_file(tmp_path)
+        cfg = AcceleratedShadowReplayConfig(
+            input_candles_file=str(f),
+            output_directory=str(tmp_path),
+        )
+
+        exit_code = run_accelerated_shadow_replay(cfg)
+
+        assert exit_code == 2
 
     def test_missing_input_file_returns_2(self, tmp_path):
         cfg = AcceleratedShadowReplayConfig(
@@ -514,10 +657,8 @@ class TestRunAcceleratedShadowReplay:
     def test_determinism_warning_but_exit_0_without_flag(
         self, mock_write, mock_backtest, tmp_path, capsys
     ):
-        bundle_dir = tmp_path / "bt-abc1234567890123"
-        bundle_dir.mkdir()
         mock_backtest.return_value = _minimal_backtest_report(deterministic_ok=False)
-        mock_write.return_value = bundle_dir
+        self._mock_bundle_dir(mock_write, tmp_path)
 
         f = self._make_candles_file(tmp_path)
         cfg = AcceleratedShadowReplayConfig(
@@ -535,10 +676,8 @@ class TestRunAcceleratedShadowReplay:
     def test_deterministic_verify_flag_returns_2_on_failure(
         self, mock_write, mock_backtest, tmp_path
     ):
-        bundle_dir = tmp_path / "bt-abc1234567890123"
-        bundle_dir.mkdir()
         mock_backtest.return_value = _minimal_backtest_report(deterministic_ok=False)
-        mock_write.return_value = bundle_dir
+        self._mock_bundle_dir(mock_write, tmp_path)
 
         f = self._make_candles_file(tmp_path)
         cfg = AcceleratedShadowReplayConfig(
@@ -551,13 +690,38 @@ class TestRunAcceleratedShadowReplay:
 
     @patch("services.validation.strategy_replay_runner.run_primary_breakout_backtest")
     @patch.object(ReplayReporter, "write_bundle")
+    def test_deterministic_verify_failure_writes_failed_operator_summary(
+        self, mock_write, mock_backtest, tmp_path
+    ):
+        mock_backtest.return_value = _minimal_backtest_report(deterministic_ok=False)
+        self._mock_bundle_dir(mock_write, tmp_path)
+
+        f = self._make_candles_file(tmp_path)
+        cfg = AcceleratedShadowReplayConfig(
+            input_candles_file=str(f),
+            output_directory=str(tmp_path),
+            deterministic_verify=True,
+        )
+        exit_code = run_accelerated_shadow_replay(cfg)
+
+        assert exit_code == 2
+        registry = ReplayRunRegistry(tmp_path / "run_registry.jsonl")
+        records = registry.load_all()
+        assert [r.status for r in records] == ["running", "failed"]
+        failed = records[-1]
+        summary_path = tmp_path / failed.run_id / "operator_summary.json"
+        assert summary_path.exists()
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        assert summary["status"] == "failed"
+        assert "deterministic" in summary["failure_reason"].lower()
+
+    @patch("services.validation.strategy_replay_runner.run_primary_breakout_backtest")
+    @patch.object(ReplayReporter, "write_bundle")
     def test_deterministic_verify_flag_exit_0_on_ok(
         self, mock_write, mock_backtest, tmp_path
     ):
-        bundle_dir = tmp_path / "bt-abc1234567890123"
-        bundle_dir.mkdir()
         mock_backtest.return_value = _minimal_backtest_report(deterministic_ok=True)
-        mock_write.return_value = bundle_dir
+        self._mock_bundle_dir(mock_write, tmp_path)
 
         f = self._make_candles_file(tmp_path)
         cfg = AcceleratedShadowReplayConfig(
@@ -573,10 +737,8 @@ class TestRunAcceleratedShadowReplay:
     def test_backtest_called_with_correct_config(
         self, mock_write, mock_backtest, tmp_path
     ):
-        bundle_dir = tmp_path / "bt-abc1234567890123"
-        bundle_dir.mkdir()
         mock_backtest.return_value = _minimal_backtest_report()
-        mock_write.return_value = bundle_dir
+        self._mock_bundle_dir(mock_write, tmp_path)
 
         f = self._make_candles_file(tmp_path)
         cfg = AcceleratedShadowReplayConfig(
