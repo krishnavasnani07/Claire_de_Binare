@@ -595,16 +595,111 @@ def build_readout(
     }
 
 
+def _copy_count_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    copied_rows: list[dict[str, Any]] = []
+    for row in rows:
+        copied_rows.append(
+            {
+                "value": str(row["value"]),
+                "count": int(row["count"]),
+            }
+        )
+    return copied_rows
+
+
+def build_exportable_readout(readout: dict[str, Any]) -> dict[str, Any]:
+    export_surfaces: list[dict[str, Any]] = []
+    for surface in readout["surfaces"]:
+        export_surface = {
+            "source": str(surface["source"]),
+            "endpoint": str(surface["endpoint"]),
+            "status": str(surface["status"]),
+            "alert_count": int(surface["alert_count"]),
+            "artifact_detail_status": str(surface["artifact_detail_status"]),
+        }
+        if isinstance(surface.get("note"), str):
+            export_surface["note"] = surface["note"]
+        export_surfaces.append(export_surface)
+
+    export_alerts: list[dict[str, Any]] = []
+    for alert in readout["alerts"]:
+        export_alerts.append(
+            {
+                "source": str(alert["source"]),
+                "number": alert.get("number"),
+                "state": str(alert["state"]),
+                "severity": str(alert["severity"]),
+                "subject": str(alert["subject"]),
+                "rule_or_advisory": (
+                    str(alert["rule_or_advisory"])
+                    if isinstance(alert.get("rule_or_advisory"), str)
+                    else None
+                ),
+                "package": (
+                    str(alert["package"])
+                    if isinstance(alert.get("package"), str)
+                    else None
+                ),
+                "affected_path": (
+                    str(alert["affected_path"])
+                    if isinstance(alert.get("affected_path"), str)
+                    else None
+                ),
+                "affected_component": (
+                    str(alert["affected_component"])
+                    if isinstance(alert.get("affected_component"), str)
+                    else None
+                ),
+                "branch": str(alert["branch"]),
+                "created_at": (
+                    str(alert["created_at"])
+                    if isinstance(alert.get("created_at"), str)
+                    else None
+                ),
+                "updated_at": (
+                    str(alert["updated_at"])
+                    if isinstance(alert.get("updated_at"), str)
+                    else None
+                ),
+                "age_bucket": str(alert["age_bucket"]),
+                "url": str(alert["url"]) if isinstance(alert.get("url"), str) else None,
+                "tool": str(alert["tool"]) if isinstance(alert.get("tool"), str) else None,
+            }
+        )
+
+    summary = readout["summary"]
+    export_summary = {
+        "total_alerts": int(summary["total_alerts"]),
+        "counts_by_source": _copy_count_rows(summary["counts_by_source"]),
+        "counts_by_state": _copy_count_rows(summary["counts_by_state"]),
+        "counts_by_severity": _copy_count_rows(summary["counts_by_severity"]),
+        "top_subjects": _copy_count_rows(summary["top_subjects"]),
+        "top_components": _copy_count_rows(summary["top_components"]),
+    }
+
+    return {
+        "schema_version": str(readout["schema_version"]),
+        "repo": str(readout["repo"]),
+        "reference_now_utc": str(readout["reference_now_utc"]),
+        "status": str(readout["status"]),
+        "readable_surface_count": int(readout["readable_surface_count"]),
+        "surfaces": export_surfaces,
+        "summary": export_summary,
+        "alerts": export_alerts,
+    }
+
+
 def write_report_artifacts(readout: dict[str, Any], out_dir: Path) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     json_path = out_dir / JSON_FILENAME
     markdown_path = out_dir / MARKDOWN_FILENAME
+    export_readout = build_exportable_readout(readout)
     json_path.write_text(
-        json.dumps(readout, indent=2, sort_keys=True) + "\n",
+        json.dumps(export_readout, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
     markdown_path.write_text(
-        build_markdown_report(readout),
+        build_markdown_report(export_readout),
         encoding="utf-8",
     )
 
