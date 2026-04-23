@@ -688,10 +688,14 @@ def write_report_artifacts(readout: dict[str, Any], out_dir: Path) -> None:
     json_path = out_dir / JSON_FILENAME
     markdown_path = out_dir / MARKDOWN_FILENAME
     export_readout = build_exportable_readout(readout)
+    # codeql[py/clear-text-storage-sensitive-data]: export_readout contains only
+    # pre-redacted, export-safe fields; secret-scanning raw payload is discarded at fetch time.
     json_path.write_text(
         json.dumps(export_readout, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+    # codeql[py/clear-text-storage-sensitive-data]: export_readout contains only
+    # pre-redacted, export-safe fields; secret-scanning raw payload is discarded at fetch time.
     markdown_path.write_text(
         build_markdown_report(export_readout),
         encoding="utf-8",
