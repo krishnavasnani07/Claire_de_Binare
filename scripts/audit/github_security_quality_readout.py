@@ -42,6 +42,10 @@ JSON_FILENAME = "github_security_quality_readout.json"
 MARKDOWN_FILENAME = "github_security_quality_summary.md"
 SCHEMA_VERSION = "github_security_quality_readout.v1"
 SOURCE_ORDER = ("code_scanning", "dependabot", "secret_scanning")
+REDACTED_SECRET_SUBJECT = "redacted_secret_alert"
+REDACTED_SECRET_RULE = "redacted_secret_type"
+REDACTED_SECRET_PATH = "redacted_secret_location"
+REDACTED_SECRET_COMPONENT = "secret_scanning_alert"
 SEVERITY_ORDER = (
     "critical",
     "high",
@@ -334,32 +338,20 @@ def normalize_dependabot_alert(
 def normalize_secret_scanning_alert(
     raw: dict[str, Any], *, reference_now: datetime
 ) -> dict[str, Any]:
-    location = (
-        raw.get("first_location_detected", {})
-        if isinstance(raw.get("first_location_detected"), dict)
-        else {}
-    )
-    secret_type = (
-        raw.get("secret_type_display_name")
-        if isinstance(raw.get("secret_type_display_name"), str)
-        and raw.get("secret_type_display_name")
-        else raw.get("secret_type")
-        if isinstance(raw.get("secret_type"), str)
-        else "unknown"
-    )
     created_at = raw.get("created_at") if isinstance(raw.get("created_at"), str) else None
     updated_at = raw.get("updated_at") if isinstance(raw.get("updated_at"), str) else None
-    path = location.get("path") if isinstance(location.get("path"), str) else None
     return {
         "source": "secret_scanning",
         "number": raw.get("number"),
         "state": raw.get("state", "unknown"),
         "severity": "not_provided",
-        "subject": secret_type,
-        "rule_or_advisory": raw.get("secret_type"),
+        # GitHub secret-scanning payloads may carry security-sensitive detail.
+        # Persist only redacted operator-safe placeholders in report artifacts.
+        "subject": REDACTED_SECRET_SUBJECT,
+        "rule_or_advisory": REDACTED_SECRET_RULE,
         "package": None,
-        "affected_path": path,
-        "affected_component": secret_type,
+        "affected_path": REDACTED_SECRET_PATH,
+        "affected_component": REDACTED_SECRET_COMPONENT,
         "branch": "not_provided",
         "created_at": created_at,
         "updated_at": updated_at,
@@ -368,7 +360,7 @@ def normalize_secret_scanning_alert(
             updated_at=updated_at,
             reference_now=reference_now,
         ),
-        "url": raw.get("html_url"),
+        "url": None,
         "tool": "Secret scanning",
     }
 
@@ -487,6 +479,7 @@ def build_markdown_report(readout: dict[str, Any]) -> str:
             "## Scope Note",
             "",
             "- Read-only GitHub-Readout; kein Auto-Fix, kein Dismiss, kein Close.",
+            "- Secret-Scanning-Detailfelder werden im Artefakt absichtlich redigiert, damit keine GitHub-seitigen Secret-Kontexte als Klartext persistiert werden.",
             "- `severity=not_provided` bedeutet: GitHub liefert fuer diese Surface keine native Severity.",
             "- `branch=not_provided` bedeutet: GitHub liefert fuer diese Alert-Surface keinen Branch-Kontext.",
             "",
@@ -626,8 +619,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_arg_parser().parse_args(argv)
+    repo = args.repo
     readout = generate_readout(
-        repo=args.repo,
+        repo=repo,
         out_dir=Path(args.out_dir),
         reference_now_utc=args.reference_now,
         gh_executable=args.gh_executable,
@@ -635,7 +629,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if readout["status"] == "PASS":
         print(
-            f"PASS: wrote {JSON_FILENAME} and {MARKDOWN_FILENAME} for {readout['repo']}.",
+            f"PASS: wrote {JSON_FILENAME} and {MARKDOWN_FILENAME} for {repo}.",
             file=sys.stderr,
         )
         return 0

@@ -14,6 +14,10 @@ sys.path.insert(0, str(repo_root))
 from audit.github_security_quality_readout import (  # noqa: E402
     JSON_FILENAME,
     MARKDOWN_FILENAME,
+    REDACTED_SECRET_COMPONENT,
+    REDACTED_SECRET_PATH,
+    REDACTED_SECRET_RULE,
+    REDACTED_SECRET_SUBJECT,
     SurfaceFetchResult,
     build_markdown_report,
     build_readout,
@@ -120,11 +124,13 @@ class TestNormalizeAlerts:
         )
 
         assert alert["source"] == "secret_scanning"
-        assert alert["subject"] == "Generic API Key"
-        assert alert["rule_or_advisory"] == "generic_api_key"
-        assert alert["affected_path"] == ".env"
+        assert alert["subject"] == REDACTED_SECRET_SUBJECT
+        assert alert["rule_or_advisory"] == REDACTED_SECRET_RULE
+        assert alert["affected_path"] == REDACTED_SECRET_PATH
+        assert alert["affected_component"] == REDACTED_SECRET_COMPONENT
         assert alert["severity"] == "not_provided"
         assert alert["branch"] == "not_provided"
+        assert alert["url"] is None
         assert alert["age_bucket"] == "91d+"
 
 
@@ -220,6 +226,45 @@ class TestReadoutGeneration:
         markdown = build_markdown_report(readout)
         assert "Dieses Bild ist partiell." in markdown
         assert "`dependabot`: HTTP 403" in markdown
+
+    def test_markdown_report_mentions_secret_scanning_redaction(self):
+        readout = build_readout(
+            repo="octo/example",
+            reference_now_utc="2026-04-23T00:00:00Z",
+            fetched_surfaces=[
+                SurfaceFetchResult(
+                    source="code_scanning",
+                    endpoint="repos/octo/example/code-scanning/alerts?per_page=100",
+                    status="readable",
+                    alerts=(),
+                ),
+                SurfaceFetchResult(
+                    source="dependabot",
+                    endpoint="repos/octo/example/dependabot/alerts?per_page=100",
+                    status="readable",
+                    alerts=(),
+                ),
+                SurfaceFetchResult(
+                    source="secret_scanning",
+                    endpoint="repos/octo/example/secret-scanning/alerts?per_page=100",
+                    status="readable",
+                    alerts=(
+                        {
+                            "number": 3,
+                            "state": "resolved",
+                            "created_at": "2026-04-01T00:00:00Z",
+                            "updated_at": "2026-04-02T00:00:00Z",
+                            "secret_type": "generic_api_key",
+                            "secret_type_display_name": "Generic API Key",
+                            "first_location_detected": {"path": ".env"},
+                        },
+                    ),
+                ),
+            ],
+        )
+
+        markdown = build_markdown_report(readout)
+        assert "Secret-Scanning-Detailfelder werden im Artefakt absichtlich redigiert" in markdown
 
     def test_generate_readout_writes_deterministic_artifacts(self, tmp_path):
         pages_by_source = {
