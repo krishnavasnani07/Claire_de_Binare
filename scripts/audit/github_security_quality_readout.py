@@ -91,6 +91,13 @@ class SurfaceFetchResult:
             "endpoint": self.endpoint,
             "status": self.status,
             "alert_count": len(self.alerts),
+            "artifact_detail_status": (
+                "redacted"
+                if self.source == "secret_scanning" and self.status == "readable"
+                else "full"
+                if self.status == "readable"
+                else "none"
+            ),
         }
         if self.note is not None:
             result["note"] = self.note
@@ -127,6 +134,15 @@ def _normalize_severity(value: str | None) -> str:
     if not value:
         return "not_provided"
     return value.strip().lower() or "not_provided"
+
+
+def _normalize_state(value: str | None) -> str:
+    if not value:
+        return "unknown"
+    normalized = value.strip().lower()
+    if normalized in STATE_ORDER:
+        return normalized
+    return "unknown"
 
 
 def _age_bucket(
@@ -388,8 +404,13 @@ def _counter_items(counter: Counter[str], preferred_order: tuple[str, ...] = ())
     ]
 
 
-def build_summary(alerts: list[dict[str, Any]]) -> dict[str, Any]:
-    counts_by_source = Counter(alert["source"] for alert in alerts)
+def build_summary(
+    alerts: list[dict[str, Any]],
+    *,
+    readable_surface_counts: Counter[str],
+    redacted_state_counts: Counter[str] | None = None,
+) -> dict[str, Any]:
+    counts_by_source = Counter(readable_surface_counts)
     counts_by_state = Counter(alert["state"] for alert in alerts)
     counts_by_severity = Counter(alert["severity"] for alert in alerts)
     top_subjects = Counter(
@@ -410,8 +431,15 @@ def build_summary(alerts: list[dict[str, Any]]) -> dict[str, Any]:
             and alert.get("affected_component")
         )
     )
+    if redacted_state_counts:
+        redacted_count = sum(redacted_state_counts.values())
+        counts_by_state.update(redacted_state_counts)
+        if redacted_count > 0:
+            counts_by_severity["not_provided"] += redacted_count
+            top_subjects[REDACTED_SECRET_SUBJECT] += redacted_count
+            top_components[REDACTED_SECRET_PATH] += redacted_count
     return {
-        "total_alerts": len(alerts),
+        "total_alerts": sum(counts_by_source.values()),
         "counts_by_source": _counter_items(counts_by_source, SOURCE_ORDER),
         "counts_by_state": _counter_items(counts_by_state, STATE_ORDER),
         "counts_by_severity": _counter_items(counts_by_severity, SEVERITY_ORDER),
@@ -460,6 +488,11 @@ def build_markdown_report(readout: dict[str, Any]) -> str:
     unavailable = [
         surface for surface in readout["surfaces"] if surface["status"] != "readable"
     ]
+    redacted = [
+        surface
+        for surface in readout["surfaces"]
+        if surface.get("artifact_detail_status") == "redacted"
+    ]
     lines.extend(["", "## Coverage Notes", ""])
     if unavailable:
         lines.append(
@@ -472,6 +505,12 @@ def build_markdown_report(readout: dict[str, Any]) -> str:
             )
     else:
         lines.append("Alle angefragten GitHub-Surfaces waren lesbar.")
+    if redacted:
+        lines.append("")
+        lines.append(
+            "Secret-Scanning bleibt in Surface-, State- und Severity-Counts enthalten; "
+            "detaillierte Alert-Records werden im Artefakt bewusst redigiert."
+        )
 
     lines.extend(
         [
@@ -498,9 +537,18 @@ def build_readout(
     alerts: list[dict[str, Any]] = []
     surfaces_payload = [surface.to_dict() for surface in fetched_surfaces]
     readable_surfaces = 0
+    readable_surface_counts: Counter[str] = Counter()
+    redacted_state_counts: Counter[str] = Counter()
     for surface in fetched_surfaces:
         if surface.status == "readable":
             readable_surfaces += 1
+            if surface.alerts:
+                readable_surface_counts[surface.source] += len(surface.alerts)
+            if surface.source == "secret_scanning":
+                for raw in surface.alerts:
+                    state = raw.get("state") if isinstance(raw.get("state"), str) else None
+                    redacted_state_counts[_normalize_state(state)] += 1
+                continue
             for raw in surface.alerts:
                 alerts.append(
                     normalize_alert(
@@ -538,7 +586,11 @@ def build_readout(
         "status": status,
         "readable_surface_count": readable_surfaces,
         "surfaces": surfaces_payload,
-        "summary": build_summary(alerts),
+        "summary": build_summary(
+            alerts,
+            readable_surface_counts=readable_surface_counts,
+            redacted_state_counts=redacted_state_counts,
+        ),
         "alerts": alerts,
     }
 

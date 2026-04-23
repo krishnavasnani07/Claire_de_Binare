@@ -263,7 +263,23 @@ class TestReadoutGeneration:
             ],
         )
 
+        assert readout["summary"]["total_alerts"] == 1
+        assert readout["summary"]["counts_by_source"] == [
+            {"value": "secret_scanning", "count": 1}
+        ]
+        assert readout["summary"]["counts_by_state"] == [
+            {"value": "resolved", "count": 1}
+        ]
+        assert readout["summary"]["counts_by_severity"] == [
+            {"value": "not_provided", "count": 1}
+        ]
+        assert readout["alerts"] == []
+
         markdown = build_markdown_report(readout)
+        assert (
+            "Secret-Scanning bleibt in Surface-, State- und Severity-Counts enthalten"
+            in markdown
+        )
         assert "Secret-Scanning-Detailfelder werden im Artefakt absichtlich redigiert" in markdown
 
     def test_generate_readout_writes_deterministic_artifacts(self, tmp_path):
@@ -343,6 +359,13 @@ class TestReadoutGeneration:
 
         assert first == second
         assert first["status"] == "PASS"
+        assert first["summary"]["total_alerts"] == 3
+        assert len(first["alerts"]) == 2
+        assert first["summary"]["counts_by_source"] == [
+            {"value": "code_scanning", "count": 1},
+            {"value": "dependabot", "count": 1},
+            {"value": "secret_scanning", "count": 1},
+        ]
         assert (out_dir_a / JSON_FILENAME).read_text(encoding="utf-8") == (
             out_dir_b / JSON_FILENAME
         ).read_text(encoding="utf-8")
