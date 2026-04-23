@@ -138,7 +138,7 @@ cdb_reports           Up (healthy)
 
 ## 5. Core Libraries (nicht runtime-services, sondern shared infrastruktur)
 
-### Replay Infrastructure (LR-021, PR #1808)
+### Replay Infrastructure (LR-021 + ARVP replay analysis)
 
 | Module | File | Funktion | Status |
 |--------|------|----------|--------|
@@ -151,8 +151,10 @@ cdb_reports           Up (healthy)
 | **Dataset Spec** | `core/replay/dataset_spec.py` | Frozen request-spec für historische Replay-Datasets (ARVP §4.2); Fingerprint via canonical_hash | **AKTIV** (PR #1856) |
 | **Dataset Provider** | `core/replay/dataset_provider.py` | FileBackedDatasetProvider (JSON/JSONL) + DBBackedDatasetProvider (candles_1m Postgres); ARVP §4.2 | **AKTIV** (PR #1856) |
 | **Replay Scheduler** | `core/replay/scheduler.py` | Event-time replay scheduler mit deterministischen Speed-Profilen, Warmup/Live-Split und fail-closed Boundary-Validation | **AKTIV** (PR #1859) |
+| **Counterfactual Engine** | `core/replay/counterfactual.py` | Pure, deterministische "same day, but..."-Perturbationsanalyse auf caller-supplied Replay-Baselines; validiert Perturbation Specs, berechnet Metrik-Deltas und schreibt `counterfactual_result.json` | **AKTIV** (PR #1875) |
+| **Walk-Forward Orchestrator** | `core/replay/walk_forward.py` | Pure, deterministische Offline-Orchestrierung geordneter Walk-Forward-Fenster; fail-closed bei Window-/Role-/Warmup-Fehlern, erfasst per-window Outcomes und schreibt `walk_forward_manifest.json` | **AKTIV** (PR #1877) |
 
-**Nutzung:** Shadow replay (accelerated backtesting, validation, gate evaluation offline) ohne live/paper/Redis-Runtime-Integration; ARVP §4.2 datasets können über `DBBackedDatasetProvider` aus `candles_1m` (Postgres) bezogen werden.
+**Nutzung:** Shadow replay (accelerated backtesting, validation, gate evaluation offline) ohne live/paper/Redis-Runtime-Integration; ARVP §4.2 datasets können über `DBBackedDatasetProvider` aus `candles_1m` (Postgres) bezogen werden. Zusätzlich stehen offline-only Counterfactual-Perturbationsanalysen und deterministische Walk-Forward-Fensterorchestrierung als Core-Replay-Surfaces bereit.
 
 **Reporter & CLI:**
 | Component | File | Funktion | Status |
@@ -212,3 +214,4 @@ Legacy-Layer (base.yml, dev.yml, tls.yml, etc.) existieren noch, sind nicht mehr
 | 2026-04-20 | PR #1808 Nachzug: LR-021 deterministic replay infrastructure (core/replay + services/validation reporter/CLI) als Core Libraries dokumentiert (Issue #1809) | Codex |
 | 2026-04-22 | PR #1856 Nachzug: ARVP §4.2 DatasetSpec + DatasetProvider (FileBackedDatasetProvider + DBBackedDatasetProvider) ergänzt (Issue #1857) | Codex |
 | 2026-04-22 | PR #1859 Nachzug: `core/replay/scheduler.py` und minimaler Replay-CLI-Scheduler-Pfad (`speedup_profile`, `dataset_summary["scheduler"]`) ergänzt (Issue #1860) | Codex |
+| 2026-04-23 | PR #1875/#1877 Nachzug: `core/replay/counterfactual.py` und `core/replay/walk_forward.py` als offline Replay-Analyse-/Orchestrierungssurfaces ergänzt (Issues #1876/#1878) | Codex |

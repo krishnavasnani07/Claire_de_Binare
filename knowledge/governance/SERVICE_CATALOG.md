@@ -48,11 +48,11 @@ Hinweis: Der Config-Default fuer `SIGNAL_PORT` liegt in `services/signal/config.
 
 ## Core Libraries (nicht runtime-services)
 
-### Replay Infrastructure (LR-021, PR #1808)
+### Replay Infrastructure (LR-021 + ARVP replay analysis)
 
 **Pfad:** `core/replay/`, `services/validation/` (reporter + CLI)
 
-**Funktion:** Deterministic shadow replay stack für accelerated backtesting, validation und gate evaluation offline, ohne live/paper/Redis-Runtime-Integration; ARVP §4.2 datasets können über `DBBackedDatasetProvider` aus `candles_1m` (Postgres) bezogen werden.
+**Funktion:** Deterministic shadow replay stack für accelerated backtesting, validation und gate evaluation offline, ohne live/paper/Redis-Runtime-Integration; ARVP §4.2 datasets können über `DBBackedDatasetProvider` aus `candles_1m` (Postgres) bezogen werden. Zusätzlich deckt der Stack offline-only Counterfactual-Perturbationsanalysen und deterministische Walk-Forward-Orchestrierung ab.
 
 | Module/Component | Code-Pfad | Status | Beschreibung |
 |---|---|---|---|
@@ -65,14 +65,16 @@ Hinweis: Der Config-Default fuer `SIGNAL_PORT` liegt in `services/signal/config.
 | **Dataset Spec** | `core/replay/dataset_spec.py` | **AKTIV** (PR #1856) | Frozen request-spec für historische Replay-Datasets (ARVP §4.2); Fingerprint via canonical_hash |
 | **Dataset Provider** | `core/replay/dataset_provider.py` | **AKTIV** (PR #1856) | FileBackedDatasetProvider (JSON/JSONL) + DBBackedDatasetProvider (candles_1m Postgres); ARVP §4.2 |
 | **Replay Scheduler** | `core/replay/scheduler.py` | **AKTIV** (PR #1859) | Event-time replay scheduler mit deterministischen Speed-Profilen, Warmup/Live-Split und fail-closed Boundary-Validation |
+| **Counterfactual Engine** | `core/replay/counterfactual.py` | **AKTIV** (PR #1875) | Pure, deterministische "same day, but..."-Perturbationsanalyse auf caller-supplied Replay-Baselines; validierte Perturbation Specs, Metrik-Deltas und `counterfactual_result.json`-Artefakt |
+| **Walk-Forward Orchestrator** | `core/replay/walk_forward.py` | **AKTIV** (PR #1877) | Pure, deterministische Offline-Orchestrierung geordneter Walk-Forward-Fenster; fail-closed bei Window-/Role-/Warmup-Fehlern, per-window Outcomes und `walk_forward_manifest.json`-Artefakt |
 | **Replay Reporter** | `services/validation/replay_reporter.py` | **AKTIV** (PR #1808) | Artifact bundle writer (report.json, manifest.json, audit.log) |
 | **Replay CLI** | `services/validation/strategy_replay_runner.py` | **AKTIV** (PR #1808, PR #1859) | Thin operator entry-point; fail-closed `speedup_profile` validation und Scheduler-Metadaten unter `dataset_summary["scheduler"]`; Exit Codes 0/1/2 |
 
-**Interne Abhängigkeiten:** Nutzen `core/replay/canonical_json.py` (deterministic serialization), `core/replay/envelopes.py` (envelope tracking).
+**Interne Abhängigkeiten:** Nutzen `core/replay/canonical_json.py` (deterministic serialization/fingerprints), `core/replay/envelopes.py` (envelope tracking in replay paths) und `core/utils/clock.py` (`utcnow` fuer Walk-Forward-Manifest-Timestamps).
 
 **Externe Abhängigkeiten:** `core/domain/` (models, events), `core/clients/` (MEXC API), `core/indicators/` (technical indicators), `core/contracts/` (decision contracts).
 
-**Tests:** 453 unit tests (core/replay/ + services/validation/ replay-specific tests), alle grün.
+**Tests:** Replay-spezifische Unit-Abdeckung unter `tests/unit/replay/`, `tests/unit/validation/` und `tests/unit/scripts/test_lr021_replay_surface.py`; `core/replay/counterfactual.py` und `core/replay/walk_forward.py` sind jeweils durch fokussierte Unit-Tests abgesichert.
 
 ---
 
@@ -188,3 +190,4 @@ docker compose -f infrastructure/compose/compose.red.yml up -d
 | 2026-04-20 | PR #1808 Nachzug: LR-021 deterministic replay infrastructure (core/replay/ + services/validation/) als Core Libraries dokumentiert; 6 Modules + 2 Components + 453 Tests (Issue #1809) | Codex |
 | 2026-04-22 | PR #1856 Nachzug: ARVP §4.2 DatasetSpec + DatasetProvider (FileBackedDatasetProvider + DBBackedDatasetProvider) in Core Libraries ergänzt; DB-Writer Candle-Persistence (candle_normalizer.py → candles_1m) nachgezogen (Issue #1857) | Codex |
 | 2026-04-22 | PR #1859 Nachzug: `core/replay/scheduler.py` und minimaler Replay-CLI-Scheduler-Pfad (`speedup_profile`, `dataset_summary["scheduler"]`) im Replay-Katalog ergänzt (Issue #1860) | Codex |
+| 2026-04-23 | PR #1875/#1877 Nachzug: `core/replay/counterfactual.py` und `core/replay/walk_forward.py` als offline Replay-Analyse-/Orchestrierungssurfaces ergänzt (Issues #1876/#1878) | Codex |
