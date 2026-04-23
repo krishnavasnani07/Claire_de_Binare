@@ -83,14 +83,16 @@ class SurfaceFetchResult:
     endpoint: str
     status: str
     alerts: tuple[dict[str, Any], ...]
+    alert_count: int | None = None
     note: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
+        alert_count = self.alert_count if self.alert_count is not None else len(self.alerts)
         result: dict[str, Any] = {
             "source": self.source,
             "endpoint": self.endpoint,
             "status": self.status,
-            "alert_count": len(self.alerts),
+            "alert_count": alert_count,
             "artifact_detail_status": (
                 "redacted"
                 if self.source == "secret_scanning" and self.status == "readable"
@@ -245,11 +247,22 @@ def fetch_surface(
                 )
             alerts.append(item)
 
+    alert_count = len(alerts)
+    if source == "secret_scanning":
+        return SurfaceFetchResult(
+            source=source,
+            endpoint=endpoint,
+            status="readable",
+            alerts=(),
+            alert_count=alert_count,
+        )
+
     return SurfaceFetchResult(
         source=source,
         endpoint=endpoint,
         status="readable",
         alerts=tuple(alerts),
+        alert_count=alert_count,
     )
 
 
@@ -524,8 +537,11 @@ def build_readout(
     for surface in fetched_surfaces:
         if surface.status == "readable":
             readable_surfaces += 1
-            if surface.alerts:
-                readable_surface_counts[surface.source] += len(surface.alerts)
+            surface_alert_count = (
+                surface.alert_count if surface.alert_count is not None else len(surface.alerts)
+            )
+            if surface_alert_count:
+                readable_surface_counts[surface.source] += surface_alert_count
             if surface.source == "secret_scanning":
                 continue
             for raw in surface.alerts:

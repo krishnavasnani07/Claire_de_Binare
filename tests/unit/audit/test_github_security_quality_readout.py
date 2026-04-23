@@ -174,6 +174,29 @@ class TestFetchSurface:
         assert result.status == "unavailable"
         assert result.note == "gh api returned no stdout payload"
 
+    def test_fetch_surface_redacts_secret_scanning_payload_after_counting(self):
+        result = fetch_surface(
+            source="secret_scanning",
+            repo="octo/example",
+            runner=lambda command: _completed_process(
+                stdout=json.dumps(
+                    [[
+                        {
+                            "number": 9,
+                            "state": "resolved",
+                            "secret_type": "generic_api_key",
+                            "secret_type_display_name": "Generic API Key",
+                            "first_location_detected": {"path": ".env"},
+                        }
+                    ]]
+                )
+            ),
+        )
+
+        assert result.status == "readable"
+        assert result.alert_count == 1
+        assert result.alerts == ()
+
 
 class TestReadoutGeneration:
     def test_build_readout_is_partial_when_a_surface_is_unavailable(self):
