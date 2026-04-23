@@ -1,0 +1,306 @@
+"""Tests for scripts.audit.github_security_quality_readout."""
+
+from __future__ import annotations
+
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+repo_root = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(repo_root / "scripts"))
+sys.path.insert(0, str(repo_root))
+
+from audit.github_security_quality_readout import (  # noqa: E402
+    JSON_FILENAME,
+    MARKDOWN_FILENAME,
+    SurfaceFetchResult,
+    build_markdown_report,
+    build_readout,
+    fetch_surface,
+    generate_readout,
+    normalize_code_scanning_alert,
+    normalize_dependabot_alert,
+    normalize_secret_scanning_alert,
+)
+
+
+def _completed_process(
+    *,
+    stdout: str = "",
+    stderr: str = "",
+    returncode: int = 0,
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.CompletedProcess(
+        args=["gh", "api"],
+        returncode=returncode,
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+
+class TestNormalizeAlerts:
+    def test_normalize_code_scanning_alert(self):
+        alert = normalize_code_scanning_alert(
+            {
+                "number": 12,
+                "state": "open",
+                "created_at": "2026-03-01T10:00:00Z",
+                "updated_at": "2026-03-20T10:00:00Z",
+                "html_url": "https://example.invalid/code/12",
+                "rule": {
+                    "id": "py/path-traversal",
+                    "security_severity_level": "high",
+                    "name": "Path traversal",
+                },
+                "most_recent_instance": {
+                    "ref": "refs/heads/main",
+                    "location": {"path": "core/security/check.py"},
+                },
+                "tool": {"name": "CodeQL"},
+            },
+            reference_now=generate_readout.__globals__["_parse_iso8601"](
+                "2026-04-23T00:00:00Z"
+            ),
+        )
+
+        assert alert["source"] == "code_scanning"
+        assert alert["severity"] == "high"
+        assert alert["rule_or_advisory"] == "py/path-traversal"
+        assert alert["affected_path"] == "core/security/check.py"
+        assert alert["branch"] == "main"
+        assert alert["age_bucket"] == "31-90d"
+        assert alert["tool"] == "CodeQL"
+
+    def test_normalize_dependabot_alert(self):
+        alert = normalize_dependabot_alert(
+            {
+                "number": 7,
+                "state": "fixed",
+                "created_at": "2026-04-20T12:00:00Z",
+                "updated_at": "2026-04-21T12:00:00Z",
+                "html_url": "https://example.invalid/dependabot/7",
+                "dependency": {
+                    "manifest_path": "requirements.txt",
+                    "package": {"name": "requests"},
+                },
+                "security_advisory": {
+                    "ghsa_id": "GHSA-test-1234",
+                    "severity": "medium",
+                },
+            },
+            reference_now=generate_readout.__globals__["_parse_iso8601"](
+                "2026-04-23T00:00:00Z"
+            ),
+        )
+
+        assert alert["source"] == "dependabot"
+        assert alert["subject"] == "requests"
+        assert alert["rule_or_advisory"] == "GHSA-test-1234"
+        assert alert["affected_path"] == "requirements.txt"
+        assert alert["branch"] == "not_provided"
+        assert alert["severity"] == "medium"
+        assert alert["age_bucket"] == "0-7d"
+
+    def test_normalize_secret_scanning_alert(self):
+        alert = normalize_secret_scanning_alert(
+            {
+                "number": 3,
+                "state": "resolved",
+                "created_at": "2025-12-01T00:00:00Z",
+                "updated_at": "2026-01-15T00:00:00Z",
+                "html_url": "https://example.invalid/secret/3",
+                "secret_type": "generic_api_key",
+                "secret_type_display_name": "Generic API Key",
+                "first_location_detected": {"path": ".env"},
+            },
+            reference_now=generate_readout.__globals__["_parse_iso8601"](
+                "2026-04-23T00:00:00Z"
+            ),
+        )
+
+        assert alert["source"] == "secret_scanning"
+        assert alert["subject"] == "Generic API Key"
+        assert alert["rule_or_advisory"] == "generic_api_key"
+        assert alert["affected_path"] == ".env"
+        assert alert["severity"] == "not_provided"
+        assert alert["branch"] == "not_provided"
+        assert alert["age_bucket"] == "91d+"
+
+
+class TestFetchSurface:
+    def test_fetch_surface_marks_permission_failure_unavailable(self):
+        result = fetch_surface(
+            source="dependabot",
+            repo="octo/example",
+            runner=lambda command: _completed_process(
+                returncode=1,
+                stderr="gh: HTTP 403: Resource not accessible by integration",
+            ),
+        )
+
+        assert result.status == "unavailable"
+        assert result.alerts == ()
+        assert "HTTP 403" in (result.note or "")
+
+    def test_fetch_surface_marks_invalid_page_shape_unavailable(self):
+        result = fetch_surface(
+            source="secret_scanning",
+            repo="octo/example",
+            runner=lambda command: _completed_process(stdout=json.dumps([{"bad": "shape"}])),
+        )
+
+        assert result.status == "unavailable"
+        assert "page 0 is not a JSON array" in (result.note or "")
+
+    def test_fetch_surface_marks_missing_stdout_unavailable(self):
+        result = fetch_surface(
+            source="code_scanning",
+            repo="octo/example",
+            runner=lambda command: subprocess.CompletedProcess(
+                args=["gh", "api"],
+                returncode=0,
+                stdout=None,
+                stderr="",
+            ),
+        )
+
+        assert result.status == "unavailable"
+        assert result.note == "gh api returned no stdout payload"
+
+
+class TestReadoutGeneration:
+    def test_build_readout_is_partial_when_a_surface_is_unavailable(self):
+        readout = build_readout(
+            repo="octo/example",
+            reference_now_utc="2026-04-23T00:00:00Z",
+            fetched_surfaces=[
+                SurfaceFetchResult(
+                    source="code_scanning",
+                    endpoint="repos/octo/example/code-scanning/alerts?per_page=100",
+                    status="readable",
+                    alerts=(
+                        {
+                            "number": 1,
+                            "state": "open",
+                            "created_at": "2026-04-22T00:00:00Z",
+                            "updated_at": "2026-04-22T00:00:00Z",
+                            "rule": {"id": "py/sql-injection", "security_severity_level": "critical"},
+                            "most_recent_instance": {
+                                "ref": "refs/heads/main",
+                                "location": {"path": "app/db.py"},
+                            },
+                            "tool": {"name": "CodeQL"},
+                        },
+                    ),
+                ),
+                SurfaceFetchResult(
+                    source="dependabot",
+                    endpoint="repos/octo/example/dependabot/alerts?per_page=100",
+                    status="unavailable",
+                    alerts=(),
+                    note="HTTP 403",
+                ),
+                SurfaceFetchResult(
+                    source="secret_scanning",
+                    endpoint="repos/octo/example/secret-scanning/alerts?per_page=100",
+                    status="readable",
+                    alerts=(),
+                ),
+            ],
+        )
+
+        assert readout["status"] == "PARTIAL"
+        assert readout["readable_surface_count"] == 2
+        assert readout["summary"]["total_alerts"] == 1
+        assert readout["summary"]["counts_by_source"] == [
+            {"value": "code_scanning", "count": 1}
+        ]
+
+        markdown = build_markdown_report(readout)
+        assert "Dieses Bild ist partiell." in markdown
+        assert "`dependabot`: HTTP 403" in markdown
+
+    def test_generate_readout_writes_deterministic_artifacts(self, tmp_path):
+        pages_by_source = {
+            "code_scanning": [
+                {
+                    "number": 10,
+                    "state": "open",
+                    "created_at": "2026-04-10T00:00:00Z",
+                    "updated_at": "2026-04-12T00:00:00Z",
+                    "html_url": "https://example.invalid/code/10",
+                    "rule": {
+                        "id": "py/insecure-temp-file",
+                        "security_severity_level": "medium",
+                    },
+                    "most_recent_instance": {
+                        "ref": "refs/heads/main",
+                        "location": {"path": "core/tmp.py"},
+                    },
+                    "tool": {"name": "CodeQL"},
+                }
+            ],
+            "dependabot": [
+                {
+                    "number": 11,
+                    "state": "open",
+                    "created_at": "2026-04-11T00:00:00Z",
+                    "updated_at": "2026-04-12T00:00:00Z",
+                    "html_url": "https://example.invalid/dependabot/11",
+                    "dependency": {
+                        "manifest_path": "requirements.txt",
+                        "package": {"name": "urllib3"},
+                    },
+                    "security_advisory": {
+                        "ghsa_id": "GHSA-test-5678",
+                        "severity": "high",
+                    },
+                }
+            ],
+            "secret_scanning": [
+                {
+                    "number": 12,
+                    "state": "resolved",
+                    "created_at": "2026-04-01T00:00:00Z",
+                    "updated_at": "2026-04-02T00:00:00Z",
+                    "html_url": "https://example.invalid/secret/12",
+                    "secret_type": "generic_api_key",
+                    "secret_type_display_name": "Generic API Key",
+                    "first_location_detected": {"path": ".env"},
+                }
+            ],
+        }
+
+        def runner(command: list[str]) -> subprocess.CompletedProcess[str]:
+            endpoint = command[-1]
+            for source, page in pages_by_source.items():
+                if f"/{source.replace('_', '-')}/" in endpoint or source == "code_scanning" and "/code-scanning/" in endpoint:
+                    return _completed_process(stdout=json.dumps([page]))
+            raise AssertionError(f"Unexpected command endpoint: {endpoint}")
+
+        out_dir_a = tmp_path / "out_a"
+        out_dir_b = tmp_path / "out_b"
+        reference_now = "2026-04-23T00:00:00Z"
+
+        first = generate_readout(
+            repo="octo/example",
+            out_dir=out_dir_a,
+            reference_now_utc=reference_now,
+            runner=runner,
+        )
+        second = generate_readout(
+            repo="octo/example",
+            out_dir=out_dir_b,
+            reference_now_utc=reference_now,
+            runner=runner,
+        )
+
+        assert first == second
+        assert first["status"] == "PASS"
+        assert (out_dir_a / JSON_FILENAME).read_text(encoding="utf-8") == (
+            out_dir_b / JSON_FILENAME
+        ).read_text(encoding="utf-8")
+        assert (out_dir_a / MARKDOWN_FILENAME).read_text(encoding="utf-8") == (
+            out_dir_b / MARKDOWN_FILENAME
+        ).read_text(encoding="utf-8")
