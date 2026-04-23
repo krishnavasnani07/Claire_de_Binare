@@ -87,7 +87,12 @@ class SurfaceFetchResult:
     note: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        alert_count = self.alert_count if self.alert_count is not None else len(self.alerts)
+        if self.alert_count is not None:
+            alert_count: int | None = self.alert_count
+        elif self.source == "secret_scanning" and self.status == "readable":
+            alert_count = None
+        else:
+            alert_count = len(self.alerts)
         result: dict[str, Any] = {
             "source": self.source,
             "endpoint": self.endpoint,
@@ -247,14 +252,16 @@ def fetch_surface(
                 )
             alerts.append(item)
 
-    alert_count = len(alerts)
     if source == "secret_scanning":
         return SurfaceFetchResult(
             source=source,
             endpoint=endpoint,
             status="readable",
             alerts=(),
-            alert_count=alert_count,
+            note=(
+                "payload-redacted: alert details and counts are intentionally "
+                "excluded from persisted artifacts"
+            ),
         )
 
     return SurfaceFetchResult(
@@ -262,7 +269,7 @@ def fetch_surface(
         endpoint=endpoint,
         status="readable",
         alerts=tuple(alerts),
-        alert_count=alert_count,
+        alert_count=len(alerts),
     )
 
 
@@ -463,7 +470,8 @@ def build_markdown_report(readout: dict[str, Any]) -> str:
     for surface in readout["surfaces"]:
         note = surface.get("note") or "—"
         lines.append(
-            f"| `{surface['source']}` | {surface['status']} | {surface['alert_count']} | {note} |"
+            f"| `{surface['source']}` | {surface['status']} | "
+            f"{'redacted' if surface['alert_count'] is None else surface['alert_count']} | {note} |"
         )
 
     def add_counter_section(title: str, rows: list[dict[str, Any]]) -> None:
@@ -504,8 +512,8 @@ def build_markdown_report(readout: dict[str, Any]) -> str:
     if redacted:
         lines.append("")
         lines.append(
-            "Secret-Scanning bleibt in Surface-Coverage und Source-Counts enthalten; "
-            "State-/Severity- und Top-Breakdowns werden dafuer bewusst nicht exportiert."
+            "Secret-Scanning bleibt in der Surface-Coverage sichtbar; "
+            "payload-abgeleitete Counts und Breakdowns werden dafuer bewusst nicht persistiert."
         )
 
     lines.extend(
@@ -537,13 +545,13 @@ def build_readout(
     for surface in fetched_surfaces:
         if surface.status == "readable":
             readable_surfaces += 1
+            if surface.source == "secret_scanning":
+                continue
             surface_alert_count = (
                 surface.alert_count if surface.alert_count is not None else len(surface.alerts)
             )
             if surface_alert_count:
                 readable_surface_counts[surface.source] += surface_alert_count
-            if surface.source == "secret_scanning":
-                continue
             for raw in surface.alerts:
                 alerts.append(
                     normalize_alert(
@@ -608,7 +616,11 @@ def build_exportable_readout(readout: dict[str, Any]) -> dict[str, Any]:
             "source": str(surface["source"]),
             "endpoint": str(surface["endpoint"]),
             "status": str(surface["status"]),
-            "alert_count": int(surface["alert_count"]),
+            "alert_count": (
+                int(surface["alert_count"])
+                if surface["alert_count"] is not None
+                else None
+            ),
             "artifact_detail_status": str(surface["artifact_detail_status"]),
         }
         if isinstance(surface.get("note"), str):

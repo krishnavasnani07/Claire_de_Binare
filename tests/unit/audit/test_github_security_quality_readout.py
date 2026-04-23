@@ -174,7 +174,7 @@ class TestFetchSurface:
         assert result.status == "unavailable"
         assert result.note == "gh api returned no stdout payload"
 
-    def test_fetch_surface_redacts_secret_scanning_payload_after_counting(self):
+    def test_fetch_surface_redacts_secret_scanning_payload_before_persistence(self):
         result = fetch_surface(
             source="secret_scanning",
             repo="octo/example",
@@ -194,8 +194,9 @@ class TestFetchSurface:
         )
 
         assert result.status == "readable"
-        assert result.alert_count == 1
+        assert result.alert_count is None
         assert result.alerts == ()
+        assert "payload-redacted" in (result.note or "")
 
 
 class TestReadoutGeneration:
@@ -286,20 +287,19 @@ class TestReadoutGeneration:
             ],
         )
 
-        assert readout["summary"]["total_alerts"] == 1
-        assert readout["summary"]["counts_by_source"] == [
-            {"value": "secret_scanning", "count": 1}
-        ]
+        assert readout["summary"]["total_alerts"] == 0
+        assert readout["summary"]["counts_by_source"] == []
         assert readout["summary"]["counts_by_state"] == []
         assert readout["summary"]["counts_by_severity"] == []
         assert readout["alerts"] == []
 
         markdown = build_markdown_report(readout)
         assert (
-            "Secret-Scanning bleibt in Surface-Coverage und Source-Counts enthalten"
+            "Secret-Scanning bleibt in der Surface-Coverage sichtbar"
             in markdown
         )
         assert "Secret-Scanning-Detailfelder werden im Artefakt absichtlich redigiert" in markdown
+        assert "| `secret_scanning` | readable | redacted |" in markdown
 
     def test_generate_readout_writes_deterministic_artifacts(self, tmp_path):
         pages_by_source = {
@@ -378,12 +378,11 @@ class TestReadoutGeneration:
 
         assert first == second
         assert first["status"] == "PASS"
-        assert first["summary"]["total_alerts"] == 3
+        assert first["summary"]["total_alerts"] == 2
         assert len(first["alerts"]) == 2
         assert first["summary"]["counts_by_source"] == [
             {"value": "code_scanning", "count": 1},
             {"value": "dependabot", "count": 1},
-            {"value": "secret_scanning", "count": 1},
         ]
         assert first["summary"]["counts_by_state"] == [
             {"value": "open", "count": 2}
@@ -392,6 +391,11 @@ class TestReadoutGeneration:
             {"value": "high", "count": 1},
             {"value": "medium", "count": 1},
         ]
+        exported = json.loads((out_dir_a / JSON_FILENAME).read_text(encoding="utf-8"))
+        secret_surface = next(
+            surface for surface in exported["surfaces"] if surface["source"] == "secret_scanning"
+        )
+        assert secret_surface["alert_count"] is None
         assert (out_dir_a / JSON_FILENAME).read_text(encoding="utf-8") == (
             out_dir_b / JSON_FILENAME
         ).read_text(encoding="utf-8")
