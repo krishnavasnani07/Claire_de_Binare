@@ -267,17 +267,13 @@ class TestReadoutGeneration:
         assert readout["summary"]["counts_by_source"] == [
             {"value": "secret_scanning", "count": 1}
         ]
-        assert readout["summary"]["counts_by_state"] == [
-            {"value": "resolved", "count": 1}
-        ]
-        assert readout["summary"]["counts_by_severity"] == [
-            {"value": "not_provided", "count": 1}
-        ]
+        assert readout["summary"]["counts_by_state"] == []
+        assert readout["summary"]["counts_by_severity"] == []
         assert readout["alerts"] == []
 
         markdown = build_markdown_report(readout)
         assert (
-            "Secret-Scanning bleibt in Surface-, State- und Severity-Counts enthalten"
+            "Secret-Scanning bleibt in Surface-Coverage und Source-Counts enthalten"
             in markdown
         )
         assert "Secret-Scanning-Detailfelder werden im Artefakt absichtlich redigiert" in markdown
@@ -365,6 +361,13 @@ class TestReadoutGeneration:
             {"value": "code_scanning", "count": 1},
             {"value": "dependabot", "count": 1},
             {"value": "secret_scanning", "count": 1},
+        ]
+        assert first["summary"]["counts_by_state"] == [
+            {"value": "open", "count": 2}
+        ]
+        assert first["summary"]["counts_by_severity"] == [
+            {"value": "high", "count": 1},
+            {"value": "medium", "count": 1},
         ]
         assert (out_dir_a / JSON_FILENAME).read_text(encoding="utf-8") == (
             out_dir_b / JSON_FILENAME
