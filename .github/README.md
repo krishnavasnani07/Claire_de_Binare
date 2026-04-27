@@ -29,7 +29,7 @@ This folder and its docs make it navigable.
 
 ```
 .github/
-  workflows/         67 YAML workflow definitions + labels.json (68 files total)
+  workflows/         65 YAML workflow definitions + labels.json (66 files total)
   ISSUE_TEMPLATE/    10 issue form templates (yml + md)
   prompts/           1 active prompt: cdb-control-followup.prompt.yml
   scripts/           9 scripts backing operational workflows
@@ -95,13 +95,13 @@ This folder and its docs make it navigable.
 
 ## Workflow inventory at a glance
 
-**Total:** 67 workflow definitions + 1 `labels.json` = 68 tracked files
+**Total:** 65 workflow definitions + 1 `labels.json` = 66 tracked files
 
 | Group | Count | Key workflows |
 |---|---|---|
 | Reconcile (label/milestone/project) | 14 | sync-labels, project_reconcile_daily, control_board_upsert |
 | CI / quality gates | 11 | ci.yml (canonical), contracts, lr021_replay_smoke |
-| Spezialpfad (AI/agent/MCP/docker) | 11 | claude, gemini-dispatch, opencode, docker-publish |
+| Spezialpfad (AI/agent/MCP/docker) | 9 | opencode, gemini-dispatch, docker-publish |
 | Hygiene | 7 | stale, branch-policy, copilot-housekeeping |
 | Audit/governance | 6 | policy-gate, governance-audit, required-checks-audit |
 | Sonstiges | 5 | emoji-filter, emoji-bot, performance-monitor, smart-insights |
@@ -110,10 +110,11 @@ This folder and its docs make it navigable.
 | Security | 3 | gitleaks, trivy, security-scan |
 
 **Status breakdown:**
-- Aktiv: 56
-- Manual-only: 5
-- Fail-closed geparkt: 1 (`gemini-scheduled-triage.yml`)
-- Historisch/unklar: 5 (labeling/milestone legacy flows)
+- Aktiv: 54
+- Manual-only: 4
+- Fail-closed geparkt: 4
+- Historisch: 2
+- Frozen legacy: 1 (`ci.yaml`)
 
 `cdb-backlog-curation.yml` is a bounded issue-scoped companion workflow for qualified `issues.labeled` events (`task` or paired `type:*` + `scope:*`). It uploads `artifacts/backlog-curation/issue-<number>.json` with typed handoff classes (`must_read`, `supporting`, `background`, `constraints`, `watchouts`, `implementation_targets`) and posts a dedupe-safe receipt comment on the source issue.
 `cdb-backlog-anomaly-escalation.yml` is the separate phase-1 escalation lane. It consumes backlog-curation handoff artifacts, classifies typed anomalies fail-closed (`report_only` / `follow_up_issue` / `unclear`), blocks sensitive/private findings from public issue emission, and emits at most one dedupe-safe follow-up issue per run.
