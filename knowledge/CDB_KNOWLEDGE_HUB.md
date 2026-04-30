@@ -176,6 +176,14 @@ Externe Location: C:\Users\janne\Documents\GitHub\Workspaces\agents
 
 Referenz: GitHub Issue #133, Commit 8a417ee
 
+2026-04-30 – Context Ingestion Scope for SurrealDB defined (Issue #1986)
+
+Artifact: `docs/surrealdb/context-ingestion-scope.md`
+Parent: Issue #1985 (SurrealDB Epic #1976)
+Depends on: #1978, #1981
+Downstream: #1987 (hashing rules), #1988 (chunking model), #1989 (CLI contract), #2045 (implementation pipeline)
+Note: This document governs WHAT may be ingested. It does NOT authorize live-DB connection. Live-readiness remains NO-GO per `docs/live-readiness/LR-AUDIT-STATUS-2026-03-05.md`.
+
 5. Session Summaries (verdichtet)
 
 2025-12-18/19 – Governance Hygiene Enforcement (COMPLETE)
