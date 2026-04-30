@@ -26,6 +26,21 @@ Close a working session so the repo, git state, and issue thread reflect reality
 
 ## Workflow
 
+0. Human-GO gate (hard):
+   - Default mode is read-only analysis.
+   - Require explicit user GO before any action that mutates repository, working tree, index, branch, remote, GitHub, or worktree state, including:
+     - staging changes (any `git add` / patch staging)
+     - branch switching or checkout/switch operations
+     - pull, merge, rebase, or fast-forward update operations
+     - stash/apply operations
+     - creating a commit
+     - pushing to any remote
+     - removing worktrees
+     - deleting local or remote branches
+     - cleanup/delete operations
+     - writing to GitHub (issue/PR comment, review reply/resolve, status update, label/state change)
+   - If GO is not granted: stop after producing the close-out summary draft.
+
 1. Determine session scope before touching git:
    - Decide whether the session was issue-bezogen.
    - Identify the intended deliverable, the files actually changed, and any unrelated local residue.
@@ -96,6 +111,10 @@ Close a working session so the repo, git state, and issue thread reflect reality
 
 ## Fail-Closed Rules
 
+- If any write step would exceed the agreed scope (unexpected files/hunks, scope growth): STOP and ask for clarification + explicit GO.
+- If checks are red/failed/unknown for the claimed result: STOP; do not stage/commit/push; report the failing check(s).
+- If the PR/review/writer/lock situation is unclear or conflicting: STOP; do not stage/commit/push or write to GitHub; ask for explicit handoff/GO.
+- If there is an active PR or lock collision touching the same files/scope: STOP; no further actions until clarified.
 - If intended session changes cannot be separated from unrelated local changes, stop and report the close as incomplete.
 - If verification is missing or ambiguous, report exactly that instead of implying confidence.
 - If the session was issue-driven but the issue mapping is uncertain, do not fabricate an issue-ready completion claim.
