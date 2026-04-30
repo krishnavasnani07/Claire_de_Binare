@@ -37,20 +37,21 @@ Agenten MÜSSEN dieses Dokument vor Änderungen an Context-Intelligence-Dokument
 |--------|-----|--------|
 | Epic #1976 | Parent Epic | OPEN |
 | Issue #2034 | Wave-7 Landing | OPEN |
-| Issue #2035 | Architecture Doc | MERGED |
-| Issue #2036 | Roadmap Doc | MERGED |
-| Issue #2037 | Schema Draft | MERGED |
-| Issue #2038 | Ontology Seed | MERGED |
-| Issue #2039 | Validation Checklist (dieses Dokument) | IN PROGRESS |
-| Issue #2040 | Agent Handoff Guide | IN PROGRESS |
-| Issue #2042 | PR Slicing Plan | IN PROGRESS |
-| Issue #2043 | Wave-7 Completion Gates | IN PROGRESS |
-| `docs/surrealdb/context-intelligence-system.md` | Architektur | Exists |
-| `docs/surrealdb/context-intelligence-roadmap.md` | Roadmap | Exists |
-| `infrastructure/surrealdb/context_intelligence_v0.surql` | Schema Draft | Exists |
-| `docs/surrealdb/context-ontology-v0.yaml` | Ontology Seed | Exists |
+| Issue #2035 | Architecture Doc | CLOSED |
+| Issue #2036 | Roadmap Doc | CLOSED |
+| Issue #2037 | Schema Draft | CLOSED |
+| Issue #2038 | Ontology Seed | CLOSED |
+| Issue #2039 | Validation Checklist (dieses Dokument) | CLOSED |
+| Issue #2040 | Agent Handoff Guide | CLOSED |
+| Issue #2042 | PR Slicing Plan | CLOSED |
+| Issue #2043 | Wave-7 Completion Gates | CLOSED |
+| `docs/surrealdb/context-intelligence-system.md` | Architektur | PRESENT |
+| `docs/surrealdb/context-intelligence-roadmap.md` | Roadmap | PRESENT |
+| `infrastructure/surrealdb/context_intelligence_v0.surql` | Schema Draft | PRESENT |
+| `docs/surrealdb/context-ontology-v0.yaml` | Ontology Seed | PRESENT |
 | PR #2224 | Wave 7-A docs reconciliation | MERGED |
 | PR #2225 | Wave 7-B docs index update | MERGED |
+| PR #2226 | Wave 7-C closeout docs reconciliation | MERGED |
 | PR #2223 | #1986 ingestion scope rebuild | OPEN / FROZEN / OUT OF SCOPE |
 | PR #2216 | Wave 8 readiness/readiness | OPEN / FROZEN / OUT OF SCOPE |
 
@@ -335,7 +336,7 @@ Vor jedem Merge von Context-Intelligence-Artefakten:
 - **Epic**: #1976
 - **Parent**: #2034
 - **Dependencies**: #2035 (MERGED), #2036 (MERGED), #2037 (MERGED), #2038 (MERGED)
-- **Wave 7 landed PRs**: #2224 (MERGED), #2225 (MERGED)
+- **Wave 7 landed PRs**: #2224 (MERGED), #2225 (MERGED), #2226 (MERGED)
 - **Frozen / out of scope**: #2223 (OPEN), #2216 (OPEN)
 - **Validation Gates**: #1984, #1993, #2003, #2013, #2023, #2033
 - **Referenz-Dokumente**:
