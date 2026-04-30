@@ -43,7 +43,7 @@ Exclude rules always take precedence over include rules. When a path matches bot
 | `infrastructure/surrealdb/` | SurrealDB-specific infrastructure definitions |
 | `infrastructure/config/surrealdb/` | SurrealDB configuration files |
 | `tools/surrealdb/` | SurrealDB tooling and utility scripts |
-| `README.md` (root and submodule-level) | Entry-point orientation documents |
+| `README.md` (root README.md and README.md files under allowed roots) | Entry-point orientation documents |
 
 ### 2.2 Conditional Roots (eligible only with explicit scope-config approval)
 
@@ -65,7 +65,7 @@ per-file sensitivity classification at ingest time.
 | `.venv/` | Python virtual environment; third-party binaries |
 | `.worktrees/` | Git worktree state |
 | `logs/` | Runtime log output; may contain sensitive runtime state |
-| `artifacts/` | Generated build and report artifacts |
+| `artifacts/**` (automatic discovery) | Generated artifacts are excluded by default. No automatic ingestion from `artifacts/`; only explicitly reviewed, allow-listed report artifacts may be referenced or ingested |
 | `artifacts/context-indexer/` | Self-ingestion prevention |
 | `tmp/` | Temporary files |
 | `temp/` | Temporary files |
@@ -76,8 +76,9 @@ per-file sensitivity classification at ingest time.
 | `**/archive/` | Any archive subdirectory unless explicitly referenced and reviewed |
 | `**/.env*` | Environment and secrets files |
 | `**/*.key`, `**/*.pem`, `**/*.p12` | Cryptographic key material |
-| `**/{orders,positions,fills}/**` | Live trading state |
-| `**/{risk,execution}/**` | Risk and execution engine state |
+| Runtime order / position / fill state paths | Live trading state only; excludes runtime state, not approved static source code |
+| Runtime risk-state snapshots / ledgers / caches / exports | Runtime risk state only; approved `core/` / `services/` source code is not excluded by directory name alone |
+| Execution-state snapshots / ledgers / queues / exports | Execution state only; approved `core/` / `services/` source code is not excluded by directory name alone |
 | `**/secrets/**` | Secrets directories |
 | Binary archives (`.zip`, `.tar`, `.gz`, etc.) | Not human-readable; ingest only if explicitly referenced and manually reviewed |
 
@@ -125,17 +126,17 @@ Content is classified on two independent axes: **Scope Class** (what it is) and 
 | `configuration` | YAML, JSON, TOML configuration files |
 | `source_code` | Python and shell source code |
 | `governance` | Governance policies, constitutions, and audit records |
-| `generated_artifacts` | System-generated reports (only after explicit allow-listing) |
+| `generated_artifacts` | System-generated reports and evidence artifacts — excluded by default; eligible only after explicit review and allow-listing |
 | `archives` | Historical artifacts — excluded by default |
 | `secrets` | Secret or credential material — always excluded |
 | `runtime_state` | Runtime operational state — always excluded |
-| `trading_state` | Orders, positions, fills, risk, execution state — always excluded |
+| `trading_state` | Orders, positions, fills, runtime risk state, and execution state — always excluded |
 
 ### 4.2 Sensitivity Classes
 
 | Class | Description | Typical Paths | Ingest | Guardrail |
 |:------|:------------|:--------------|:-------|:----------|
-| `public_context` | Non-sensitive project context safe for broad sharing | `docs/`, `knowledge/`, `agents/`, root `README.md` | Yes | None beyond file-type check |
+| `public_context` | Non-sensitive project context safe for broad sharing | `docs/`, `knowledge/`, `agents/`, root README.md and README.md files under allowed roots | Yes | None beyond file-type check |
 | `internal_context` | Internal but non-sensitive; suitable for agent and tooling use | `infrastructure/surrealdb/`, `tools/surrealdb/`, `tests/` | Yes | Per-file sensitivity check required |
 | `sensitive_metadata` | Metadata touching architecture, ops, or infrastructure | `infrastructure/compose/`, `core/`, `services/` | Conditional | Secret scrub mandatory; explicit approval |
 | `forbidden` | High-sensitivity or trading-critical content | `**/.env*`, `**/orders/**`, `**/secrets/**` | **Never** | Fail-closed; block and alert |
@@ -151,14 +152,15 @@ The following rules are non-negotiable and must be enforced at every ingest boun
 
 1. **Fail-Closed**: Any content that cannot be unambiguously classified must be excluded. When in doubt, exclude.
 2. **No Secrets**: Secrets, credentials, API keys, and cryptographic material must never appear in the context index. Detect via pattern matching (gitleaks-compatible rules) before indexing.
-3. **No Trading State**: Orders, positions, fills, risk snapshots, and execution state are permanently excluded. This is not configurable.
+3. **No Trading State**: Orders, positions, fills, runtime risk state, and execution state are permanently excluded. Static source code under approved conditional roots is not excluded by directory name alone. This is not configurable.
 4. **No Runtime State**: Live system metrics, log files, and runtime snapshots are permanently excluded.
 5. **Path Sanitization**: All paths in the index must be repository-relative. Absolute paths are forbidden.
 6. **Deterministic Classification**: Given the same commit SHA and scope configuration, classification results must be identical across runs.
 7. **Exclusions Override Inclusions**: If a path matches both an include rule and an exclude rule, it is excluded. No exception.
-8. **Self-Ingestion Prevention**: The context indexer must not ingest its own output artifacts (`artifacts/context-indexer/`, `tmp/context-indexer/`).
-9. **Secret Scrub on Conditional Roots**: Any file from a conditional root (`core/`, `services/`, `infrastructure/compose/`) must pass a secret-scrub check before indexing.
-10. **No Live DB Authorization**: Defining or consuming this scope document does not authorize connection to any live SurrealDB instance. See Disclaimer at top of this document.
+8. **Self-Ingestion Prevention**: The context indexer must not ingest its own output artifacts (`artifacts/context-indexer/`, `tmp/context-indexer/`, `temp/context-indexer/`).
+9. **Generated Artifacts Default-Deny**: Generated artifacts are excluded by default. Only explicitly reviewed and allow-listed report artifacts may be referenced or ingested, never via automatic discovery of `artifacts/`.
+10. **Secret Scrub on Conditional Roots**: Any file from a conditional root (`core/`, `services/`, `infrastructure/compose/`) must pass a secret-scrub check before indexing.
+11. **No Live DB Authorization**: Defining or consuming this scope document does not authorize connection to any live SurrealDB instance. See Disclaimer at top of this document.
 
 ---
 
@@ -172,9 +174,9 @@ The following rules are non-negotiable and must be enforced at every ingest boun
 | `infrastructure/surrealdb/**` | `configuration` | `internal_context` | Yes | Per-file check |
 | `infrastructure/config/surrealdb/**` | `configuration` | `internal_context` | Yes | Per-file check |
 | `tools/surrealdb/**` | `configuration` | `internal_context` | Yes | Per-file check |
-| `README.md` | `documentation` | `public_context` | Yes | Root and submodule |
-| `core/**/*.py` | `source_code` | `sensitive_metadata` | Conditional | Explicit approval; secret scrub |
-| `services/**/*.py` | `source_code` | `sensitive_metadata` | Conditional | Explicit approval; secret scrub |
+| `README.md` | `documentation` | `public_context` | Yes | Root README.md and README.md files under allowed roots |
+| `core/**/*.py` | `source_code` | `sensitive_metadata` | Conditional | Explicit approval; secret scrub; directory names such as `risk` or `execution` do not block approved static source code by themselves |
+| `services/**/*.py` | `source_code` | `sensitive_metadata` | Conditional | Explicit approval; secret scrub; directory names such as `risk` or `execution` do not block approved static source code by themselves |
 | `tests/**/*.py` | `source_code` | `internal_context` | Conditional | Explicit approval |
 | `infrastructure/compose/**/*.yml` | `configuration` | `sensitive_metadata` | Conditional | Secret scrub mandatory |
 | `docs/archive/**` | `archives` | `internal_context` | No | Historical; excluded |
@@ -182,13 +184,16 @@ The following rules are non-negotiable and must be enforced at every ingest boun
 | `**/archive/**` | `archives` | `internal_context` | No | Historical; excluded |
 | `**/.env*` | `secrets` | `forbidden` | **Never** | Fail-closed |
 | `**/*.key`, `**/*.pem` | `secrets` | `forbidden` | **Never** | Fail-closed |
-| `**/orders/**` | `trading_state` | `forbidden` | **Never** | Fail-closed |
-| `**/positions/**` | `trading_state` | `forbidden` | **Never** | Fail-closed |
-| `**/fills/**` | `trading_state` | `forbidden` | **Never** | Fail-closed |
-| `**/risk/**` | `trading_state` | `forbidden` | **Never** | Fail-closed |
-| `**/execution/**` | `trading_state` | `forbidden` | **Never** | Fail-closed |
-| `artifacts/context-indexer/**` | `generated_artifacts` | `internal_context` | No | Self-ingestion prevention |
-| `tmp/context-indexer/**` | `generated_artifacts` | `internal_context` | No | Self-ingestion prevention |
+| Runtime order-state paths | `trading_state` | `forbidden` | **Never** | Fail-closed; runtime/live state only |
+| Runtime position-state paths | `trading_state` | `forbidden` | **Never** | Fail-closed; runtime/live state only |
+| Runtime fill-state paths | `trading_state` | `forbidden` | **Never** | Fail-closed; runtime/live state only |
+| Runtime risk-state snapshots / ledgers / caches / exports | `trading_state` | `forbidden` | **Never** | Fail-closed; approved `core/` / `services/` source code remains conditional |
+| Execution-state snapshots / ledgers / queues / exports | `trading_state` | `forbidden` | **Never** | Fail-closed; approved `core/` / `services/` source code remains conditional |
+| `artifacts/**` (automatic discovery) | `generated_artifacts` | `internal_context` | No | Excluded by default; no automatic ingestion of `artifacts/` |
+| Reviewed, allow-listed report artifacts explicitly referenced by scope config | `generated_artifacts` | `internal_context` | Conditional | Explicit review required; never include context-indexer outputs |
+| `artifacts/context-indexer/**` | `generated_artifacts` | `internal_context` | No | Self-ingestion prevention; never ingest indexer output |
+| `tmp/context-indexer/**` | `generated_artifacts` | `internal_context` | No | Self-ingestion prevention; never ingest indexer output |
+| `temp/context-indexer/**` | `generated_artifacts` | `internal_context` | No | Self-ingestion prevention; never ingest indexer output |
 | `logs/**` | `runtime_state` | `forbidden` | **Never** | Runtime state |
 
 ---
