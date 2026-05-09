@@ -436,6 +436,189 @@ eine spätere Implementierung gewünscht wird.
 
 ---
 
+## Abschluss-Gate (v1)
+
+Dieses Gate dokumentiert die Kriterien, unter denen der lokale SurrealDB Context
+Intelligence Runtime-Block als abgeschlossen gilt. Es ist der kanonische Nachweis-
+Rahmen für Issue #2399.
+
+**Wichtige Trennung:**
+
+- **Repo-backed readiness** — Makefile-Targets, Compose-Dateien, Skripte und
+  Runbook sind im Repo vorhanden und getestet. Dieser Teil ist mit PR-Merge
+  vollständig nachweisbar.
+- **Lokaler Echt-Durchstich** — Nachweis auf Janneks Maschine mit laufendem
+  Docker Desktop, aktiver Container-Health und vollständiger Pipeline. Dieser
+  Teil erfordert die lokale Laufzeitumgebung und kann nicht im CI erbracht werden.
+
+---
+
+### Gate 1 — Docker Runtime
+
+| Kriterium | Befehl | Erwartetes Ergebnis | Blockiert Abschluss |
+|---|---|---|---|
+| Container startet | `make context-up` | `cdb_surrealdb` läuft, kein Fehler | ja |
+| Container-/Health-Status | `make context-status` | Containername, Status `running`, Health `healthy`, Port `127.0.0.1:8010→8000`, Volume | ja |
+| Container-Logs | `make context-logs` | Keine fatalen Fehler, SurrealDB bereit | nein (Info) |
+
+**Hinweise:**
+- `cdb_surrealdb` ist der einzige erwartete persistente lokale Dauercontainer für
+  diesen Stack.
+- `make context-status` ist der **visuelle/operatorische Container-/Health-Nachweis** —
+  der Operator prüft anhand der Ausgabe, ob `cdb_surrealdb` existiert, Status `running`
+  und Health `healthy` meldet sowie Port und Volume passen. Das Target ist **nicht
+  fail-closed über den Exit-Code**: es gibt immer Exit 0 zurück und druckt nur
+  Status-Text. Der Exit-Code allein darf nicht als bestandenes Gate interpretiert werden.
+- `make context-up` setzt `context-env-check` voraus (Guard bei fehlender Env).
+- **Restunsicherheit:** Wenn Docker Desktop lokal nicht verfügbar ist, kann dieser
+  Gate-Punkt nicht lokal nachgewiesen werden. Repo-Artefakte (Compose, Makefile)
+  sind dennoch vorhanden und geprüft.
+
+---
+
+### Gate 2 — Env / Bootstrap
+
+| Kriterium | Befehl | Erwartetes Ergebnis | Blockiert Abschluss |
+|---|---|---|---|
+| Env-Guard grün | `make context-env-check` | Keine fehlenden Pflicht-Vars, kein Secret-Leak | ja |
+| Fehlender Env → klare Meldung | `make context-up` ohne Env | Guard gibt `ERROR`-Ausgabe, kein Docker-Start | ja |
+| Keine echten Secrets im Repo | — | `.env`-Dateien in `.gitignore`, keine Klartext-Credentials eingecheckt | ja |
+
+**Restunsicherheit:** Kein Docker-Start nötig, um diesen Gate-Punkt im Repo zu
+verifizieren — die Guard-Logik ist in `Makefile` und `context-env-check` nachweisbar.
+
+---
+
+### Gate 3 — Schema
+
+| Kriterium | Befehl | Erwartetes Ergebnis | Blockiert Abschluss |
+|---|---|---|---|
+| Schema anwenden | `make context-schema-apply` | Schema-Definitionen erfolgreich in `cdb_context_local/cdb_context_intel` geschrieben | ja |
+| Schema prüfen | `make context-schema-check` | Relevante Context-Tabellen/Definitionen bestätigt | ja |
+| Reset vorhanden + geschützt | `make context-reset-local CONFIRM=1` | Löscht lokale Context-Daten; verweigert ohne `CONFIRM=1`; akzeptiert nur `127.0.0.1`/`localhost` | ja |
+
+**Hinweise:**
+- `make context-reset-local CONFIRM=1` ist **destruktiv** und **local-only** —
+  er verweigert Remote-/Produktivziele.
+- Ohne `CONFIRM=1` gibt das Target eine explizite `ERROR`-Meldung aus und
+  bricht ab.
+- **Restunsicherheit:** Schema-Apply und -Check setzen laufenden Container voraus.
+  Repo-Artefakte (`context_intelligence_v0.surql`, `local_schema_apply.py`,
+  `local_schema_check.py`) sind unabhängig vom Container prüfbar.
+
+---
+
+### Gate 4 — Pipeline / Smoke
+
+| Kriterium | Befehl | Erwartetes Ergebnis | Blockiert Abschluss |
+|---|---|---|---|
+| Vollständige Pipeline | `make context-smoke` | Orchestrierungs-Pfad läuft durch (`[OK]`); **kein Container-/Runtime-Nachweis** — `context-schema-check` gibt `[SKIP]` + Exit 0 wenn Container offline, `context-import-local` nutzt `InMemoryContextApplyAdapter`, `context-query-smoke` maskiert mit `[NOTE]` | nein (Pfad-Smoke only) |
+| Repo-Scan | `make context-scan` | `scan-report.json` in `artifacts/context-intelligence/latest/` | ja |
+| Import Dry-Run | `make context-import-dry-run` | Importer-Pfad läuft durch (`[OK]`); **kein Blocking-Kriterium** — Fehler (kein JSONL-Input) werden mit `[NOTE]` maskiert, `[OK]` wird bedingungslos gedruckt (Makefile Zeile 337-338) | nein (Pfad-Smoke only) |
+| Lokaler Import | `make context-import-local` | Import-Pfad läuft durch (`InMemoryContextApplyAdapter`); kein echter SurrealDB-DB-Write in diesem Slice — `REAL_SURREALDB_ADAPTER_AVAILABLE = False` | ja (Pfad-Smoke) |
+| Query Smoke | `make context-query-smoke` | Mindestens `show-snapshot`, `show-drift`, `find-artifact` liefern Ergebnisse oder `[NOTE]` | nein (graceful) |
+
+**Hinweise zu `context-smoke`** (Pipeline-Reihenfolge):
+
+```
+context-schema-check → context-scan → context-import-dry-run
+  → context-import-local → context-query-smoke
+```
+
+**Kritische Unterscheidung:**
+
+- `make context-status` — **visueller/operatorischer Betriebsnachweis**: gibt
+  Container-/Health-/Port-/Volume-Status als Text aus. **Nicht fail-closed über den
+  Exit-Code** — das Target liefert immer Exit 0. Der Operator liest die Ausgabe;
+  für automatisierbare fail-closed Gates ist der vollständige Smoke-Pfad oder ein
+  eigener Skript-Check nötig.
+- `make context-smoke` — **vollständiger Orchestrierungs-Pfad**: beweist, dass
+  alle Pipeline-Schritte ohne Fehler *laufen*, **nicht** dass `cdb_surrealdb`
+  online ist. `context-schema-check` gibt `[SKIP]` + Exit 0 wenn Container offline
+  (`local_schema_check.py` Zeile 165-166); `context-import-local` nutzt nur
+  `InMemoryContextApplyAdapter` (kein echter DB-Write,
+  `REAL_SURREALDB_ADAPTER_AVAILABLE = False`); `context-query-smoke` maskiert
+  Fehler mit `[NOTE]`. **Der finale `[OK]` ist kein Container- oder
+  Persistenznachweis.** Echter DB-backed Durchstich erfordert einen separaten
+  SurrealDB Apply Adapter (eigenes Issue/PR/Gate).
+- `make context-query-smoke` — **read-only Komfortcheck**: maskiert Fehler mit
+  graceful `|| echo "[NOTE]..."` und kann `[OK]` ausgeben, auch wenn
+  `cdb_surrealdb` offline ist. **Kein alleiniger Proof-of-Life.**
+
+**Restunsicherheit:** Vollständiger Pipeline-Durchstich setzt laufenden Container
+voraus. `context-scan` und `context-import-dry-run` laufen ohne Container.
+Echte Persistenz in `cdb_context_local/cdb_context_intel` ist erst mit einem
+realen SurrealDB Apply Adapter nachweisbar (nicht Teil dieses Gates).
+
+---
+
+### Gate 5 — Operator Runbook
+
+| Kriterium | Nachweis | Erwartetes Ergebnis | Blockiert Abschluss |
+|---|---|---|---|
+| Runbook existiert | `docs/runbooks/SURREALDB_LOCAL_CONTEXT_RUNTIME.md` | Datei im Repo | ja |
+| Startprozedur dokumentiert | Abschnitt `## Start` | `make context-up` beschrieben | ja |
+| Statusprozedur dokumentiert | Abschnitt `## Status prüfen` | `make context-status` beschrieben | ja |
+| Schema-Workflow dokumentiert | Abschnitt `## Schema anwenden` | `make context-schema-apply` + `make context-schema-check` beschrieben | ja |
+| Smoke-Test dokumentiert | Abschnitt `## Smoke-Test (lokale Pipeline)` | `make context-smoke` und Einzelschritte beschrieben | ja |
+| Reset dokumentiert | Abschnitt `## Lokaler Reset (DESTRUKTIV)` | `make context-reset-local CONFIRM=1` mit Warnung beschrieben | ja |
+| Häufige Fehler dokumentiert | Abschnitt `## Häufige Fehler` | 9 Fehlerbilder mit Lösungen | ja |
+| MCP-Posture dokumentiert | Abschnitt `## MCP-Posture (v1)` | v1-Entscheidung, kein Daemon-Container | ja |
+
+**Restunsicherheit:** Keine — Runbook ist Repo-Artefakt, unabhängig von lokaler
+Docker-Env prüfbar.
+
+---
+
+### Gate 6 — MCP-Posture
+
+| Kriterium | Nachweis | Erwartetes Ergebnis | Blockiert Abschluss |
+|---|---|---|---|
+| v1-Entscheidung dokumentiert | `## MCP-Posture (v1)` in diesem Runbook | Kein `cdb_context_mcp`-Daemon-Container in v1 | ja |
+| Sicherheitsgrenzen für MCP | `## MCP-Posture (v1)` Abschnitt Sicherheitsgrenzen | Kein Write-MCP, kein Remote-MCP, kein Auto-Trading via MCP | ja |
+| MCP kein Runtime-Requirement | — | `cdb_surrealdb` ist einziger Pflicht-Container; MCP ist Orchestrierungsebene | ja |
+| Zukünftige Option dokumentiert | `## MCP-Posture (v1)` | Optional read-only `cdb_context_mcp` braucht eigenes Issue/PR/Gate | nein (Info) |
+
+**MCP-Dauercontainer ist in v1 nicht Teil dieses Gates.**
+
+---
+
+### Gate 7 — Sicherheitsgrenzen
+
+| Grenze | Nachweis | Status |
+|---|---|---|
+| Kein Live-Go | `## Sicherheitsgrenzen` + LR-Status | ✅ orthogonal |
+| Kein Echtgeld-Go | Keine Verbindung zu Trading/Risk/Execution | ✅ orthogonal |
+| Kein LR-Go | LR bleibt **NO-GO** | ✅ bestätigt |
+| Kein Auto-Trading via MCP | MCP-Posture v1: kein Daemon, kein Write-MCP | ✅ dokumentiert |
+| Board-Stage `trade-capable` irrelevant | Board-Stage ist orthogonal zum lokalen Context-Stack | ✅ dokumentiert |
+| Kein Remote-DB-Apply | Importer akzeptiert nur `127.0.0.1`/`localhost` | ✅ code-enforced |
+| Kein produktiver Reset | `context-reset-local` guard-closed (`CONFIRM=1` + local-only) | ✅ code-enforced |
+
+**Board-Stage `trade-capable` autorisiert weder diesen Container noch DB-Operationen
+und ist für den Abschluss dieses Gates irrelevant.**
+
+---
+
+### Gate-Gesamtstatus
+
+| Gate | Repo-backed readiness | Lokaler Echt-Durchstich |
+|---|---|---|
+| 1 — Docker Runtime | ✅ Compose + Makefile vorhanden | Benötigt Docker Desktop lokal |
+| 2 — Env / Bootstrap | ✅ Guard-Logik im Makefile | Benötigt lokale Env-Konfiguration |
+| 3 — Schema | ✅ Schema-Dateien + Skripte vorhanden | Benötigt laufenden Container |
+| 4 — Pipeline / Smoke | ✅ Alle Targets definiert; Scan + DryRun ohne Container | Vollständige Pipeline benötigt Container |
+| 5 — Operator Runbook | ✅ Runbook vollständig im Repo | Keine lokale Env nötig |
+| 6 — MCP-Posture | ✅ Entscheidung dokumentiert | Keine lokale Env nötig |
+| 7 — Sicherheitsgrenzen | ✅ Alle Grenzen dokumentiert und code-enforced | Keine lokale Env nötig |
+
+**Repo-backed readiness ist vollständig.** Lokaler Echt-Durchstich (Gates 1–4)
+ist Betrieb auf Janneks Maschine mit laufendem Docker Desktop. Dieses Issue
+(`#2399`) gilt als geschlossen, sobald der lokale Operator den vollständigen
+Durchstich bestätigt hat oder explizit auf einen späteren Zeitpunkt verschoben hat.
+
+---
+
 ## Sicherheitsgrenzen
 
 | Grenze | Regel |
@@ -467,4 +650,4 @@ eine spätere Implementierung gewünscht wird.
 
 ---
 
-*Issue: #2397 #2398 | Epic: #2391 | Ledger: #1976 | LR: NO-GO*
+*Issue: #2397 #2398 #2399 | Epic: #2391 | Ledger: #1976 | LR: NO-GO*
