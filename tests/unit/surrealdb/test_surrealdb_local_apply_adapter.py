@@ -14,12 +14,10 @@ import urllib.error
 import pytest
 
 from tools.surrealdb.context_importer import (
-    ADAPTER_KIND_IN_MEMORY,
     ADAPTER_KIND_SURREALDB_LOCAL,
     ALLOWED_CONTEXT_IMPORT_TABLES,
     ApplyAdapterError,
     ApplyGateError,
-    InMemoryContextApplyAdapter,
     REAL_SURREALDB_ADAPTER_AVAILABLE,
     SurrealDBLocalContextApplyAdapter,
     TOMBSTONE_FIELD_AT,
