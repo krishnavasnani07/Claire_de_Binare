@@ -156,10 +156,10 @@ def test_apply_mode_constant_is_local_dev() -> None:
 
 
 @pytest.mark.unit
-def test_real_surrealdb_adapter_is_not_available() -> None:
-    """#2073: Real SurrealDB adapter is OUT-OF-SCOPE in this slice."""
+def test_real_surrealdb_adapter_is_available() -> None:
+    """#2458: Real SurrealDB local adapter is available behind opt-in gate."""
 
-    assert REAL_SURREALDB_ADAPTER_AVAILABLE is False
+    assert REAL_SURREALDB_ADAPTER_AVAILABLE is True
 
 
 @pytest.mark.unit
@@ -616,7 +616,7 @@ def test_apply_payload_includes_real_adapter_disclaimer(tmp_path: Path) -> None:
         clock=FixedClock(datetime(2026, 1, 1)),
     )
     payload = report.to_payload()
-    assert payload["real_surrealdb_adapter_available"] is False
+    assert payload["real_surrealdb_adapter_available"] is True
     assert payload["adapter"] == ADAPTER_KIND_IN_MEMORY
     assert payload["surrealdb_connection"] == "in-memory-no-network"
     assert payload["schema_version"] == SCHEMA_VERSION

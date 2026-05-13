@@ -340,7 +340,7 @@ context-import-dry-run:
 context-import-local:
 	@echo "=== Context Local Import: Schreiben in lokale SurrealDB ==="
 	@python3 tools/surrealdb/local_schema_check.py --secrets-path $${SECRETS_PATH:-$$HOME/Documents/.secrets/.cdb}
-	@python3 -m tools.surrealdb.context_importer apply --input-dir $(CONTEXT_SNAP_DIR) --surreal-url http://127.0.0.1:8010 --namespace cdb_context_local --database cdb_context_intel --apply --apply-mode local-dev --config infrastructure/config/surrealdb/context_import.local.example.yaml --run-id $$(date +%Y%m%d%H%M%S)
+	@python3 -m tools.surrealdb.context_importer apply --input-dir $(CONTEXT_SNAP_DIR) --surreal-url http://127.0.0.1:8010 --namespace cdb_context_local --database cdb_context_intel --apply --apply-mode local-dev --config infrastructure/config/surrealdb/context_import.local.example.yaml --run-id $$(date +%Y%m%d%H%M%S) --adapter surrealdb-local
 
 context-query-smoke:
 	@echo "=== Context Query Smoke (read-only, graceful fail wenn kein Container) ==="

@@ -52,6 +52,7 @@ Exit codes (aligned with the context-indexer contract):
 from __future__ import annotations
 
 import argparse
+import base64
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -59,9 +60,12 @@ import copy
 import hashlib
 import json
 import logging
+import os
 from pathlib import Path
 import re
 from typing import Any, Protocol
+import urllib.error
+import urllib.request
 from urllib.parse import urlparse
 
 import yaml
@@ -305,11 +309,13 @@ TOMBSTONE_REQUIRED_FIELDS = frozenset(
 )
 TOMBSTONE_REASON_REMOVED_FROM_SNAPSHOT = "record_removed_from_snapshot"
 
-# A real SurrealDB adapter is intentionally not implemented in this
-# slice. The CLI never selects anything other than the in-memory
-# adapter; this constant is exported for documentation / regression.
-REAL_SURREALDB_ADAPTER_AVAILABLE = False
+# A real local SurrealDB adapter is implemented behind an explicit
+# opt-in gate (--adapter surrealdb-local / CDB_CONTEXT_APPLY_ADAPTER).
+# The CLI defaults to the in-memory adapter. This constant is exported
+# for documentation and regression.
+REAL_SURREALDB_ADAPTER_AVAILABLE = True
 ADAPTER_KIND_IN_MEMORY = "in-memory"
+ADAPTER_KIND_SURREALDB_LOCAL = "surrealdb-local"
 
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 WINDOWS_DRIVE_PREFIX_RE = re.compile(r"^[A-Za-z]:")
@@ -923,8 +929,16 @@ class ContextApplyReport:
             "dry_run": False,
             "apply_requested": True,
             "apply_executed": self.apply_executed,
-            "surrealdb_connection": "in-memory-no-network",
-            "surrealdb_writes": "in-memory-only",
+            "surrealdb_connection": (
+                "local-http-api"
+                if self.adapter == ADAPTER_KIND_SURREALDB_LOCAL
+                else "in-memory-no-network"
+            ),
+            "surrealdb_writes": (
+                "local-db-writes"
+                if self.adapter == ADAPTER_KIND_SURREALDB_LOCAL
+                else "in-memory-only"
+            ),
             "real_surrealdb_adapter_available": REAL_SURREALDB_ADAPTER_AVAILABLE,
             "implemented": True,
             "status": self.status,
@@ -1074,6 +1088,200 @@ def _isoformat_utc(dt: datetime) -> str:
     # Drop tzinfo in formatting and append explicit Z to keep the contract
     # stable across Python versions.
     return aware.replace(tzinfo=None).isoformat() + "Z"
+
+
+class SurrealDBLocalContextApplyAdapter:
+    """Real local SurrealDB apply adapter — writes via HTTP REST API.
+
+    Connects only to localhost/127.0.0.1/::1. Rejects remote targets
+    fail-closed. Credentials are never logged.
+
+    Issue: #2458
+    """
+
+    kind: str = ADAPTER_KIND_SURREALDB_LOCAL
+
+    def __init__(
+        self,
+        surreal_url: str,
+        namespace: str,
+        database: str,
+        user: str | None,
+        password: str | None,
+        timeout: int = 10,
+    ) -> None:
+        _validate_local_dev_url(surreal_url)  # defense-in-depth
+        self._url = surreal_url.rstrip("/")
+        self._namespace = namespace
+        self._database = database
+        self._user = user
+        self._password = password
+        self._timeout = timeout
+
+    def _sql_request(self, sql: str) -> None:
+        """POST SQL to /sql endpoint. Raises ApplyAdapterError on failure."""
+        headers: dict[str, str] = {
+            "Accept": "application/json",
+            "Content-Type": "text/plain",
+            "surreal-ns": self._namespace,
+            "surreal-db": self._database,
+        }
+        if self._user is not None and self._password is not None:
+            token = base64.b64encode(
+                f"{self._user}:{self._password}".encode()
+            ).decode()
+            headers["Authorization"] = f"Basic {token}"
+
+        data = sql.encode("utf-8")
+        req = urllib.request.Request(
+            f"{self._url}/sql", data=data, headers=headers, method="POST"
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=self._timeout) as resp:
+                status = resp.status
+                body = resp.read()
+        except urllib.error.HTTPError as exc:
+            status = exc.code
+            body = exc.read()
+        except urllib.error.URLError as exc:
+            raise ApplyAdapterError(
+                f"surrealdb-local connection failed: {exc.reason}"
+            ) from exc
+        except OSError as exc:
+            raise ApplyAdapterError(
+                f"surrealdb-local connection error: {type(exc).__name__}"
+            ) from exc
+
+        if status not in (200, 204):
+            raise ApplyAdapterError(
+                f"surrealdb-local HTTP {status} — check container is running"
+            )
+
+        try:
+            raw = body.decode("utf-8", errors="replace")
+        except Exception as exc:
+            raise ApplyAdapterError(
+                f"surrealdb-local response not decodable: {type(exc).__name__}"
+            ) from exc
+
+        if not raw.strip():
+            raise ApplyAdapterError(
+                "surrealdb-local returned empty response body"
+            )
+
+        try:
+            results = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            truncated = raw[:200]
+            raise ApplyAdapterError(
+                f"surrealdb-local response not valid JSON: {truncated!r}"
+            ) from exc
+
+        if not isinstance(results, list):
+            raise ApplyAdapterError(
+                f"surrealdb-local response not a JSON array: {type(results).__name__}"
+            )
+
+        for item in results:
+            if not isinstance(item, dict):
+                continue
+            item_status = item.get("status", "").upper()
+            if item_status != "OK":
+                detail = str(item.get("result", "") or item.get("detail", ""))[:200]
+                raise ApplyAdapterError(
+                    f"surrealdb-local statement error ({item_status}): {detail}"
+                )
+
+    @staticmethod
+    def _surql_record_id(table: str, record_id: str) -> str:
+        """Escape record_id using SurrealDB \u27e8\u27e9 notation for arbitrary string IDs."""
+        # U+27E8 = \u27e8, U+27E9 = \u27e9; escape closing bracket if present in the ID.
+        escaped = record_id.replace("\u27e9", "\\u27e9")
+        return f"{table}:\u27e8{escaped}\u27e9"
+
+    def apply_create(
+        self, table: str, record_id: str, payload: dict[str, Any]
+    ) -> None:
+        rid = self._surql_record_id(table, record_id)
+        payload_json = json.dumps(payload, ensure_ascii=True, sort_keys=True)
+        sql = f"UPSERT {rid} CONTENT {payload_json};"
+        self._sql_request(sql)
+
+    def apply_update(
+        self, table: str, record_id: str, payload: dict[str, Any]
+    ) -> None:
+        rid = self._surql_record_id(table, record_id)
+        payload_json = json.dumps(payload, ensure_ascii=True, sort_keys=True)
+        sql = f"UPSERT {rid} CONTENT {payload_json};"
+        self._sql_request(sql)
+
+    def apply_tombstone(
+        self, table: str, record_id: str, payload: dict[str, Any]
+    ) -> None:
+        missing = TOMBSTONE_REQUIRED_FIELDS - set(payload.keys())
+        if missing:
+            raise ApplyAdapterError(
+                f"tombstone payload missing required fields: {sorted(missing)}"
+            )
+        if payload.get(TOMBSTONE_FIELD_FLAG) is not True:
+            raise ApplyAdapterError(
+                f"tombstone payload must set {TOMBSTONE_FIELD_FLAG!r} to True"
+            )
+        rid = self._surql_record_id(table, record_id)
+        payload_json = json.dumps(payload, ensure_ascii=True, sort_keys=True)
+        sql = f"UPSERT {rid} CONTENT {payload_json};"
+        self._sql_request(sql)
+
+
+def _load_surrealdb_credentials(
+    config: "ContextImportConfig",
+    secrets_path: Path | None,
+) -> tuple[str | None, str | None]:
+    """Load SurrealDB credentials for the local apply adapter.
+
+    Returns (user, password) or (None, None) for auth_mode 'none'.
+    Credentials are never logged.
+    """
+    auth_mode = config.auth_mode
+    if auth_mode == "none":
+        return None, None
+
+    if auth_mode == "root":
+        if secrets_path is not None:
+            env_file = secrets_path / "SURREALDB_ENV"
+        else:
+            env_root = os.environ.get(
+                "SECRETS_PATH",
+                str(Path.home() / "Documents" / ".secrets" / ".cdb"),
+            )
+            env_file = Path(env_root) / "SURREALDB_ENV"
+
+        if not env_file.exists():
+            raise ApplyGateError(
+                f"SURREALDB_ENV not found at {env_file}; "
+                "required for auth_mode: root — "
+                "create from infrastructure/config/surrealdb/SURREALDB_ENV.example"
+            )
+
+        user: str | None = None
+        password: str | None = None
+        with env_file.open() as fh:
+            for line in fh:
+                stripped = line.strip()
+                if stripped.startswith("SURREAL_USER="):
+                    user = stripped[len("SURREAL_USER="):]
+                elif stripped.startswith("SURREAL_PASS="):
+                    password = stripped[len("SURREAL_PASS="):]
+
+        if not user:
+            raise ApplyGateError("SURREALDB_ENV missing field SURREAL_USER")
+        if not password:
+            raise ApplyGateError("SURREALDB_ENV missing field SURREAL_PASS")
+        return user, password
+
+    raise ApplyGateError(
+        f"unsupported auth_mode: {auth_mode!r}; supported: none, root"
+    )
 
 
 def _git_commit_value(value: str | None) -> str:
@@ -1607,7 +1815,7 @@ def execute_context_apply(
         apply_executed=True,
         status=status,
         note=(
-            "local-dev apply executed against in-memory adapter; "
+            f"local-dev apply executed against {used_adapter.kind} adapter; "
             "no production SurrealDB activation, no default write"
         ),
     )
@@ -3313,6 +3521,27 @@ def build_parser() -> argparse.ArgumentParser:
             ),
         )
         sub.add_argument(
+            "--adapter",
+            choices=["in-memory", "surrealdb-local"],
+            default="in-memory",
+            help=(
+                "Apply adapter (default: in-memory, no network). "
+                "Use 'surrealdb-local' to opt in to real local SurrealDB "
+                "writes via HTTP API. Requires --apply and a running "
+                "local SurrealDB container at 127.0.0.1:8010. (#2458)"
+            ),
+        )
+        sub.add_argument(
+            "--secrets-path",
+            type=Path,
+            default=None,
+            help=(
+                "Directory containing SURREALDB_ENV credentials file. "
+                "Defaults to $SECRETS_PATH or ~/Documents/.secrets/.cdb. "
+                "Only used when config auth_mode is 'root'."
+            ),
+        )
+        sub.add_argument(
             "--format",
             choices=sorted(SUPPORTED_FORMATS),
             default="json",
@@ -3389,11 +3618,33 @@ def _handle(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
         )
         reconcile_report = reconcile_import_plan(plan, existing_records)
 
+        # Adapter selection: CLI flag wins over env var; in-memory is default.
+        _adapter_kind = (
+            getattr(args, "adapter", None)
+            or os.environ.get("CDB_CONTEXT_APPLY_ADAPTER", "")
+            or ADAPTER_KIND_IN_MEMORY
+        )
+        if _adapter_kind == ADAPTER_KIND_SURREALDB_LOCAL:
+            _user, _password = _load_surrealdb_credentials(
+                config, getattr(args, "secrets_path", None)
+            )
+            _selected_adapter: ContextApplyAdapter = SurrealDBLocalContextApplyAdapter(
+                surreal_url=config.surreal_url,
+                namespace=config.namespace,
+                database=config.database,
+                user=_user,
+                password=_password,
+                timeout=config.timeout,
+            )
+        else:
+            _selected_adapter = InMemoryContextApplyAdapter()
+
         apply_report = execute_context_apply(
             reconcile_report=reconcile_report,
             config=config,
             run_id=args.run_id,
             apply_mode=apply_mode,
+            adapter=_selected_adapter,
             # NOTE: Do not forward the audit clock here. ``audit_clock`` is the
             # injectable ``--audit-generated-at`` flag and must only influence
             # the audit report's ``generated_at`` field. Forwarding it into
