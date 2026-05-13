@@ -263,12 +263,41 @@ class NoopQueryAdapter(QueryAdapter):
         return []
 
 
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Redirect handler that unconditionally blocks all HTTP redirects.
+
+    ``urllib.request.urlopen`` follows 3xx redirects by default, including
+    converting POST→GET for 301/302/303 and preserving headers (including
+    ``Authorization``) for 307/308.  If a local service on localhost returns a
+    redirect to a remote ``Location:`` URL, the Basic-auth credential would be
+    forwarded to that remote host — a credential-leak vector.
+
+    This handler raises ``QueryAdapterError`` before any redirect is followed,
+    ensuring the Authorization header is never sent to a non-local host.
+    """
+
+    def redirect_request(
+        self,
+        req: urllib.request.Request,
+        fp: Any,
+        code: int,
+        msg: str,
+        headers: Any,
+        newurl: str,
+    ) -> None:
+        raise QueryAdapterError(
+            f"redirect denied for local SurrealDB query request (HTTP {code})"
+        )
+
+
 class SurrealDBLocalQueryAdapter(QueryAdapter):
     """Real HTTP REST query adapter for a local SurrealDB instance. Issue #2459.
 
     - Connects ONLY to localhost (127.0.0.1, ::1, localhost) via http/https.
     - All queries classified as read-only before any HTTP call.
     - Writes/admin statements fail before HTTP (WriteDeniedError).
+    - HTTP redirects are blocked: Authorization header is never forwarded to
+      a redirect Location (credential-leak prevention).
     - Unreachable DB: soft mode → empty results + status unavailable;
                       hard mode → QueryAdapterError (non-zero exit).
     - No new dependencies: stdlib urllib.request, base64, json.
@@ -322,9 +351,12 @@ class SurrealDBLocalQueryAdapter(QueryAdapter):
         req = urllib.request.Request(
             endpoint, data=data, headers=headers, method="POST"
         )
+        _opener = urllib.request.build_opener(_NoRedirectHandler())
         try:
-            with urllib.request.urlopen(req, timeout=self._timeout) as resp:
+            with _opener.open(req, timeout=self._timeout) as resp:
                 body = resp.read()
+        except QueryAdapterError:
+            raise
         except urllib.error.HTTPError as exc:
             raise QueryAdapterError(
                 f"SurrealDB HTTP error: {exc.code} {exc.reason}"
