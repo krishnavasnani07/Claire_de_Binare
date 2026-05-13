@@ -30,6 +30,7 @@ Exit codes:
 from __future__ import annotations
 
 import argparse
+import base64
 from collections.abc import Mapping
 from dataclasses import dataclass
 import json
@@ -37,6 +38,9 @@ import logging
 from pathlib import Path
 import re
 from typing import Any
+import urllib.error
+import urllib.parse
+import urllib.request
 
 import yaml
 
@@ -103,6 +107,22 @@ DENIED_KEYWORDS = frozenset(
 )
 ALLOWED_PREFIXES = ("SELECT", "INFO FOR DB", "INFO FOR TABLE", "INFO FOR NS")
 
+LOCAL_QUERY_ALLOWED_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
+ALLOWED_QUERY_SCHEMES = frozenset({"http", "https"})
+ALLOWED_AUTH_MODES = frozenset({"none", "root"})
+REAL_SURREALDB_QUERY_ADAPTER_AVAILABLE = True
+
+# Tombstone-filter compatibility note (#2459 / PR #2465):
+# context_intelligence_v0.surql does not declare a ``tombstoned`` field.
+# Under SCHEMAFULL, WHERE predicates on undeclared fields are silently ignored,
+# so ``WHERE tombstoned = false`` would return 0 rows instead of the expected
+# records.  The ``include_tombstoned`` parameter is API-preserved for
+# forward-compatibility.  A real tombstone filter belongs in a later schema
+# slice, not this PR.
+TOMBSTONE_FILTER_SCHEMA_SUPPORTED = False
+_TOMBSTONE_FILTER_REASON_NO_SCHEMA = "schema-field-not-defined"
+_TOMBSTONE_FILTER_REASON_INCLUDE_REQUESTED = "include-tombstoned-requested"
+
 
 class ContextQueryError(Exception):
     """Base error for context_query."""
@@ -141,6 +161,13 @@ class WriteDeniedError(ContextQueryError):
 
     code = "WRITE_DENIED"
     exit_code = EXIT_WRITE_DENIED
+
+
+class QueryAdapterError(ContextQueryError):
+    """Raised when the real query adapter encounters a network or protocol error."""
+
+    code = "QUERY_ADAPTER_ERROR"
+    exit_code = EXIT_INTERNAL
 
 
 @dataclass(frozen=True)
@@ -234,6 +261,160 @@ class NoopQueryAdapter(QueryAdapter):
     def execute(self, query: str) -> list[dict[str, Any]]:
         """Return empty results; this adapter never contacts a database."""
         return []
+
+
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Redirect handler that unconditionally blocks all HTTP redirects.
+
+    ``urllib.request.urlopen`` follows 3xx redirects by default, including
+    converting POST→GET for 301/302/303 and preserving headers (including
+    ``Authorization``) for 307/308.  If a local service on localhost returns a
+    redirect to a remote ``Location:`` URL, the Basic-auth credential would be
+    forwarded to that remote host — a credential-leak vector.
+
+    This handler raises ``QueryAdapterError`` before any redirect is followed,
+    ensuring the Authorization header is never sent to a non-local host.
+    """
+
+    def redirect_request(
+        self,
+        req: urllib.request.Request,
+        fp: Any,
+        code: int,
+        msg: str,
+        headers: Any,
+        newurl: str,
+    ) -> None:
+        raise QueryAdapterError(
+            f"redirect denied for local SurrealDB query request (HTTP {code})"
+        )
+
+
+class SurrealDBLocalQueryAdapter(QueryAdapter):
+    """Real HTTP REST query adapter for a local SurrealDB instance. Issue #2459.
+
+    - Connects ONLY to localhost (127.0.0.1, ::1, localhost) via http/https.
+    - All queries classified as read-only before any HTTP call.
+    - Writes/admin statements fail before HTTP (WriteDeniedError).
+    - HTTP redirects are blocked: Authorization header is never forwarded to
+      a redirect Location (credential-leak prevention).
+    - Unreachable DB: soft mode → empty results + status unavailable;
+                      hard mode → QueryAdapterError (non-zero exit).
+    - No new dependencies: stdlib urllib.request, base64, json.
+    """
+
+    _STATUS_CONNECTED = "surrealdb-local"
+    _STATUS_UNAVAILABLE = "surrealdb-local-unavailable"
+
+    def __init__(
+        self,
+        surreal_url: str,
+        namespace: str,
+        database: str,
+        user: str | None,
+        password: str | None,
+        timeout: int = 10,
+        hard_mode: bool = False,
+        config: ContextQueryConfig | None = None,
+    ) -> None:
+        super().__init__(config=config)
+        _validate_local_query_url(surreal_url)  # defense-in-depth
+        self._url = surreal_url.rstrip("/")
+        self._namespace = namespace
+        self._database = database
+        self._user = user
+        self._password = password
+        self._timeout = timeout
+        self._hard_mode = hard_mode
+        self.status = self._STATUS_CONNECTED
+
+    def _make_auth_header(self) -> str | None:
+        if self._user and self._password:
+            token = base64.b64encode(
+                f"{self._user}:{self._password}".encode()
+            ).decode()
+            return f"Basic {token}"
+        return None
+
+    def _sql_request(self, sql: str) -> list[dict[str, Any]]:
+        endpoint = f"{self._url}/sql"
+        data = sql.encode("utf-8")
+        headers: dict[str, str] = {
+            "Accept": "application/json",
+            "Content-Type": "text/plain",
+            "surreal-ns": self._namespace,
+            "surreal-db": self._database,
+        }
+        auth_header = self._make_auth_header()
+        if auth_header is not None:
+            headers["Authorization"] = auth_header
+        req = urllib.request.Request(
+            endpoint, data=data, headers=headers, method="POST"
+        )
+        _opener = urllib.request.build_opener(_NoRedirectHandler())
+        try:
+            with _opener.open(req, timeout=self._timeout) as resp:
+                body = resp.read()
+        except QueryAdapterError:
+            raise
+        except urllib.error.HTTPError as exc:
+            raise QueryAdapterError(
+                f"SurrealDB HTTP error: {exc.code} {exc.reason}"
+            ) from exc
+        except urllib.error.URLError as exc:
+            self.status = self._STATUS_UNAVAILABLE
+            if self._hard_mode:
+                raise QueryAdapterError(
+                    f"SurrealDB unreachable: {exc.reason}"
+                ) from exc
+            logger.warning("SurrealDB unreachable (soft mode): %s", exc.reason)
+            return []
+        try:
+            response_list = json.loads(body)
+        except json.JSONDecodeError as exc:
+            raise QueryAdapterError(
+                f"SurrealDB response is not valid JSON: {exc}"
+            ) from exc
+        if not isinstance(response_list, list):
+            raise QueryAdapterError("SurrealDB response must be a JSON array")
+        results: list[dict[str, Any]] = []
+        for item in response_list:
+            if not isinstance(item, dict):
+                raise QueryAdapterError("SurrealDB response item must be a mapping")
+            if item.get("status") != "OK":
+                raise QueryAdapterError(
+                    f"SurrealDB query failed: status={item.get('status')!r}, "
+                    f"result={str(item.get('result'))[:200]!r}"
+                )
+            result = item.get("result")
+            if isinstance(result, list):
+                results.extend(result)
+        return results
+
+    def execute(self, query: str) -> list[dict[str, Any]]:
+        classification = self.classify(query)
+        if not classification.allowed:
+            raise WriteDeniedError(
+                f"query not allowed by classifier: {classification.reason}"
+            )
+        return self._sql_request(query)
+
+
+def _validate_local_query_url(url: str) -> None:
+    """Reject non-local or non-HTTP(S) SurrealDB URLs for the query adapter."""
+    parsed = urllib.parse.urlparse(url)
+    scheme = (parsed.scheme or "").lower()
+    host = (parsed.hostname or "").lower()
+    if scheme not in ALLOWED_QUERY_SCHEMES:
+        raise ConfigValidationError(
+            f"surreal_url must use http or https scheme; got scheme={scheme!r}. "
+            "WebSocket URLs (ws://, wss://) are not supported for the query adapter."
+        )
+    if host not in LOCAL_QUERY_ALLOWED_HOSTS:
+        raise ConfigValidationError(
+            f"surreal_url must point to a local host; got host={host!r}, "
+            f"allowed={sorted(LOCAL_QUERY_ALLOWED_HOSTS)}"
+        )
 
 
 def _require_mapping(value: Any, *, path: Path | None = None) -> Mapping[str, Any]:
@@ -374,13 +555,21 @@ def load_config(path: Path) -> ContextQueryConfig:
     if max_limit_default > max_limit_hard:
         raise ConfigValidationError("max_limit_default must be <= max_limit_hard")
 
+    surreal_url = _require_str(data, "surreal_url")
+    _validate_local_query_url(surreal_url)
+    auth_mode = _require_str(data, "auth_mode")
+    if auth_mode not in ALLOWED_AUTH_MODES:
+        raise ConfigValidationError(
+            f"auth_mode must be one of {sorted(ALLOWED_AUTH_MODES)}; got {auth_mode!r}"
+        )
+
     return ContextQueryConfig(
         path=path,
         schema_version=schema_version,
-        surreal_url=_require_str(data, "surreal_url"),
+        surreal_url=surreal_url,
         namespace=_require_str(data, "namespace"),
         database=_require_str(data, "database"),
-        auth_mode=_require_str(data, "auth_mode"),
+        auth_mode=auth_mode,
         timeout=_require_int(data, "timeout"),
         read_only=read_only,
         mode_read_only=mode_read_only,
@@ -391,6 +580,77 @@ def load_config(path: Path) -> ContextQueryConfig:
         max_limit_default=max_limit_default,
         max_limit_hard=max_limit_hard,
     )
+
+
+def _load_query_credentials(
+    config: ContextQueryConfig, secrets_path: Path | None
+) -> tuple[str | None, str | None]:
+    """Load SurrealDB credentials based on auth_mode from config.
+
+    Returns (user, password); both None for auth_mode 'none'.
+    Reads SURREALDB_ENV file for auth_mode 'root'.
+    """
+    if config.auth_mode == "none":
+        return None, None
+    if config.auth_mode == "root":
+        if secrets_path is None:
+            raise ConfigValidationError(
+                "auth_mode 'root' requires --secrets-path pointing to the directory "
+                "containing SURREALDB_ENV"
+            )
+        env_file = secrets_path / "SURREALDB_ENV"
+        if not env_file.is_file():
+            raise InputNotFoundError(f"SURREALDB_ENV not found at: {env_file}")
+        user: str | None = None
+        password: str | None = None
+        for line in env_file.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line.startswith("SURREAL_USER="):
+                user = line[len("SURREAL_USER=") :].strip()
+            elif line.startswith("SURREAL_PASS="):
+                password = line[len("SURREAL_PASS=") :].strip()
+        if not user or not password:
+            raise ConfigValidationError(
+                "SURREALDB_ENV must contain non-empty SURREAL_USER and SURREAL_PASS lines"
+            )
+        return user, password
+    raise ConfigValidationError(f"unsupported auth_mode: {config.auth_mode!r}")
+
+
+def _surrealql_string(value: str) -> str:
+    """Return value as a safe SurrealQL string literal (double-quoted JSON format).
+
+    Uses json.dumps() to produce a properly-escaped double-quoted string.
+    Handles backslashes, apostrophes, control characters, and all special chars.
+    SurrealDB accepts both single-quoted and double-quoted string literals.
+    """
+    return json.dumps(value)
+
+
+def _tombstone_meta(include_tombstoned: bool) -> dict[str, Any]:
+    """Return tombstone-filter transparency metadata for query handler payloads.
+
+    The tombstone filter is currently schema-disabled:
+    ``context_intelligence_v0.surql`` does not declare a ``tombstoned`` field.
+    Under SCHEMAFULL, a ``WHERE tombstoned = false`` predicate silently returns
+    0 rows because the field does not exist.  The parameter is kept for API
+    forward-compatibility; a real filter belongs in a later schema slice.
+
+    Returns a dict with ``tombstone_filter_applied`` always ``False``, plus a
+    ``tombstone_filter_reason`` key.  When ``include_tombstoned=True``, also
+    sets ``include_tombstoned: True`` so callers can see the requested intent.
+    See :data:`TOMBSTONE_FILTER_SCHEMA_SUPPORTED`.
+    """
+    if include_tombstoned:
+        return {
+            "tombstone_filter_applied": False,
+            "include_tombstoned": True,
+            "tombstone_filter_reason": _TOMBSTONE_FILTER_REASON_INCLUDE_REQUESTED,
+        }
+    return {
+        "tombstone_filter_applied": False,
+        "tombstone_filter_reason": _TOMBSTONE_FILTER_REASON_NO_SCHEMA,
+    }
 
 
 def _normalize_statement(statement: str) -> str:
@@ -492,16 +752,21 @@ def build_artifact_query(
 
     All parameters are optional filters.  The query is built as a
     ``SELECT * FROM repo_artifact WHERE ... LIMIT ...`` statement.
+
+    SCHEMA_COMPAT_NOTE: ``include_tombstoned`` does **not** add a
+    ``WHERE tombstoned`` predicate.  The field is not declared in
+    ``context_intelligence_v0.surql``; under SCHEMAFULL such a predicate
+    silently returns 0 rows.  Filter semantics are reported transparently in
+    the handler payload via ``tombstone_filter_applied`` and
+    ``tombstone_filter_reason``.  See :data:`TOMBSTONE_FILTER_SCHEMA_SUPPORTED`.
     """
     conditions: list[str] = []
     if source_path:
-        conditions.append(f"source_path CONTAINS '{source_path}'")
+        conditions.append(f"source_path CONTAINS {_surrealql_string(source_path)}")
     if file_type:
-        conditions.append(f"file_type = '{file_type}'")
+        conditions.append(f"file_type = {_surrealql_string(file_type)}")
     if hash_value:
-        conditions.append(f"normalized_sha256 = '{hash_value}'")
-    if not include_tombstoned:
-        conditions.append("tombstoned = false")
+        conditions.append(f"normalized_sha256 = {_surrealql_string(hash_value)}")
     where = " WHERE " + " AND ".join(conditions) if conditions else ""
     limit_str = f" LIMIT {limit}" if limit else ""
     return f"SELECT * FROM repo_artifact{where}{limit_str}"
@@ -521,14 +786,12 @@ def build_doc_query(
     """
     conditions: list[str] = []
     if query_text:
-        conditions.append(f"content CONTAINS '{query_text}'")
+        conditions.append(f"content CONTAINS {_surrealql_string(query_text)}")
     if source_path:
-        conditions.append(f"source_path CONTAINS '{source_path}'")
+        conditions.append(f"source_path CONTAINS {_surrealql_string(source_path)}")
     if heading:
         # heading_path is an array; check if it contains the heading
-        conditions.append(f"heading_path CONTAINS '{heading}'")
-    if not include_tombstoned:
-        conditions.append("tombstoned = false")
+        conditions.append(f"heading_path CONTAINS {_surrealql_string(heading)}")
     where = " WHERE " + " AND ".join(conditions) if conditions else ""
     limit_str = f" LIMIT {limit}" if limit else ""
     return f"SELECT * FROM doc_chunk{where}{limit_str}"
@@ -550,17 +813,15 @@ def build_symbol_query(
     """
     conditions: list[str] = []
     if name:
-        conditions.append(f"name CONTAINS '{name}'")
+        conditions.append(f"name CONTAINS {_surrealql_string(name)}")
     if qualified_name:
-        conditions.append(f"qualified_name CONTAINS '{qualified_name}'")
+        conditions.append(f"qualified_name CONTAINS {_surrealql_string(qualified_name)}")
     if source_path:
-        conditions.append(f"source_path CONTAINS '{source_path}'")
+        conditions.append(f"source_path CONTAINS {_surrealql_string(source_path)}")
     if symbol_type:
-        conditions.append(f"symbol_type = '{symbol_type}'")
+        conditions.append(f"symbol_type = {_surrealql_string(symbol_type)}")
     if symbol_id:
-        conditions.append(f"symbol_id = '{symbol_id}'")
-    if not include_tombstoned:
-        conditions.append("tombstoned = false")
+        conditions.append(f"symbol_id = {_surrealql_string(symbol_id)}")
     where = " WHERE " + " AND ".join(conditions) if conditions else ""
     limit_str = f" LIMIT {limit}" if limit else ""
     return f"SELECT * FROM code_symbol{where}{limit_str}"
@@ -581,15 +842,13 @@ def build_import_query(
     """
     conditions: list[str] = []
     if module:
-        conditions.append(f"module CONTAINS '{module}'")
+        conditions.append(f"module CONTAINS {_surrealql_string(module)}")
     if source_path:
-        conditions.append(f"source_path CONTAINS '{source_path}'")
+        conditions.append(f"source_path CONTAINS {_surrealql_string(source_path)}")
     if source_hash:
-        conditions.append(f"source_hash = '{source_hash}'")
+        conditions.append(f"source_hash = {_surrealql_string(source_hash)}")
     if import_id:
-        conditions.append(f"import_id = '{import_id}'")
-    if not include_tombstoned:
-        conditions.append("tombstoned = false")
+        conditions.append(f"import_id = {_surrealql_string(import_id)}")
     where = " WHERE " + " AND ".join(conditions) if conditions else ""
     limit_str = f" LIMIT {limit}" if limit else ""
     return f"SELECT * FROM import_reference{where}{limit_str}"
@@ -623,21 +882,19 @@ def build_trace_query(
     """
     conditions: list[str] = []
     if target_ref:
-        conditions.append(f"source_ref CONTAINS '{target_ref}'")
+        conditions.append(f"source_ref CONTAINS {_surrealql_string(target_ref)}")
     if source_path:
-        conditions.append(f"source_path CONTAINS '{source_path}'")
+        conditions.append(f"source_path CONTAINS {_surrealql_string(source_path)}")
     if symbol_name:
-        conditions.append(f"symbol_name CONTAINS '{symbol_name}'")
+        conditions.append(f"symbol_name CONTAINS {_surrealql_string(symbol_name)}")
     if direction == "upstream":
         conditions.append("edge_type = 'depends_on'")
     elif direction == "downstream":
         conditions.append("edge_type = 'used_by'")
     elif edge_type:
-        conditions.append(f"edge_type = '{edge_type}'")
+        conditions.append(f"edge_type = {_surrealql_string(edge_type)}")
     if confidence:
-        conditions.append(f"confidence = '{confidence}'")
-    if not include_tombstoned:
-        conditions.append("tombstoned = false")
+        conditions.append(f"confidence = {_surrealql_string(confidence)}")
 
     where = " WHERE " + " AND ".join(conditions) if conditions else ""
     limit_str = f" LIMIT {limit}" if limit else ""
@@ -664,17 +921,17 @@ def build_explain_source_query(
     """
     id_conditions: list[str] = []
     if artifact_id:
-        id_conditions.append(f"artifact_id = '{artifact_id}'")
+        id_conditions.append(f"artifact_id = {_surrealql_string(artifact_id)}")
     if chunk_id:
-        id_conditions.append(f"chunk_id = '{chunk_id}'")
+        id_conditions.append(f"chunk_id = {_surrealql_string(chunk_id)}")
     if symbol_id:
-        id_conditions.append(f"symbol_id = '{symbol_id}'")
+        id_conditions.append(f"symbol_id = {_surrealql_string(symbol_id)}")
     if edge_id:
-        id_conditions.append(f"edge_id = '{edge_id}'")
+        id_conditions.append(f"edge_id = {_surrealql_string(edge_id)}")
     if evidence_id:
-        id_conditions.append(f"evidence_id = '{evidence_id}'")
+        id_conditions.append(f"evidence_id = {_surrealql_string(evidence_id)}")
     if decision_id:
-        id_conditions.append(f"decision_id = '{decision_id}'")
+        id_conditions.append(f"decision_id = {_surrealql_string(decision_id)}")
 
     if (
         len(
@@ -703,9 +960,7 @@ def build_explain_source_query(
         id_clause = " OR ".join(id_conditions)
         conditions.append(f"({id_clause})")
     if source_path:
-        conditions.append(f"source_path CONTAINS '{source_path}'")
-    if not include_tombstoned:
-        conditions.append("tombstoned = false")
+        conditions.append(f"source_path CONTAINS {_surrealql_string(source_path)}")
 
     where = " WHERE " + " AND ".join(conditions) if conditions else ""
     limit_str = f" LIMIT {limit}" if limit else ""
@@ -727,13 +982,11 @@ def build_snapshot_query(
     """
     conditions: list[str] = []
     if snapshot_id:
-        conditions.append(f"snapshot_id = '{snapshot_id}'")
+        conditions.append(f"snapshot_id = {_surrealql_string(snapshot_id)}")
     if run_id:
-        conditions.append(f"run_id = '{run_id}'")
+        conditions.append(f"run_id = {_surrealql_string(run_id)}")
     if source_path:
-        conditions.append(f"source_path CONTAINS '{source_path}'")
-    if not include_tombstoned:
-        conditions.append("tombstoned = false")
+        conditions.append(f"source_path CONTAINS {_surrealql_string(source_path)}")
 
     where = " WHERE " + " AND ".join(conditions) if conditions else ""
     limit_str = f" LIMIT {limit}" if limit else ""
@@ -756,15 +1009,13 @@ def build_drift_query(
     """
     conditions: list[str] = []
     if artifact_id:
-        conditions.append(f"source_ref CONTAINS '{artifact_id}'")
+        conditions.append(f"source_ref CONTAINS {_surrealql_string(artifact_id)}")
     if source_path:
-        conditions.append(f"source_path CONTAINS '{source_path}'")
+        conditions.append(f"source_path CONTAINS {_surrealql_string(source_path)}")
     if status:
-        conditions.append(f"status = '{status}'")
+        conditions.append(f"status = {_surrealql_string(status)}")
     if kind:
-        conditions.append(f"edge_type = '{kind}'")
-    if not include_tombstoned:
-        conditions.append("tombstoned = false")
+        conditions.append(f"edge_type = {_surrealql_string(kind)}")
 
     where = " WHERE " + " AND ".join(conditions) if conditions else ""
     limit_str = f" LIMIT {limit}" if limit else ""
@@ -785,13 +1036,11 @@ def build_audit_query(
     """
     conditions: list[str] = []
     if audit_id:
-        conditions.append(f"import_id = '{audit_id}'")
+        conditions.append(f"import_id = {_surrealql_string(audit_id)}")
     if run_id:
-        conditions.append(f"run_id = '{run_id}'")
+        conditions.append(f"run_id = {_surrealql_string(run_id)}")
     if source_path:
-        conditions.append(f"source_path CONTAINS '{source_path}'")
-    if not include_tombstoned:
-        conditions.append("tombstoned = false")
+        conditions.append(f"source_path CONTAINS {_surrealql_string(source_path)}")
 
     where = " WHERE " + " AND ".join(conditions) if conditions else ""
     limit_str = f" LIMIT {limit}" if limit else ""
@@ -828,7 +1077,7 @@ def _render(payload: dict[str, Any], fmt: str) -> str:
             lines.append(f"error: {payload['error']}")
             lines.append(f"message: {payload.get('message', '')}")
         lines.append(
-            f"surrealdb_connection: {payload.get('surrealdb_connection', 'n/a')}"
+            f"source: {payload.get('source', payload.get('surrealdb_connection', 'n/a'))}"
         )
         return "\n".join(lines)
     if fmt == "markdown":
@@ -840,7 +1089,7 @@ def _render(payload: dict[str, Any], fmt: str) -> str:
                 [
                     f"- **operation**: `{classification['operation']}`",
                     f"- **allowed**: `{classification['allowed']}`",
-                    f"- **surrealdb_connection**: `{payload.get('surrealdb_connection')}`",
+                    f"- **source**: `{payload.get('source', payload.get('surrealdb_connection', 'n/a'))}`",
                 ]
             )
         if "query" in payload:
@@ -882,10 +1131,12 @@ def handle_find_artifact(
         "schema_version": SCHEMA_VERSION,
         "command": "find-artifact",
         "status": "ok",
+        "source": adapter.status,
         "query": query,
         "classification": classification.to_payload(),
         "count": len(results),
         "results": results,
+        **_tombstone_meta(args.include_tombstoned),
     }, EXIT_OK
 
 
@@ -909,10 +1160,12 @@ def handle_find_doc(
         "schema_version": SCHEMA_VERSION,
         "command": "find-doc",
         "status": "ok",
+        "source": adapter.status,
         "query": query,
         "classification": classification.to_payload(),
         "count": len(results),
         "results": results,
+        **_tombstone_meta(args.include_tombstoned),
     }, EXIT_OK
 
 
@@ -937,10 +1190,12 @@ def handle_find_symbol(
         "schema_version": SCHEMA_VERSION,
         "command": "find-symbol",
         "status": "ok",
+        "source": adapter.status,
         "query": query,
         "classification": classification.to_payload(),
         "count": len(results),
         "results": results,
+        **_tombstone_meta(args.include_tombstoned),
     }, EXIT_OK
 
 
@@ -962,10 +1217,12 @@ def handle_show_symbol(
         "schema_version": SCHEMA_VERSION,
         "command": "show-symbol",
         "status": "ok",
+        "source": adapter.status,
         "query": query,
         "classification": classification.to_payload(),
         "count": len(results),
         "results": results,
+        **_tombstone_meta(args.include_tombstoned),
     }, EXIT_OK
 
 
@@ -988,10 +1245,12 @@ def handle_find_imports(
         "schema_version": SCHEMA_VERSION,
         "command": "find-imports",
         "status": "ok",
+        "source": adapter.status,
         "query": query,
         "classification": classification.to_payload(),
         "count": len(results),
         "results": results,
+        **_tombstone_meta(args.include_tombstoned),
     }, EXIT_OK
 
 
@@ -1013,10 +1272,12 @@ def handle_show_imports_for_artifact(
         "schema_version": SCHEMA_VERSION,
         "command": "show-imports-for-artifact",
         "status": "ok",
+        "source": adapter.status,
         "query": query,
         "classification": classification.to_payload(),
         "count": len(results),
         "results": results,
+        **_tombstone_meta(args.include_tombstoned),
     }, EXIT_OK
 
 
@@ -1048,11 +1309,13 @@ def handle_trace(
         "schema_version": SCHEMA_VERSION,
         "command": "trace",
         "status": "ok",
+        "source": adapter.status,
         "query": query,
         "classification": classification.to_payload(),
         "depth": effective_depth,
         "count": len(results),
         "results": results,
+        **_tombstone_meta(args.include_tombstoned),
     }, EXIT_OK
 
 
@@ -1120,11 +1383,13 @@ def handle_explain_source(
         "schema_version": SCHEMA_VERSION,
         "command": "explain-source",
         "status": "ok",
+        "source": adapter.status,
         "query": query,
         "classification": classification.to_payload(),
         "count": len(results),
         "results": results,
         "warnings": warnings if warnings else None,
+        **_tombstone_meta(args.include_tombstoned),
     }, EXIT_OK
 
 
@@ -1148,10 +1413,12 @@ def handle_show_snapshot(
         "schema_version": SCHEMA_VERSION,
         "command": "show-snapshot",
         "status": "ok",
+        "source": adapter.status,
         "query": query,
         "classification": classification.to_payload(),
         "count": len(results),
         "results": results,
+        **_tombstone_meta(args.include_tombstoned),
     }, EXIT_OK
 
 
@@ -1204,11 +1471,13 @@ def handle_show_drift(
         "schema_version": SCHEMA_VERSION,
         "command": "show-drift",
         "status": "ok",
+        "source": adapter.status,
         "query": query,
         "classification": classification.to_payload(),
         "count": len(results),
         "results": results,
         "findings": findings if findings else None,
+        **_tombstone_meta(args.include_tombstoned),
     }, EXIT_OK
 
 
@@ -1232,10 +1501,12 @@ def handle_show_audit(
         "schema_version": SCHEMA_VERSION,
         "command": "show-audit",
         "status": "ok",
+        "source": adapter.status,
         "query": query,
         "classification": classification.to_payload(),
         "count": len(results),
         "results": results,
+        **_tombstone_meta(args.include_tombstoned),
     }, EXIT_OK
 
 
@@ -1265,6 +1536,29 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Optional query limit; validated against config hard limit when config is loaded.",
     )
+    parser.add_argument(
+        "--adapter",
+        choices=["noop", "surrealdb-local"],
+        default="noop",
+        help=(
+            "Query adapter: 'noop' (safe default, no network) or "
+            "'surrealdb-local' (real HTTP REST to local SurrealDB)."
+        ),
+    )
+    parser.add_argument(
+        "--secrets-path",
+        type=Path,
+        default=None,
+        dest="secrets_path",
+        help="Path to secrets directory containing SURREALDB_ENV (required for auth_mode: root).",
+    )
+    parser.add_argument(
+        "--hard-mode",
+        action="store_true",
+        default=False,
+        dest="hard_mode",
+        help="Non-zero exit if DB is unreachable (default: soft mode, returns empty results).",
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     classify = subparsers.add_parser(
@@ -1292,7 +1586,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--include-tombstoned",
         action="store_true",
         default=False,
-        help="Include tombstoned records in results (default: hidden).",
+        help=(
+            "Include tombstoned records in results. "
+            "Currently a no-op: the 'tombstoned' field is not declared in "
+            "context_intelligence_v0.surql (SCHEMAFULL), so no WHERE filter "
+            "is applied regardless of this flag. "
+            "Tombstone-filter semantics are reported in the payload via "
+            "'tombstone_filter_applied' and 'tombstone_filter_reason'. "
+            "A real filter belongs in a later schema slice (not this PR)."
+        ),
     )
 
     find_doc = subparsers.add_parser(
@@ -1583,7 +1885,26 @@ def _handle(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
                 "--limit may not exceed max_limit_hard from config"
             )
 
-    adapter: QueryAdapter = NoopQueryAdapter(config=config)
+    adapter: QueryAdapter
+    adapter_name = getattr(args, "adapter", "noop")
+    if adapter_name == "surrealdb-local":
+        if config is None:
+            raise InputNotFoundError("--config is required for --adapter surrealdb-local")
+        secrets_path = getattr(args, "secrets_path", None)
+        user, password = _load_query_credentials(config, secrets_path)
+        hard_mode = getattr(args, "hard_mode", False)
+        adapter = SurrealDBLocalQueryAdapter(
+            surreal_url=config.surreal_url,
+            namespace=config.namespace,
+            database=config.database,
+            user=user,
+            password=password,
+            timeout=config.timeout,
+            hard_mode=hard_mode,
+            config=config,
+        )
+    else:
+        adapter = NoopQueryAdapter(config=config)
 
     if args.command == "classify":
         classification = adapter.classify(args.statement)
@@ -1593,6 +1914,7 @@ def _handle(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
                 "command": args.command,
                 "status": "ok",
                 "surrealdb_connection": adapter.status,
+                "source": adapter.status,
                 "config_loaded": config is not None,
                 "config": config.to_payload() if config is not None else None,
                 "limit": args.limit,

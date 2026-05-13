@@ -34,7 +34,7 @@ mode:
   surrealdb_apply: forbidden
   surrealdb_write: forbidden
   read_only: true
-surreal_url: ws://127.0.0.1:8000/rpc
+surreal_url: http://127.0.0.1:8010
 namespace: cdb_context_local
 database: cdb_context_intel
 auth_mode: none

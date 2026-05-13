@@ -96,23 +96,23 @@ class TestBuildArtifactQuery:
     @pytest.mark.unit
     def test_no_filters(self) -> None:
         query = build_artifact_query()
-        assert query == "SELECT * FROM repo_artifact WHERE tombstoned = false"
+        assert query == "SELECT * FROM repo_artifact"
 
     @pytest.mark.unit
     def test_source_path_filter(self) -> None:
         query = build_artifact_query(source_path="docs/")
-        assert "source_path CONTAINS 'docs/'" in query
-        assert "tombstoned = false" in query
+        assert 'source_path CONTAINS "docs/"' in query
+        assert "tombstoned" not in query
 
     @pytest.mark.unit
     def test_file_type_filter(self) -> None:
         query = build_artifact_query(file_type="markdown")
-        assert "file_type = 'markdown'" in query
+        assert 'file_type = "markdown"' in query
 
     @pytest.mark.unit
     def test_hash_filter(self) -> None:
         query = build_artifact_query(hash_value="abc123")
-        assert "normalized_sha256 = 'abc123'" in query
+        assert 'normalized_sha256 = "abc123"' in query
 
     @pytest.mark.unit
     def test_include_tombstoned(self) -> None:
@@ -132,22 +132,22 @@ class TestBuildDocQuery:
     @pytest.mark.unit
     def test_no_filters(self) -> None:
         query = build_doc_query()
-        assert query == "SELECT * FROM doc_chunk WHERE tombstoned = false"
+        assert query == "SELECT * FROM doc_chunk"
 
     @pytest.mark.unit
     def test_query_text_filter(self) -> None:
         query = build_doc_query(query_text="search")
-        assert "content CONTAINS 'search'" in query
+        assert 'content CONTAINS "search"' in query
 
     @pytest.mark.unit
     def test_source_path_filter(self) -> None:
         query = build_doc_query(source_path="docs/")
-        assert "source_path CONTAINS 'docs/'" in query
+        assert 'source_path CONTAINS "docs/"' in query
 
     @pytest.mark.unit
     def test_heading_filter(self) -> None:
         query = build_doc_query(heading="Example")
-        assert "heading_path CONTAINS 'Example'" in query
+        assert 'heading_path CONTAINS "Example"' in query
 
     @pytest.mark.unit
     def test_include_tombstoned(self) -> None:
