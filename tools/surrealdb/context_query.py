@@ -574,6 +574,16 @@ def _load_query_credentials(
     raise ConfigValidationError(f"unsupported auth_mode: {config.auth_mode!r}")
 
 
+def _surrealql_string(value: str) -> str:
+    """Return value as a safe SurrealQL string literal (double-quoted JSON format).
+
+    Uses json.dumps() to produce a properly-escaped double-quoted string.
+    Handles backslashes, apostrophes, control characters, and all special chars.
+    SurrealDB accepts both single-quoted and double-quoted string literals.
+    """
+    return json.dumps(value)
+
+
 def _normalize_statement(statement: str) -> str:
     return re.sub(r"\s+", " ", statement.strip()).upper()
 
@@ -676,11 +686,11 @@ def build_artifact_query(
     """
     conditions: list[str] = []
     if source_path:
-        conditions.append(f"source_path CONTAINS '{source_path}'")
+        conditions.append(f"source_path CONTAINS {_surrealql_string(source_path)}")
     if file_type:
-        conditions.append(f"file_type = '{file_type}'")
+        conditions.append(f"file_type = {_surrealql_string(file_type)}")
     if hash_value:
-        conditions.append(f"normalized_sha256 = '{hash_value}'")
+        conditions.append(f"normalized_sha256 = {_surrealql_string(hash_value)}")
     where = " WHERE " + " AND ".join(conditions) if conditions else ""
     limit_str = f" LIMIT {limit}" if limit else ""
     return f"SELECT * FROM repo_artifact{where}{limit_str}"
@@ -700,12 +710,12 @@ def build_doc_query(
     """
     conditions: list[str] = []
     if query_text:
-        conditions.append(f"content CONTAINS '{query_text}'")
+        conditions.append(f"content CONTAINS {_surrealql_string(query_text)}")
     if source_path:
-        conditions.append(f"source_path CONTAINS '{source_path}'")
+        conditions.append(f"source_path CONTAINS {_surrealql_string(source_path)}")
     if heading:
         # heading_path is an array; check if it contains the heading
-        conditions.append(f"heading_path CONTAINS '{heading}'")
+        conditions.append(f"heading_path CONTAINS {_surrealql_string(heading)}")
     where = " WHERE " + " AND ".join(conditions) if conditions else ""
     limit_str = f" LIMIT {limit}" if limit else ""
     return f"SELECT * FROM doc_chunk{where}{limit_str}"
@@ -727,15 +737,15 @@ def build_symbol_query(
     """
     conditions: list[str] = []
     if name:
-        conditions.append(f"name CONTAINS '{name}'")
+        conditions.append(f"name CONTAINS {_surrealql_string(name)}")
     if qualified_name:
-        conditions.append(f"qualified_name CONTAINS '{qualified_name}'")
+        conditions.append(f"qualified_name CONTAINS {_surrealql_string(qualified_name)}")
     if source_path:
-        conditions.append(f"source_path CONTAINS '{source_path}'")
+        conditions.append(f"source_path CONTAINS {_surrealql_string(source_path)}")
     if symbol_type:
-        conditions.append(f"symbol_type = '{symbol_type}'")
+        conditions.append(f"symbol_type = {_surrealql_string(symbol_type)}")
     if symbol_id:
-        conditions.append(f"symbol_id = '{symbol_id}'")
+        conditions.append(f"symbol_id = {_surrealql_string(symbol_id)}")
     where = " WHERE " + " AND ".join(conditions) if conditions else ""
     limit_str = f" LIMIT {limit}" if limit else ""
     return f"SELECT * FROM code_symbol{where}{limit_str}"
@@ -756,13 +766,13 @@ def build_import_query(
     """
     conditions: list[str] = []
     if module:
-        conditions.append(f"module CONTAINS '{module}'")
+        conditions.append(f"module CONTAINS {_surrealql_string(module)}")
     if source_path:
-        conditions.append(f"source_path CONTAINS '{source_path}'")
+        conditions.append(f"source_path CONTAINS {_surrealql_string(source_path)}")
     if source_hash:
-        conditions.append(f"source_hash = '{source_hash}'")
+        conditions.append(f"source_hash = {_surrealql_string(source_hash)}")
     if import_id:
-        conditions.append(f"import_id = '{import_id}'")
+        conditions.append(f"import_id = {_surrealql_string(import_id)}")
     where = " WHERE " + " AND ".join(conditions) if conditions else ""
     limit_str = f" LIMIT {limit}" if limit else ""
     return f"SELECT * FROM import_reference{where}{limit_str}"
@@ -796,19 +806,19 @@ def build_trace_query(
     """
     conditions: list[str] = []
     if target_ref:
-        conditions.append(f"source_ref CONTAINS '{target_ref}'")
+        conditions.append(f"source_ref CONTAINS {_surrealql_string(target_ref)}")
     if source_path:
-        conditions.append(f"source_path CONTAINS '{source_path}'")
+        conditions.append(f"source_path CONTAINS {_surrealql_string(source_path)}")
     if symbol_name:
-        conditions.append(f"symbol_name CONTAINS '{symbol_name}'")
+        conditions.append(f"symbol_name CONTAINS {_surrealql_string(symbol_name)}")
     if direction == "upstream":
         conditions.append("edge_type = 'depends_on'")
     elif direction == "downstream":
         conditions.append("edge_type = 'used_by'")
     elif edge_type:
-        conditions.append(f"edge_type = '{edge_type}'")
+        conditions.append(f"edge_type = {_surrealql_string(edge_type)}")
     if confidence:
-        conditions.append(f"confidence = '{confidence}'")
+        conditions.append(f"confidence = {_surrealql_string(confidence)}")
 
     where = " WHERE " + " AND ".join(conditions) if conditions else ""
     limit_str = f" LIMIT {limit}" if limit else ""
@@ -835,17 +845,17 @@ def build_explain_source_query(
     """
     id_conditions: list[str] = []
     if artifact_id:
-        id_conditions.append(f"artifact_id = '{artifact_id}'")
+        id_conditions.append(f"artifact_id = {_surrealql_string(artifact_id)}")
     if chunk_id:
-        id_conditions.append(f"chunk_id = '{chunk_id}'")
+        id_conditions.append(f"chunk_id = {_surrealql_string(chunk_id)}")
     if symbol_id:
-        id_conditions.append(f"symbol_id = '{symbol_id}'")
+        id_conditions.append(f"symbol_id = {_surrealql_string(symbol_id)}")
     if edge_id:
-        id_conditions.append(f"edge_id = '{edge_id}'")
+        id_conditions.append(f"edge_id = {_surrealql_string(edge_id)}")
     if evidence_id:
-        id_conditions.append(f"evidence_id = '{evidence_id}'")
+        id_conditions.append(f"evidence_id = {_surrealql_string(evidence_id)}")
     if decision_id:
-        id_conditions.append(f"decision_id = '{decision_id}'")
+        id_conditions.append(f"decision_id = {_surrealql_string(decision_id)}")
 
     if (
         len(
@@ -874,7 +884,7 @@ def build_explain_source_query(
         id_clause = " OR ".join(id_conditions)
         conditions.append(f"({id_clause})")
     if source_path:
-        conditions.append(f"source_path CONTAINS '{source_path}'")
+        conditions.append(f"source_path CONTAINS {_surrealql_string(source_path)}")
 
     where = " WHERE " + " AND ".join(conditions) if conditions else ""
     limit_str = f" LIMIT {limit}" if limit else ""
@@ -896,11 +906,11 @@ def build_snapshot_query(
     """
     conditions: list[str] = []
     if snapshot_id:
-        conditions.append(f"snapshot_id = '{snapshot_id}'")
+        conditions.append(f"snapshot_id = {_surrealql_string(snapshot_id)}")
     if run_id:
-        conditions.append(f"run_id = '{run_id}'")
+        conditions.append(f"run_id = {_surrealql_string(run_id)}")
     if source_path:
-        conditions.append(f"source_path CONTAINS '{source_path}'")
+        conditions.append(f"source_path CONTAINS {_surrealql_string(source_path)}")
 
     where = " WHERE " + " AND ".join(conditions) if conditions else ""
     limit_str = f" LIMIT {limit}" if limit else ""
@@ -923,13 +933,13 @@ def build_drift_query(
     """
     conditions: list[str] = []
     if artifact_id:
-        conditions.append(f"source_ref CONTAINS '{artifact_id}'")
+        conditions.append(f"source_ref CONTAINS {_surrealql_string(artifact_id)}")
     if source_path:
-        conditions.append(f"source_path CONTAINS '{source_path}'")
+        conditions.append(f"source_path CONTAINS {_surrealql_string(source_path)}")
     if status:
-        conditions.append(f"status = '{status}'")
+        conditions.append(f"status = {_surrealql_string(status)}")
     if kind:
-        conditions.append(f"edge_type = '{kind}'")
+        conditions.append(f"edge_type = {_surrealql_string(kind)}")
 
     where = " WHERE " + " AND ".join(conditions) if conditions else ""
     limit_str = f" LIMIT {limit}" if limit else ""
@@ -950,11 +960,11 @@ def build_audit_query(
     """
     conditions: list[str] = []
     if audit_id:
-        conditions.append(f"import_id = '{audit_id}'")
+        conditions.append(f"import_id = {_surrealql_string(audit_id)}")
     if run_id:
-        conditions.append(f"run_id = '{run_id}'")
+        conditions.append(f"run_id = {_surrealql_string(run_id)}")
     if source_path:
-        conditions.append(f"source_path CONTAINS '{source_path}'")
+        conditions.append(f"source_path CONTAINS {_surrealql_string(source_path)}")
 
     where = " WHERE " + " AND ".join(conditions) if conditions else ""
     limit_str = f" LIMIT {limit}" if limit else ""
