@@ -728,3 +728,58 @@ def test_show_audit_text_format(capsys) -> None:
     out = capsys.readouterr().out
     assert "status: ok" in out
     assert "import_reference" in out
+
+
+@pytest.mark.unit
+def test_default_adapter_is_noop_explicit_flag(capsys) -> None:
+    """--adapter noop (explicit) produces source: noop-no-network in classify payload."""
+    exit_code = main(
+        [
+            "--config",
+            EXAMPLE_CONFIG,
+            "--adapter",
+            "noop",
+            "classify",
+            "--statement",
+            "SELECT * FROM doc_chunk",
+        ]
+    )
+    assert exit_code == EXIT_OK
+    payload = _read_json(capsys)
+    assert payload["surrealdb_connection"] == "noop-no-network"
+    assert payload["source"] == "noop-no-network"
+
+
+@pytest.mark.unit
+def test_find_artifact_payload_has_source_key(capsys) -> None:
+    """Handler payloads must include a 'source' field."""
+    exit_code = main(
+        [
+            "--config",
+            EXAMPLE_CONFIG,
+            "--adapter",
+            "noop",
+            "find-artifact",
+        ]
+    )
+    assert exit_code == EXIT_OK
+    payload = _read_json(capsys)
+    assert "source" in payload
+    assert payload["source"] == "noop-no-network"
+
+
+@pytest.mark.unit
+def test_adapter_surrealdb_local_without_secrets_path_exits_nonzero(capsys) -> None:
+    """--adapter surrealdb-local with auth_mode root and no --secrets-path must fail."""
+    exit_code = main(
+        [
+            "--config",
+            EXAMPLE_CONFIG,
+            "--adapter",
+            "surrealdb-local",
+            "find-artifact",
+        ]
+    )
+    assert exit_code != EXIT_OK
+    payload = _read_json(capsys)
+    assert payload["error"] in ("CONFIG_VALIDATION_ERROR", "INPUT_NOT_FOUND")

@@ -34,7 +34,7 @@ def test_build_artifact_query_with_filters() -> None:
     assert "file_type = 'python'" in query
     assert "normalized_sha256 = 'abc123'" in query
     assert "LIMIT 50" in query
-    assert "tombstoned = false" in query
+    assert "tombstoned" not in query
 
 
 @pytest.mark.unit
@@ -59,7 +59,7 @@ def test_build_doc_query_with_filters() -> None:
     assert "source_path CONTAINS 'docs/'" in query
     assert "heading_path CONTAINS 'intro'" in query
     assert "LIMIT 20" in query
-    assert "tombstoned = false" in query
+    assert "tombstoned" not in query
 
 
 @pytest.mark.unit
@@ -86,7 +86,7 @@ def test_build_symbol_query_with_filters() -> None:
     assert "source_path CONTAINS 'src/'" in query
     assert "symbol_type = 'class'" in query
     assert "LIMIT 25" in query
-    assert "tombstoned = false" in query
+    assert "tombstoned" not in query
 
 
 @pytest.mark.unit
@@ -112,7 +112,7 @@ def test_build_import_query_with_filters() -> None:
     assert "source_hash = 'abc123'" in query
     assert "import_id = 'import-1'" in query
     assert "LIMIT 30" in query
-    assert "tombstoned = false" in query
+    assert "tombstoned" not in query
 
 
 @pytest.mark.unit
@@ -141,7 +141,7 @@ def test_build_trace_query_with_filters() -> None:
     assert "edge_type = 'depends_on'" in query
     assert "confidence = 'high'" in query
     assert "LIMIT 15" in query
-    assert "tombstoned = false" in query
+    assert "tombstoned" not in query
 
 
 @pytest.mark.unit
@@ -170,7 +170,7 @@ def test_build_explain_source_query_with_artifact_id() -> None:
     assert "artifact_id = 'artifact-1'" in query
     assert "source_path CONTAINS 'src/'" in query
     assert "LIMIT 10" in query
-    assert "tombstoned = false" in query
+    assert "tombstoned = false" not in query
 
 
 @pytest.mark.unit
@@ -200,7 +200,7 @@ def test_build_snapshot_query_with_filters() -> None:
     assert "run_id = 'run-123'" in query
     assert "source_path CONTAINS 'src/'" in query
     assert "LIMIT 10" in query
-    assert "tombstoned = false" in query
+    assert "tombstoned" not in query
 
 
 @pytest.mark.unit
@@ -226,7 +226,7 @@ def test_build_drift_query_with_filters() -> None:
     assert "status = 'blocking'" in query
     assert "edge_type = 'depends_on'" in query
     assert "LIMIT 20" in query
-    assert "tombstoned = false" in query
+    assert "tombstoned" not in query
 
 
 @pytest.mark.unit
@@ -250,7 +250,7 @@ def test_build_audit_query_with_filters() -> None:
     assert "run_id = 'run-123'" in query
     assert "source_path CONTAINS 'src/'" in query
     assert "LIMIT 10" in query
-    assert "tombstoned = false" in query
+    assert "tombstoned" not in query
 
 
 @pytest.mark.unit

@@ -60,16 +60,17 @@ mode:
 # ---------------------------------------------------------------------------
 # Replace with values from your local dev SurrealDB instance.
 # Do NOT point this at a production or shared environment.
-surreal_url: "ws://127.0.0.1:8000/rpc"
+surreal_url: "http://127.0.0.1:8010"
 namespace: "cdb_context_local"
 database: "cdb_context_intel"
 
 # Authentication mode for the local query layer.
-# Allowed values: "none" | "root" | "scope"
-# For the example/template, we default to "none" because no real
-# credentials may be embedded here. Real credentials must be loaded
-# from SECRETS_PATH at runtime, never from this YAML.
-auth_mode: "none"
+# Allowed values: "none" | "root"
+# For the noop adapter (default, --adapter noop), no credentials are needed.
+# For the real adapter (--adapter surrealdb-local), use auth_mode: root and
+# supply --secrets-path pointing to the directory containing SURREALDB_ENV.
+# SURREALDB_ENV must contain SURREAL_USER=<user> and SURREAL_PASS=<pass> lines.
+auth_mode: "root"
 
 # Connection timeout in seconds.
 timeout: 10
