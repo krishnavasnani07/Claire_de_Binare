@@ -133,6 +133,40 @@ npx -y @leval/mcp-grafana  # Grafana server
 
 ---
 
+## Fail-closed rule for Postgres discovery
+
+For Agent-side Postgres discovery, `claire_user` is **not** an acceptable
+readonly identity. Postgres MCP must use a dedicated readonly login, preferably
+`cdb_readonly`, or an explicitly approved equivalent readonly principal.
+
+Minimum checks before any later `#1905` DB discovery:
+
+```sql
+SELECT current_database(), current_user, session_user;
+```
+
+Expected:
+
+- `session_user = cdb_readonly`, or an explicitly approved equivalent readonly login
+- `current_user = session_user` for the discovery session, unless an explicitly documented readonly role-switch pattern is approved
+- effective `SELECT` on `public.correlation_ledger`
+- no effective `INSERT`, `UPDATE`, or `DELETE` on `public.correlation_ledger`
+
+`current_user` alone is not sufficient for Agent/MCP discovery acceptance,
+because role switching can change it inside a session. The login identity must
+also be readonly via `session_user`.
+
+If any of these checks fail, the discovery path is **fail-closed** and no DB
+discovery should proceed.
+
+The repo-backed readonly-login canon lives in:
+
+- `docs/runbooks/postgres_least_privilege_rls.md`
+- `infrastructure/database/operator_create_readonly_login.sql`
+- `infrastructure/database/verify_privileges.sql`
+
+---
+
 ## Git Handling
 
 **.mcp.json in .gitignore:**
@@ -157,7 +191,7 @@ npx -y @leval/mcp-grafana  # Grafana server
 
 **Access Control:**
 - Desktop Commander: `allowedDirectories` schützt File System
-- Postgres: Read-only user empfohlen für Agenten (TODO)
+- Postgres: Agent discovery must use a dedicated readonly login, not `claire_user`
 - Grafana: Admin role nötig für Dashboard-Änderungen
 
 ---
