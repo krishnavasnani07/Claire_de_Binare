@@ -55,10 +55,11 @@ database: "cdb_context_intel"
 
 # Authentication mode for the local importer.
 # Allowed values: "none" | "root" | "scope"
-# For the example/template, we default to "none" because no real
-# credentials may be embedded here. Real credentials must be loaded
-# from SECRETS_PATH at runtime, never from this YAML.
-auth_mode: "none"
+# Use "root" for the local SurrealDB sidecar (cdb_surrealdb) which requires
+# SURREAL_USER / SURREAL_PASS credentials loaded from SURREALDB_ENV.
+# Pass --secrets-path at runtime (make context-import-local handles this).
+# "none" is only appropriate for auth-disabled test/CI setups without credentials.
+auth_mode: "root"
 
 # Connection timeout in seconds for the local importer.
 timeout: 10

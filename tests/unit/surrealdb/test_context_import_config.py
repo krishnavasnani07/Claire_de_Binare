@@ -39,7 +39,7 @@ def test_example_config_loads_with_fail_closed_defaults() -> None:
 
     assert config.schema_version == CONFIG_SCHEMA_VERSION
     assert config.allow_apply_default is False
-    assert config.auth_mode == "none"
+    assert config.auth_mode == "root"
     assert config.surreal_url == "http://127.0.0.1:8010"
     assert config.namespace == "cdb_context_local"
     assert config.database == "cdb_context_intel"

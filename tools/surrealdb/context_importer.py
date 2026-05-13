@@ -368,6 +368,10 @@ TRADING_STATE_PATH_PARTS = frozenset(
     }
 )
 
+# Fields added internally by the importer's validator to JSONL records;
+# they are not part of the original JSONL and must not be written to SurrealDB.
+_JSONL_INTERNAL_FIELDS = frozenset({"__line"})
+
 EXIT_OK = 0
 EXIT_VALIDATION_ERROR = 1
 EXIT_USAGE_ERROR = 2
@@ -511,6 +515,11 @@ class ImportPlanAction:
     depends_on: tuple[str, ...]
     reason: str
     payload_hash: str
+    # Verbatim JSONL record content minus ``__line``; populated for ``create``
+    # actions and threaded to the apply pipeline so the adapter writes actual
+    # domain fields rather than import metadata. Not included in to_payload()
+    # to avoid leaking record content into plan/dry-run reports.
+    payload: Mapping[str, Any] | None = None
 
     def to_payload(self) -> dict[str, Any]:
         return {
@@ -644,6 +653,10 @@ class ReconcileAction:
     # Intentionally **not** included in :meth:`to_payload` to avoid
     # leaking record contents into dry-run/apply reports.
     existing_payload: Mapping[str, Any] | None = None
+    # Verbatim JSONL domain payload for ``create``/``update_candidate`` actions;
+    # threaded from ``ImportPlanAction.payload`` so the adapter receives actual
+    # record fields rather than import metadata. Not in to_payload().
+    payload: Mapping[str, Any] | None = None
 
     def to_payload(self) -> dict[str, Any]:
         return {
@@ -829,6 +842,10 @@ class ContextApplyOperation:
     # metadata. Intentionally **not** included in :meth:`to_payload` to
     # avoid leaking record contents into apply reports.
     existing_payload: Mapping[str, Any] | None = None
+    # Verbatim JSONL domain payload for create/update operations; threaded
+    # from ReconcileAction.payload so _build_payload_for_op writes actual
+    # record fields to the adapter. Not included in to_payload().
+    payload: Mapping[str, Any] | None = None
 
     def to_payload(self) -> dict[str, Any]:
         return {
@@ -1227,8 +1244,16 @@ class SurrealDBLocalContextApplyAdapter:
             raise ApplyAdapterError(
                 f"tombstone payload must set {TOMBSTONE_FIELD_FLAG!r} to True"
             )
+        # Strip tombstone meta-fields and pipeline meta-fields before writing.
+        # None of these are declared in context_intelligence_v0.surql; SCHEMAFULL
+        # tables only persist declared fields, so explicitly excluding them makes
+        # the DB write deterministic and avoids silent field-rejection surprises.
+        _meta = TOMBSTONE_REQUIRED_FIELDS | frozenset(
+            {"table", "record_id", "run_id", "payload_hash"}
+        )
+        domain_payload = {k: v for k, v in payload.items() if k not in _meta}
         rid = self._surql_record_id(table, record_id)
-        payload_json = json.dumps(payload, ensure_ascii=True, sort_keys=True)
+        payload_json = json.dumps(domain_payload, ensure_ascii=True, sort_keys=True)
         sql = f"UPSERT {rid} CONTENT {payload_json};"
         self._sql_request(sql)
 
@@ -1577,13 +1602,12 @@ def _build_payload_for_op(
         )
         return payload, ts_iso
 
-    payload = {
-        "table": op.table,
-        "record_id": op.record_id,
-        "run_id": run_id,
-        "payload_hash": op.payload_hash,
-    }
-    return payload, None
+    # For create/update: write the actual JSONL domain payload to the adapter.
+    # Internal importer fields (__line) are stripped at plan-build time;
+    # any remaining envelope fields (schema_version, run_id) are present
+    # in the payload but silently dropped by SCHEMAFULL tables in SurrealDB.
+    db_payload = dict(op.payload) if op.payload is not None else {}
+    return db_payload, None
 
 
 def _operations_from_reconcile(
@@ -1610,6 +1634,7 @@ def _operations_from_reconcile(
                     existing_payload_hash=action.existing_payload_hash,
                     source_ref=action.source_ref,
                     reason=action.reason,
+                    payload=action.payload,
                 )
             )
         elif action.action == "update_candidate":
@@ -1626,6 +1651,7 @@ def _operations_from_reconcile(
                     source_ref=action.source_ref,
                     reason=action.reason,
                     note=note,
+                    payload=action.payload,
                 )
             )
         elif action.action == "tombstone_candidate":
@@ -2639,6 +2665,15 @@ def build_import_plan(
                     depends_on=_action_dependencies(artifact, record),
                     reason=reason,
                     payload_hash=_payload_hash(record),
+                    payload=(
+                        {
+                            k: v
+                            for k, v in record.items()
+                            if k not in _JSONL_INTERNAL_FIELDS
+                        }
+                        if action == "create"
+                        else None
+                    ),
                 )
             )
 
@@ -2796,6 +2831,7 @@ def reconcile_import_plan(
                     reason="record_missing",
                     payload_hash=plan_action.payload_hash,
                     existing_payload_hash=None,
+                    payload=plan_action.payload,
                 )
             )
             continue
@@ -2835,6 +2871,7 @@ def reconcile_import_plan(
                     reason="record_changed",
                     payload_hash=plan_action.payload_hash,
                     existing_payload_hash=existing.payload_hash,
+                    payload=plan_action.payload,
                 )
             )
 

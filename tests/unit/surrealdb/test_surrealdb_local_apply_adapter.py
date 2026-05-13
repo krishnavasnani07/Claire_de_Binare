@@ -59,11 +59,15 @@ def _make_adapter(
 
 def _tombstone_payload() -> dict[str, Any]:
     return {
+        # Tombstone meta-fields (required by adapter validation before write)
         TOMBSTONE_FIELD_FLAG: True,
         TOMBSTONE_FIELD_AT: "2026-05-13T12:00:00Z",
         TOMBSTONE_FIELD_REASON: "record_removed_from_snapshot",
         TOMBSTONE_FIELD_LAST_SEEN_RUN_ID: "run-1",
         TOMBSTONE_FIELD_SUPERSEDED_BY: None,
+        # Domain fields preserved from the prior record's existing_payload
+        "chunk_id": "chunk-test-1",
+        "content": "the prior content of this chunk",
     }
 
 
@@ -246,7 +250,11 @@ def test_apply_tombstone_sends_upsert_sql(monkeypatch: pytest.MonkeyPatch) -> No
     sql = sent[0]
     assert "UPSERT doc_chunk:" in sql
     assert "CONTENT" in sql
-    assert "record_removed_from_snapshot" in sql
+    # Domain fields from the prior record are preserved in the DB write
+    assert "chunk-test-1" in sql
+    # Tombstone meta-fields are stripped — not declared in context_intelligence_v0.surql
+    assert "record_removed_from_snapshot" not in sql
+    assert "tombstoned" not in sql
 
 
 @pytest.mark.unit
@@ -446,4 +454,191 @@ def test_config_example_allowed_tables_match_allowed_context_import_tables() -> 
     assert config_tables == ALLOWED_CONTEXT_IMPORT_TABLES, (
         f"Config allowed_tables {sorted(config_tables)} != "
         f"ALLOWED_CONTEXT_IMPORT_TABLES {sorted(ALLOWED_CONTEXT_IMPORT_TABLES)}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Domain payload threading — adapter receives real JSONL fields, not metadata
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_create_writes_domain_payload_not_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """apply_create must serialize actual domain fields, not import metadata."""
+    adapter = _make_adapter()
+    sent: list[str] = []
+
+    def fake_urlopen(req, timeout=None):
+        sent.append(req.data.decode("utf-8"))
+        resp = MagicMock()
+        resp.__enter__ = lambda s: s
+        resp.__exit__ = MagicMock(return_value=False)
+        resp.status = 200
+        resp.read.return_value = _ok_body()
+        return resp
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+
+    # Domain payload from a repo_artifact JSONL record
+    domain_payload = {
+        "artifact_id": "art-readme-1",
+        "source_path": "README.md",
+        "source_hash": "a" * 64,
+        "integrity_algo": "sha256",
+        "size_bytes": 128,
+    }
+    adapter.apply_create("repo_artifact", "repo_artifact:art-readme-1", domain_payload)
+
+    assert len(sent) == 1
+    sql = sent[0]
+    content_part = sql.split("CONTENT", 1)[1]
+    # Domain fields present
+    assert "artifact_id" in content_part
+    assert "art-readme-1" in content_part
+    assert "README.md" in content_part
+    # Import meta-fields must NOT be written to the SCHEMAFULL table
+    assert "payload_hash" not in content_part
+    assert '"table"' not in content_part
+    assert '"record_id"' not in content_part
+    assert '"run_id"' not in content_part
+
+
+@pytest.mark.unit
+def test_update_writes_domain_payload_not_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """apply_update must serialize actual domain fields, not import metadata."""
+    adapter = _make_adapter()
+    sent: list[str] = []
+
+    def fake_urlopen(req, timeout=None):
+        sent.append(req.data.decode("utf-8"))
+        resp = MagicMock()
+        resp.__enter__ = lambda s: s
+        resp.__exit__ = MagicMock(return_value=False)
+        resp.status = 200
+        resp.read.return_value = _ok_body()
+        return resp
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+
+    # Domain payload from a doc_page JSONL record
+    domain_payload = {
+        "page_id": "page-onboarding",
+        "source_path": "docs/onboarding.md",
+        "title": "Developer Onboarding",
+        "source_hash": "b" * 64,
+    }
+    adapter.apply_update("doc_page", "doc_page:page-onboarding", domain_payload)
+
+    assert len(sent) == 1
+    sql = sent[0]
+    content_part = sql.split("CONTENT", 1)[1]
+    assert "page_id" in content_part
+    assert "page-onboarding" in content_part
+    assert "Developer Onboarding" in content_part
+    assert "payload_hash" not in content_part
+    assert '"table"' not in content_part
+
+
+@pytest.mark.unit
+def test_tombstone_domain_fields_preserved_meta_stripped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """apply_tombstone must write domain fields and strip tombstone/meta-fields."""
+    adapter = _make_adapter()
+    sent: list[str] = []
+
+    def fake_urlopen(req, timeout=None):
+        sent.append(req.data.decode("utf-8"))
+        resp = MagicMock()
+        resp.__enter__ = lambda s: s
+        resp.__exit__ = MagicMock(return_value=False)
+        resp.status = 200
+        resp.read.return_value = _ok_body()
+        return resp
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+
+    # doc_chunk domain fields + tombstone meta (as _build_payload_for_op produces)
+    payload = {
+        # domain fields from existing_payload
+        "chunk_id": "chunk-api-1",
+        "content": "API description text",
+        "content_hash": "c" * 64,
+        # tombstone meta-fields (not in context_intelligence_v0.surql)
+        TOMBSTONE_FIELD_FLAG: True,
+        TOMBSTONE_FIELD_AT: "2026-05-13T12:00:00Z",
+        TOMBSTONE_FIELD_REASON: "record_removed_from_snapshot",
+        TOMBSTONE_FIELD_LAST_SEEN_RUN_ID: "run-2",
+        TOMBSTONE_FIELD_SUPERSEDED_BY: None,
+        # pipeline meta-fields (not in schema)
+        "table": "doc_chunk",
+        "record_id": "doc_chunk:chunk-api-1",
+        "run_id": "run-2",
+        "payload_hash": "d" * 64,
+    }
+    adapter.apply_tombstone("doc_chunk", "doc_chunk:chunk-api-1", payload)
+
+    assert len(sent) == 1
+    sql = sent[0]
+    content_part = sql.split("CONTENT", 1)[1]
+    # Domain fields from prior record are written
+    assert "chunk-api-1" in content_part
+    assert "API description text" in content_part
+    # Tombstone meta-fields are stripped — not in context_intelligence_v0.surql
+    assert "tombstoned" not in content_part
+    assert "tombstone_reason" not in content_part
+    assert "record_removed_from_snapshot" not in content_part
+    assert "last_seen_run_id" not in content_part
+    # Pipeline meta-fields also stripped
+    assert "payload_hash" not in content_part
+    assert '"run_id"' not in content_part
+
+
+# ---------------------------------------------------------------------------
+# Auth / Makefile checks (Thread B)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_makefile_context_import_local_passes_secrets_path() -> None:
+    """context-import-local target must pass --secrets-path for auth_mode: root."""
+    makefile = Path(__file__).parents[3] / "Makefile"
+    assert makefile.exists(), "Makefile not found"
+    content = makefile.read_text(encoding="utf-8")
+    in_target = False
+    for line in content.splitlines():
+        if line.startswith("context-import-local:"):
+            in_target = True
+        elif in_target and line.startswith("\t"):
+            if "--secrets-path" in line:
+                return
+        elif in_target and not line.startswith("\t") and line.strip():
+            break
+    pytest.fail(
+        "context-import-local target in Makefile does not pass --secrets-path"
+    )
+
+
+@pytest.mark.unit
+def test_example_config_auth_mode_is_root() -> None:
+    """Example config must use auth_mode: root to match the local sidecar auth setup."""
+    import yaml as _yaml
+
+    config_path = (
+        Path(__file__).parents[3]
+        / "infrastructure"
+        / "config"
+        / "surrealdb"
+        / "context_import.local.example.yaml"
+    )
+    assert config_path.exists(), f"Config example not found at {config_path}"
+    data = _yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert data.get("auth_mode") == "root", (
+        f"Expected auth_mode: root, got: {data.get('auth_mode')!r}. "
+        "The local sidecar (cdb_surrealdb) requires SURREAL_USER/SURREAL_PASS; "
+        "auth_mode must be 'root', not 'none'."
     )
