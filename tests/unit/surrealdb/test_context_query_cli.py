@@ -783,3 +783,72 @@ def test_adapter_surrealdb_local_without_secrets_path_exits_nonzero(capsys) -> N
     assert exit_code != EXIT_OK
     payload = _read_json(capsys)
     assert payload["error"] in ("CONFIG_VALIDATION_ERROR", "INPUT_NOT_FOUND")
+
+
+@pytest.mark.unit
+def test_find_artifact_payload_tombstone_meta_default(capsys) -> None:
+    """find-artifact payload must report tombstone_filter_applied=False + reason by default."""
+    exit_code = main(
+        [
+            "--config",
+            EXAMPLE_CONFIG,
+            "find-artifact",
+        ]
+    )
+    assert exit_code == EXIT_OK
+    payload = _read_json(capsys)
+    assert payload["tombstone_filter_applied"] is False
+    assert payload["tombstone_filter_reason"] == "schema-field-not-defined"
+    assert "include_tombstoned" not in payload
+
+
+@pytest.mark.unit
+def test_find_artifact_payload_tombstone_meta_include_tombstoned(capsys) -> None:
+    """find-artifact with --include-tombstoned: applied=False, include_tombstoned=True."""
+    exit_code = main(
+        [
+            "--config",
+            EXAMPLE_CONFIG,
+            "find-artifact",
+            "--include-tombstoned",
+        ]
+    )
+    assert exit_code == EXIT_OK
+    payload = _read_json(capsys)
+    assert payload["tombstone_filter_applied"] is False
+    assert payload["include_tombstoned"] is True
+    assert payload["tombstone_filter_reason"] == "include-tombstoned-requested"
+
+
+@pytest.mark.unit
+def test_find_doc_payload_tombstone_meta_default(capsys) -> None:
+    """find-doc payload must report tombstone_filter_applied=False by default."""
+    exit_code = main(
+        [
+            "--config",
+            EXAMPLE_CONFIG,
+            "find-doc",
+        ]
+    )
+    assert exit_code == EXIT_OK
+    payload = _read_json(capsys)
+    assert payload["tombstone_filter_applied"] is False
+    assert payload["tombstone_filter_reason"] == "schema-field-not-defined"
+
+
+@pytest.mark.unit
+def test_trace_payload_tombstone_meta_default(capsys) -> None:
+    """trace payload must report tombstone_filter_applied=False by default."""
+    exit_code = main(
+        [
+            "--config",
+            EXAMPLE_CONFIG,
+            "trace",
+            "--target-ref",
+            "example_module",
+        ]
+    )
+    assert exit_code == EXIT_OK
+    payload = _read_json(capsys)
+    assert payload["tombstone_filter_applied"] is False
+    assert payload["tombstone_filter_reason"] == "schema-field-not-defined"

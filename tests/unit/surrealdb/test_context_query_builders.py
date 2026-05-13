@@ -6,6 +6,8 @@ import pytest
 
 from tools.surrealdb.context_query import (
     ConfigValidationError,
+    TOMBSTONE_FILTER_SCHEMA_SUPPORTED,
+    _tombstone_meta,
     build_artifact_query,
     build_doc_query,
     build_symbol_query,
@@ -321,3 +323,46 @@ def test_hardcoded_direction_literals_stay_single_quoted() -> None:
 
     downstream = build_trace_query(direction="downstream")
     assert "edge_type = 'used_by'" in downstream
+
+
+# ---------------------------------------------------------------------------
+# Tombstone-filter transparency tests (#2459 / PR #2465 Thread 4)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_tombstone_filter_schema_supported_is_false() -> None:
+    """TOMBSTONE_FILTER_SCHEMA_SUPPORTED must be False until schema declares the field."""
+    assert TOMBSTONE_FILTER_SCHEMA_SUPPORTED is False
+
+
+@pytest.mark.unit
+def test_tombstone_meta_default() -> None:
+    """_tombstone_meta(False): tombstone_filter_applied=False, reason=schema-field-not-defined."""
+    meta = _tombstone_meta(False)
+    assert meta["tombstone_filter_applied"] is False
+    assert meta["tombstone_filter_reason"] == "schema-field-not-defined"
+    assert "include_tombstoned" not in meta
+
+
+@pytest.mark.unit
+def test_tombstone_meta_include_true() -> None:
+    """_tombstone_meta(True): tombstone_filter_applied=False, include_tombstoned=True."""
+    meta = _tombstone_meta(True)
+    assert meta["tombstone_filter_applied"] is False
+    assert meta["include_tombstoned"] is True
+    assert meta["tombstone_filter_reason"] == "include-tombstoned-requested"
+
+
+@pytest.mark.unit
+def test_build_artifact_query_include_tombstoned_true_no_predicate() -> None:
+    """include_tombstoned=True must not inject a tombstone WHERE predicate (schema-disabled)."""
+    query = build_artifact_query(include_tombstoned=True)
+    assert "tombstoned" not in query
+
+
+@pytest.mark.unit
+def test_build_doc_query_include_tombstoned_false_no_predicate() -> None:
+    """include_tombstoned=False (default) must not inject a tombstone WHERE predicate."""
+    query = build_doc_query(include_tombstoned=False)
+    assert "tombstoned" not in query

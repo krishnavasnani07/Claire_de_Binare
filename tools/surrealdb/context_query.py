@@ -112,6 +112,17 @@ ALLOWED_QUERY_SCHEMES = frozenset({"http", "https"})
 ALLOWED_AUTH_MODES = frozenset({"none", "root"})
 REAL_SURREALDB_QUERY_ADAPTER_AVAILABLE = True
 
+# Tombstone-filter compatibility note (#2459 / PR #2465):
+# context_intelligence_v0.surql does not declare a ``tombstoned`` field.
+# Under SCHEMAFULL, WHERE predicates on undeclared fields are silently ignored,
+# so ``WHERE tombstoned = false`` would return 0 rows instead of the expected
+# records.  The ``include_tombstoned`` parameter is API-preserved for
+# forward-compatibility.  A real tombstone filter belongs in a later schema
+# slice, not this PR.
+TOMBSTONE_FILTER_SCHEMA_SUPPORTED = False
+_TOMBSTONE_FILTER_REASON_NO_SCHEMA = "schema-field-not-defined"
+_TOMBSTONE_FILTER_REASON_INCLUDE_REQUESTED = "include-tombstoned-requested"
+
 
 class ContextQueryError(Exception):
     """Base error for context_query."""
@@ -584,6 +595,32 @@ def _surrealql_string(value: str) -> str:
     return json.dumps(value)
 
 
+def _tombstone_meta(include_tombstoned: bool) -> dict[str, Any]:
+    """Return tombstone-filter transparency metadata for query handler payloads.
+
+    The tombstone filter is currently schema-disabled:
+    ``context_intelligence_v0.surql`` does not declare a ``tombstoned`` field.
+    Under SCHEMAFULL, a ``WHERE tombstoned = false`` predicate silently returns
+    0 rows because the field does not exist.  The parameter is kept for API
+    forward-compatibility; a real filter belongs in a later schema slice.
+
+    Returns a dict with ``tombstone_filter_applied`` always ``False``, plus a
+    ``tombstone_filter_reason`` key.  When ``include_tombstoned=True``, also
+    sets ``include_tombstoned: True`` so callers can see the requested intent.
+    See :data:`TOMBSTONE_FILTER_SCHEMA_SUPPORTED`.
+    """
+    if include_tombstoned:
+        return {
+            "tombstone_filter_applied": False,
+            "include_tombstoned": True,
+            "tombstone_filter_reason": _TOMBSTONE_FILTER_REASON_INCLUDE_REQUESTED,
+        }
+    return {
+        "tombstone_filter_applied": False,
+        "tombstone_filter_reason": _TOMBSTONE_FILTER_REASON_NO_SCHEMA,
+    }
+
+
 def _normalize_statement(statement: str) -> str:
     return re.sub(r"\s+", " ", statement.strip()).upper()
 
@@ -683,6 +720,13 @@ def build_artifact_query(
 
     All parameters are optional filters.  The query is built as a
     ``SELECT * FROM repo_artifact WHERE ... LIMIT ...`` statement.
+
+    SCHEMA_COMPAT_NOTE: ``include_tombstoned`` does **not** add a
+    ``WHERE tombstoned`` predicate.  The field is not declared in
+    ``context_intelligence_v0.surql``; under SCHEMAFULL such a predicate
+    silently returns 0 rows.  Filter semantics are reported transparently in
+    the handler payload via ``tombstone_filter_applied`` and
+    ``tombstone_filter_reason``.  See :data:`TOMBSTONE_FILTER_SCHEMA_SUPPORTED`.
     """
     conditions: list[str] = []
     if source_path:
@@ -1060,6 +1104,7 @@ def handle_find_artifact(
         "classification": classification.to_payload(),
         "count": len(results),
         "results": results,
+        **_tombstone_meta(args.include_tombstoned),
     }, EXIT_OK
 
 
@@ -1088,6 +1133,7 @@ def handle_find_doc(
         "classification": classification.to_payload(),
         "count": len(results),
         "results": results,
+        **_tombstone_meta(args.include_tombstoned),
     }, EXIT_OK
 
 
@@ -1117,6 +1163,7 @@ def handle_find_symbol(
         "classification": classification.to_payload(),
         "count": len(results),
         "results": results,
+        **_tombstone_meta(args.include_tombstoned),
     }, EXIT_OK
 
 
@@ -1143,6 +1190,7 @@ def handle_show_symbol(
         "classification": classification.to_payload(),
         "count": len(results),
         "results": results,
+        **_tombstone_meta(args.include_tombstoned),
     }, EXIT_OK
 
 
@@ -1170,6 +1218,7 @@ def handle_find_imports(
         "classification": classification.to_payload(),
         "count": len(results),
         "results": results,
+        **_tombstone_meta(args.include_tombstoned),
     }, EXIT_OK
 
 
@@ -1196,6 +1245,7 @@ def handle_show_imports_for_artifact(
         "classification": classification.to_payload(),
         "count": len(results),
         "results": results,
+        **_tombstone_meta(args.include_tombstoned),
     }, EXIT_OK
 
 
@@ -1233,6 +1283,7 @@ def handle_trace(
         "depth": effective_depth,
         "count": len(results),
         "results": results,
+        **_tombstone_meta(args.include_tombstoned),
     }, EXIT_OK
 
 
@@ -1306,6 +1357,7 @@ def handle_explain_source(
         "count": len(results),
         "results": results,
         "warnings": warnings if warnings else None,
+        **_tombstone_meta(args.include_tombstoned),
     }, EXIT_OK
 
 
@@ -1334,6 +1386,7 @@ def handle_show_snapshot(
         "classification": classification.to_payload(),
         "count": len(results),
         "results": results,
+        **_tombstone_meta(args.include_tombstoned),
     }, EXIT_OK
 
 
@@ -1392,6 +1445,7 @@ def handle_show_drift(
         "count": len(results),
         "results": results,
         "findings": findings if findings else None,
+        **_tombstone_meta(args.include_tombstoned),
     }, EXIT_OK
 
 
@@ -1420,6 +1474,7 @@ def handle_show_audit(
         "classification": classification.to_payload(),
         "count": len(results),
         "results": results,
+        **_tombstone_meta(args.include_tombstoned),
     }, EXIT_OK
 
 
@@ -1499,7 +1554,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--include-tombstoned",
         action="store_true",
         default=False,
-        help="Include tombstoned records in results (default: hidden).",
+        help=(
+            "Include tombstoned records in results. "
+            "Currently a no-op: the 'tombstoned' field is not declared in "
+            "context_intelligence_v0.surql (SCHEMAFULL), so no WHERE filter "
+            "is applied regardless of this flag. "
+            "Tombstone-filter semantics are reported in the payload via "
+            "'tombstone_filter_applied' and 'tombstone_filter_reason'. "
+            "A real filter belongs in a later schema slice (not this PR)."
+        ),
     )
 
     find_doc = subparsers.add_parser(
