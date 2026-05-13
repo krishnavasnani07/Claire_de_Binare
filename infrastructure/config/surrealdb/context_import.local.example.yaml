@@ -49,16 +49,17 @@ mode:
 # ---------------------------------------------------------------------------
 # Replace with values from your local dev SurrealDB instance.
 # Do NOT point this at a production or shared environment.
-surreal_url: "ws://127.0.0.1:8000/rpc"
+surreal_url: "http://127.0.0.1:8010"
 namespace: "cdb_context_local"
 database: "cdb_context_intel"
 
 # Authentication mode for the local importer.
 # Allowed values: "none" | "root" | "scope"
-# For the example/template, we default to "none" because no real
-# credentials may be embedded here. Real credentials must be loaded
-# from SECRETS_PATH at runtime, never from this YAML.
-auth_mode: "none"
+# Use "root" for the local SurrealDB sidecar (cdb_surrealdb) which requires
+# SURREAL_USER / SURREAL_PASS credentials loaded from SURREALDB_ENV.
+# Pass --secrets-path at runtime (make context-import-local handles this).
+# "none" is only appropriate for auth-disabled test/CI setups without credentials.
+auth_mode: "root"
 
 # Connection timeout in seconds for the local importer.
 timeout: 10
@@ -78,12 +79,16 @@ allow_apply_default: false
 # config loader can fail-closed if they are ever moved into `allowed_tables`.
 
 allowed_tables:
-  - context_document
-  - context_chunk
-  - context_embedding
-  - context_source
-  - context_tag
-  - context_link
+  - repo_artifact
+  - doc_page
+  - doc_section
+  - doc_chunk
+  - code_symbol
+  - import_reference
+  - test_case
+  - config_reference
+  - doc_code_link
+  - dependency_edge
 
 forbidden_tables:
   # Trading-state tables — never allowed in the Context Intelligence DB.

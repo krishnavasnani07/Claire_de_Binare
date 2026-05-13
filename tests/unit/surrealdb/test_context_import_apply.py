@@ -156,10 +156,10 @@ def test_apply_mode_constant_is_local_dev() -> None:
 
 
 @pytest.mark.unit
-def test_real_surrealdb_adapter_is_not_available() -> None:
-    """#2073: Real SurrealDB adapter is OUT-OF-SCOPE in this slice."""
+def test_real_surrealdb_adapter_is_available() -> None:
+    """#2458: Real SurrealDB local adapter is available behind opt-in gate."""
 
-    assert REAL_SURREALDB_ADAPTER_AVAILABLE is False
+    assert REAL_SURREALDB_ADAPTER_AVAILABLE is True
 
 
 @pytest.mark.unit
@@ -616,7 +616,7 @@ def test_apply_payload_includes_real_adapter_disclaimer(tmp_path: Path) -> None:
         clock=FixedClock(datetime(2026, 1, 1)),
     )
     payload = report.to_payload()
-    assert payload["real_surrealdb_adapter_available"] is False
+    assert payload["real_surrealdb_adapter_available"] is True
     assert payload["adapter"] == ADAPTER_KIND_IN_MEMORY
     assert payload["surrealdb_connection"] == "in-memory-no-network"
     assert payload["schema_version"] == SCHEMA_VERSION
@@ -827,3 +827,149 @@ def test_apply_blocks_table_omitted_from_config_allowed_tables(
         assert r.detail is not None
         assert "repo_artifact" in r.detail
         assert "configured allow-list" in r.detail
+
+
+# ---------------------------------------------------------------------------
+# Domain payload threading — adapter must receive actual JSONL record fields
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_apply_create_adapter_receives_domain_fields_not_metadata(
+    tmp_path: Path,
+) -> None:
+    """The in-memory adapter must store real domain fields, not import metadata.
+
+    Before the Thread A fix, _build_payload_for_op returned
+    {table, record_id, run_id, payload_hash} — import metadata, not domain data.
+    After the fix, the adapter receives the actual JSONL record content.
+    """
+    _write_valid_artifacts(tmp_path)
+    config_path = _write_local_dev_config(tmp_path / "config.yaml")
+    config = load_config(config_path)
+    plan = build_import_plan(tmp_path, "run-apply-1")
+    reconcile = reconcile_import_plan(plan, load_existing_records(None))
+
+    adapter = InMemoryContextApplyAdapter()
+    report = execute_context_apply(
+        reconcile_report=reconcile,
+        config=config,
+        run_id="run-apply-1",
+        apply_mode=APPLY_MODE_LOCAL_DEV,
+        adapter=adapter,
+        clock=FixedClock(datetime(2026, 1, 1, 12, 0, 0)),
+    )
+
+    assert report.apply_executed is True
+
+    # repo_artifact record must have actual domain fields
+    art_record = adapter.records.get("repo_artifact:art-1")
+    assert art_record is not None, "repo_artifact:art-1 not in adapter records"
+    assert art_record.get("artifact_id") == "art-1"
+    assert art_record.get("source_path") == "docs/example.md"
+    # Import pipeline meta-fields (built by old _build_payload_for_op) must NOT appear.
+    # Note: "run_id" is a valid JSONL envelope field and IS present in the record;
+    # only pipeline-injected fields that were never in the JSONL must be absent.
+    assert "payload_hash" not in art_record
+    assert "table" not in art_record
+    assert "record_id" not in art_record
+
+    # doc_page record must have actual domain fields
+    page_record = adapter.records.get("doc_page:page-example")
+    assert page_record is not None, "doc_page:page-example not in adapter records"
+    assert page_record.get("page_id") == "page-example"
+    assert page_record.get("source_path") == "docs/example.md"
+    assert "payload_hash" not in page_record
+
+
+@pytest.mark.unit
+def test_apply_update_adapter_receives_domain_fields(
+    tmp_path: Path,
+) -> None:
+    """Update operations must pass domain fields, not metadata, to the adapter."""
+    _write_valid_artifacts(tmp_path)
+    config_path = _write_local_dev_config(tmp_path / "config.yaml")
+    config = load_config(config_path)
+
+    # First apply: create the records
+    plan = build_import_plan(tmp_path, "run-apply-1")
+    existing_after_first = load_existing_records(None)
+    reconcile = reconcile_import_plan(plan, existing_after_first)
+    adapter = InMemoryContextApplyAdapter()
+    execute_context_apply(
+        reconcile_report=reconcile,
+        config=config,
+        run_id="run-apply-1",
+        apply_mode=APPLY_MODE_LOCAL_DEV,
+        adapter=adapter,
+        clock=FixedClock(datetime(2026, 1, 1, 12, 0, 0)),
+    )
+
+    # Overwrite both JSONL files consistently — doc_pages references normalized_sha256
+    # of repo_artifacts, so both must be updated together to avoid blocking validation.
+    updated_record = {
+        "schema_version": "context-indexer/v0",
+        "run_id": "run-apply-1",  # same run_id as other JSONL files to pass validation
+        "artifact_id": "art-1",
+        "source_path": "docs/example-updated.md",
+        "file_type": "markdown",
+        "raw_sha256": "b" * 64,
+        "normalized_sha256": "b" * 64,
+        "source_hash": "b" * 64,
+        "integrity_algo": "sha256",
+        "size_bytes": 99,
+        "sensitivity": "public",
+    }
+    (tmp_path / "repo_artifacts.jsonl").write_text(
+        json.dumps(updated_record) + "\n", encoding="utf-8"
+    )
+    # doc_page source_hash must match the updated normalized_sha256
+    updated_page = {
+        "schema_version": "context-indexer/v0",
+        "run_id": "run-apply-1",
+        "page_id": "page-example",
+        "source_path": "docs/example-updated.md",
+        "source_hash": "b" * 64,
+        "title": "Example Updated",
+    }
+    (tmp_path / "doc_pages.jsonl").write_text(
+        json.dumps(updated_page) + "\n", encoding="utf-8"
+    )
+
+    # Use a different hash for existing records to ensure reconcile yields update_candidate
+    existing_path = tmp_path / "existing.json"
+    _write_existing(
+        existing_path,
+        [
+            {
+                "table": "repo_artifact",
+                "record_id": "repo_artifact:art-1",
+                "payload_hash": "f" * 64,  # different hash → triggers update
+                "schema_version": "context-importer/v0",
+            }
+        ],
+    )
+
+    plan2 = build_import_plan(tmp_path, "run-apply-1")
+    reconcile2 = reconcile_import_plan(plan2, load_existing_records(existing_path))
+    adapter2 = InMemoryContextApplyAdapter()
+    report2 = execute_context_apply(
+        reconcile_report=reconcile2,
+        config=config,
+        run_id="run-apply-1",
+        apply_mode=APPLY_MODE_LOCAL_DEV,
+        adapter=adapter2,
+        clock=FixedClock(datetime(2026, 1, 2, 12, 0, 0)),
+    )
+
+    assert report2.apply_executed is True
+    update_ops = [op for op in adapter2.operations if op[0] == "update"]
+    assert update_ops, "expected at least one update operation"
+
+    # Updated record must contain domain fields, not import metadata
+    art_updated = adapter2.records.get("repo_artifact:art-1")
+    assert art_updated is not None
+    assert art_updated.get("artifact_id") == "art-1"
+    assert art_updated.get("source_path") == "docs/example-updated.md"
+    assert "payload_hash" not in art_updated
+    assert "table" not in art_updated
