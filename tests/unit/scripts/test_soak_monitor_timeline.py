@@ -1748,3 +1748,185 @@ class TestDiskCheckFallback:
         assert (
             "Docker disk evidence also unavailable" in content
         ), "Fail-closed message missing — path C wording changed"
+
+
+# ---------------------------------------------------------------------------
+# Fresh-stack first-pass detection (Issue #2440 re-run fix)
+#
+# Root cause: soak_monitor.sh classified a freshly started, 100% healthy stack
+# as ENVIRONMENT_INTERRUPTION / INCONCLUSIVE on the very first monitor pass,
+# because all 12/12 SUT containers shared the same uptime (spread=0s, fresh
+# Docker launch).
+#
+# Fix: _FRESH_PASS_CANDIDATE + uptime-compatibility guard.  Grace is only applied
+# when elapsed_hours==0, last_checkpoint==-1, no existing markers, and uptime is
+# compatible with the run start timestamp derived from run_intent.txt mtime.
+# ---------------------------------------------------------------------------
+
+
+def is_fresh_stack_first_pass(
+    elapsed_hours: int,
+    last_checkpoint: int,
+    inconclusive_exists: bool,
+    failed_exists: bool,
+) -> bool:
+    """Mirror _FRESH_PASS_CANDIDATE detection in soak_monitor.sh (pre-uptime-compat check).
+
+    Returns True only when all four conditions hold:
+    - elapsed_hours == 0 (within the first hour)
+    - last_checkpoint == -1 (no checkpoint has been written yet)
+    - no soak_test_INCONCLUSIVE.txt present
+    - no soak_test_FAILED.txt present
+
+    This mirrors the bash _FRESH_PASS_CANDIDATE=1 logic before the uptime-compatibility
+    guard is evaluated.  The uptime guard (_FRESH_PASS vs _FRESH_PASS_CANDIDATE) requires
+    live container uptime data and is validated separately via soak_monitor.sh smoke guards.
+    """
+    return (
+        elapsed_hours == 0
+        and last_checkpoint == -1
+        and not inconclusive_exists
+        and not failed_exists
+    )
+
+
+class TestFreshStackFirstPassDetection:
+    """Issue #2440: first-pass candidate detection logic mirrors soak_monitor.sh.
+
+    These tests validate the Python model of the bash _FRESH_PASS_CANDIDATE guard.
+    They are paired with TestRestartDetectionScope for the scope-aware SUT counting.
+    """
+
+    def test_clean_first_pass_is_candidate(self) -> None:
+        """All four conditions met → True (fresh-stack grace candidate)."""
+        assert is_fresh_stack_first_pass(0, -1, False, False) is True
+
+    def test_beyond_first_hour_no_grace(self) -> None:
+        """elapsed_hours >= 1 → not a fresh-stack candidate, regardless of checkpoint."""
+        assert is_fresh_stack_first_pass(1, -1, False, False) is False
+        assert is_fresh_stack_first_pass(2, -1, False, False) is False
+        assert is_fresh_stack_first_pass(24, -1, False, False) is False
+
+    def test_checkpoint_already_written_no_grace(self) -> None:
+        """last_checkpoint >= 0 means a prior pass completed → not first pass."""
+        assert is_fresh_stack_first_pass(0, 0, False, False) is False
+        assert is_fresh_stack_first_pass(0, 5, False, False) is False
+
+    def test_inconclusive_marker_blocks_grace(self) -> None:
+        """soak_test_INCONCLUSIVE.txt present → grace blocked (fail-closed)."""
+        assert is_fresh_stack_first_pass(0, -1, True, False) is False
+
+    def test_failed_marker_blocks_grace(self) -> None:
+        """soak_test_FAILED.txt present → grace blocked (fail-closed)."""
+        assert is_fresh_stack_first_pass(0, -1, False, True) is False
+
+    def test_both_markers_block_grace(self) -> None:
+        """Both markers present → still blocked."""
+        assert is_fresh_stack_first_pass(0, -1, True, True) is False
+
+    def test_partial_12_of_12_sut_fresh_stack_is_candidate(self) -> None:
+        """Candidate check is independent of SUT count; full 12/12 is required at
+        a higher layer (the bash body checks RESTART_COUNT == EXPECTED_SERVICES == 12).
+        This test confirms the Python gate does not short-circuit on counts."""
+        assert is_fresh_stack_first_pass(0, -1, False, False) is True
+
+    def test_lr030_soak_monitor_bash_contains_fresh_pass_candidate_variable(
+        self,
+    ) -> None:
+        """Regression anchor: _FRESH_PASS_CANDIDATE must remain in soak_monitor.sh."""
+        content = _read_soak_monitor()
+        assert "_FRESH_PASS_CANDIDATE" in content, (
+            "_FRESH_PASS_CANDIDATE variable missing from soak_monitor.sh — "
+            "the fresh-stack first-pass grace guard has been removed or renamed"
+        )
+
+    def test_lr030_soak_monitor_bash_contains_fresh_stack_baseline_tag(self) -> None:
+        """Regression anchor: FRESH_STACK_BASELINE: log tag must remain in soak_monitor.sh."""
+        content = _read_soak_monitor()
+        assert "FRESH_STACK_BASELINE:" in content, (
+            "FRESH_STACK_BASELINE: log tag missing from soak_monitor.sh — "
+            "the benign fresh-stack classification path has been removed"
+        )
+
+    def test_lr030_soak_monitor_bash_contains_fresh_restart_tag(self) -> None:
+        """Regression anchor: FRESH_RESTART: log tag must remain in soak_monitor.sh."""
+        content = _read_soak_monitor()
+        assert "FRESH_RESTART:" in content, (
+            "FRESH_RESTART: log tag missing from soak_monitor.sh — "
+            "the per-container fresh-stack logging has been removed"
+        )
+
+    def test_lr030_soak_monitor_bash_uses_run_start_epoch_for_uptime_compat(
+        self,
+    ) -> None:
+        """Regression anchor: uptime-compat guard must use RUN_START_EPOCH.
+
+        The global RUN_START_EPOCH is derived from the artifact directory name
+        (actual run launch time) or first-invocation fallback — NOT from
+        run_intent.txt mtime, which would be the monitor invocation time and
+        yield _RUN_ELAPSED_S ≈ 0, making the compat check trivially pass even
+        for containers that restarted mid-run.
+        """
+        content = _read_soak_monitor()
+        assert "RUN_START_EPOCH" in content, (
+            "Uptime-compatibility guard must use global RUN_START_EPOCH "
+            "(derived from artifact directory name / run_start.txt) instead of "
+            "run_intent.txt mtime — the mid-run restart ambiguity fix is absent"
+        )
+
+    def test_lr030_soak_monitor_bash_writes_fresh_tags_to_fresh_stack_baseline_log(
+        self,
+    ) -> None:
+        """P1 fix guard: fresh-stack evidence must target fresh_stack_baseline.log.
+
+        soak_monitor.sh must write FRESH_RESTART: and FRESH_STACK_BASELINE: entries
+        to fresh_stack_baseline.log, NOT to restart_alerts.log.  Writing baseline
+        notices to restart_alerts.log would cause lr040_soak_gate_eval.py to report
+        no_restart_alerts=false and fail a healthy LR-040 run.
+        """
+        content = _read_soak_monitor()
+        assert "fresh_stack_baseline.log" in content, (
+            "fresh_stack_baseline.log missing from soak_monitor.sh — "
+            "fresh-stack baseline evidence has no dedicated output file (P1 fix absent)"
+        )
+
+    def test_lr030_soak_monitor_bash_fresh_restart_not_in_restart_alerts(
+        self,
+    ) -> None:
+        """P1 fix guard: FRESH_RESTART: must NOT be written to restart_alerts.log.
+
+        Any FRESH_RESTART: line that appends to restart_alerts.log would make
+        that file non-empty after a clean fresh first pass, breaking the LR-040
+        no_restart_alerts gate.
+        """
+        content = _read_soak_monitor()
+
+        # Find all lines that both contain FRESH_RESTART: and restart_alerts.log
+        bad_lines = [
+            line
+            for line in content.splitlines()
+            if "FRESH_RESTART:" in line and "restart_alerts.log" in line
+        ]
+        assert bad_lines == [], (
+            f"FRESH_RESTART: must not target restart_alerts.log — found:\n"
+            + "\n".join(bad_lines)
+        )
+
+    def test_lr030_soak_monitor_bash_fresh_stack_baseline_not_in_restart_alerts(
+        self,
+    ) -> None:
+        """P1 fix guard: FRESH_STACK_BASELINE: must NOT be written to restart_alerts.log.
+
+        Same rationale as above: any FRESH_STACK_BASELINE: in restart_alerts.log
+        makes the file non-empty, breaking the LR-040 gate.
+        """
+        content = _read_soak_monitor()
+        bad_lines = [
+            line
+            for line in content.splitlines()
+            if "FRESH_STACK_BASELINE:" in line and "restart_alerts.log" in line
+        ]
+        assert bad_lines == [], (
+            f"FRESH_STACK_BASELINE: must not target restart_alerts.log — found:\n"
+            + "\n".join(bad_lines)
+        )
