@@ -10,6 +10,7 @@ import pytest
 
 from tools.surrealdb.context_indexer import (
     EVIDENCE_REF_TEST_FILE_CONFIDENCE,
+    HIGH_CONFIDENCE_SECRET_RE,
     SCHEMA_VERSION,
     IndexerResult,
     ScopeConfigSummary,
@@ -595,6 +596,74 @@ def test_smoke_scope_has_zero_content_forbidden_pattern_findings() -> None:
         "blocking finding(s):\n"
         + "\n".join(f"  {f.source_path or '(no path)'}" for f in forbidden)
     )
+
+
+@pytest.mark.unit
+def test_high_confidence_secret_re_matches_quoted_literals() -> None:
+    """Quoted secret-like literals must still be detected after pattern refinement (#2594).
+
+    These cases represent true-positive credential patterns that the scanner must
+    continue to block — both real-looking and synthetic fixture keys.
+    """
+    positive_cases = [
+        'api_key = "ABCDEF1234567890"',
+        'api_key = "sk-test-abc123xyz456"',
+        'password="claire_redis_secret_2024"',
+        "secret='some-long-token-value-ab'",
+        'token = "eyJhbGciOiJIUzI1NiI"',
+    ]
+    for case in positive_cases:
+        assert HIGH_CONFIDENCE_SECRET_RE.search(case) is not None, (
+            f"Expected a match for quoted literal but got none: {case!r}"
+        )
+
+
+@pytest.mark.unit
+def test_high_confidence_secret_re_matches_unquoted_literals() -> None:
+    """Unquoted literal credential values must be detected after unquoted-branch fix (#2594).
+
+    These are cases where the credential value appears directly without surrounding quotes,
+    representing plain-text secret leakage in config/doc snippets. The bot review on PR #2595
+    correctly identified that the mandatory-quote-only pattern missed these forms.
+    """
+    unquoted_positive_cases = [
+        "password=supersecretvalue123",
+        "token: abcdefghijklmnop",
+        "api_key=sk-test-abc123xyz456",
+        "secret=xK9mN2pQrT4vW7zA1cE",
+        "credential=ABCDEF1234567890GHIJ",
+        "token=ghp_abc123xyz456def789",      # GitHub-style token with underscore prefix
+        "password=super_secret_value123",    # underscore mid-value
+    ]
+    for case in unquoted_positive_cases:
+        assert HIGH_CONFIDENCE_SECRET_RE.search(case) is not None, (
+            f"Expected a match for unquoted literal credential but got none: {case!r}"
+        )
+
+
+@pytest.mark.unit
+def test_high_confidence_secret_re_rejects_false_positives() -> None:
+    """Code/config expressions must not match — neither quoted nor unquoted branches.
+
+    Dots (config attribute paths), underscores at start (function calls), colons
+    at start (SurrealDB tokenizer) all result in < 12 char runs or non-matching
+    characters, keeping these false positives excluded.
+    """
+    negative_cases = [
+        "token = base64.b64encode(",
+        "password=config.REDIS_PASSWORD",
+        "class::token::tokenizer::en",
+        "self.password = _read_secret(",
+        "user, password = _load_credentials(env_file)",
+        "api_key=config.MEXC_API_KEY",
+        "password=self.redis_password",
+        "password=os.environ[\"REDIS_PASSWORD\"]",
+        "token=settings.API_TOKEN",
+    ]
+    for case in negative_cases:
+        assert HIGH_CONFIDENCE_SECRET_RE.search(case) is None, (
+            f"Expected no match for code/config expression but got one: {case!r}"
+        )
 
 
 @pytest.mark.unit
