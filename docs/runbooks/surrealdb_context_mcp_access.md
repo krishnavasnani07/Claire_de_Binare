@@ -95,7 +95,7 @@ Repo presence is not MCP availability. Each surface must be verified independent
 | Agent Surface | L1 Config | L2 Host | L3 Server | L4 Inventory | L5 Invocation | Overall Status |
 |---|---|---|---|---|---|---|---|
 | **Codex** | ✓ verified | via host agent (OpenCode or Claude) | ⚠️ blocked (env: pydantic-core mismatch) | ✓ bridge verified | ✓ bridge verified | reference in agents/templates/codex_mcp_config.md |
-| **OpenCode** | ✓ verified | ✓ repo-tracked config (`.opencode.jsonc`) | ⚠️ blocked (env: pydantic-core mismatch) | ✓ bridge verified | ✓ bridge verified | repo-tracked config + bridge-verified; stdio server needs env fix |
+| **OpenCode** | ✓ verified | ✓ host-active verified | ✓ host-active verified | ✓ bridge verified | ✓ bridge verified | repo-tracked config (`opencode.jsonc`) + host-active; cdb_context server connected in OpenCode UI |
 | **Claude / Cloud Code** | ✓ verified | template in `agents/templates/claude_mcp.json.template` | needs host-specific test | needs host-specific test | needs host-specific test | template exists; needs host-specific copy to user-level `.mcp.json` |
 | **Gemini** | ✓ verified | template in `agents/templates/gemini_mcp_config.yml.template` | needs host-specific test | needs host-specific test | needs host-specific test | template exists; needs host-specific embed in workflow YAML |
 | **Onboarding / new agent** | ✓ verified | setup script in `agents/templates/onboarding_mcp_setup.ps1` | ⚠️ blocked (env: pydantic-core mismatch) | ✓ bridge verified | ✓ bridge verified | setup script validates L1/L3/L4/L5; L2 requires manual host config |
@@ -103,6 +103,7 @@ Repo presence is not MCP availability. Each surface must be verified independent
 **Status key:**
 - `✓ verified` — directly confirmed in this repo session
 - `✓ repo-tracked config` — actual config file tracked in repo, auto-loaded by agent host
+- `✓ host-active verified` — agent host loaded and connected the MCP server (green in host UI)
 - `via host agent` — covered by calling agent's MCP config
 - `template in ...` — tracked template file; requires manual copy/embed
 - `setup script in ...` — executable validation script
@@ -129,11 +130,15 @@ python -c "import tools.mcp.server; print('STDIO IMPORT OK')"
 # pip install 'pydantic>=2.0,<3.0' 'pydantic-core==2.46.4'
 ```
 
+> **Note on config naming:** OpenCode's project-level config must be named `opencode.jsonc` or `opencode.json` (no leading dot). The repo tracked config was renamed from `.opencode.jsonc` to `opencode.jsonc` to match this requirement. Pre-existing user-level config at `~/.config/opencode/opencode.jsonc` is loaded alongside and merged per OpenCode's config precedence rules.
+>
+> **Note on server naming:** The repo defines server name `cdb_context`. If a user-level or remote config defines a different server named `cdb`, it is a separate server entry. Both coexist in the OpenCode MCP list. The `cdb` (remote) failure shown in OpenCode is pre-existing and unrelated to the repo baseline — it targets `http://127.0.0.1:8812/mcp` and requires a separate MCP server on that port.
+
 **Repo-tracked configs and templates:**
 
 | Surface | File | Type | Location |
 |---------|------|------|----------|
-| OpenCode | `.opencode.jsonc` | repo-tracked config (auto-loaded) | repo root |
+| OpenCode | `opencode.jsonc` | repo-tracked config (auto-loaded) | repo root |
 | Claude / Cloud Code | `claude_mcp.json.template` | template (copy to user-level `.mcp.json`) | `agents/templates/` |
 | Gemini | `gemini_mcp_config.yml.template` | template (embed in workflow YAML) | `agents/templates/` |
 | Codex | `codex_mcp_config.md` | reference (no separate MCP surface) | `agents/templates/` |
