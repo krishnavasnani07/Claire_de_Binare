@@ -66,8 +66,7 @@ class ContextToolRegistry:
         Raises ValueError if any tool is not read-only.
         """
         non_read_only = [
-            name for name, tool in cls._tools.items()
-            if not tool.read_only
+            name for name, tool in cls._tools.items() if not tool.read_only
         ]
         if non_read_only:
             raise ValueError(
@@ -487,8 +486,47 @@ TOOLS_V0 = [
                     "enum": ["low", "medium", "high"],
                     "description": "Pre-assessed risk level of the task.",
                 },
+                "repo_state": {
+                    "type": "object",
+                    "description": "Optional caller-provided repo session state.",
+                },
+                "github_state": {
+                    "type": "object",
+                    "description": "Optional caller-provided GitHub session state.",
+                },
+                "brain_source": {
+                    "type": "string",
+                    "enum": [
+                        "repo-only",
+                        "in_memory",
+                        "surrealdb-local",
+                        "unavailable",
+                    ],
+                    "description": "Optional session memory source classification.",
+                },
+                "brain_status": {
+                    "type": "string",
+                    "enum": ["used", "partial", "not-used", "blocked"],
+                    "description": "Optional session memory usage status.",
+                },
+                "working_assumptions": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional short-lived assumptions supplied by the caller.",
+                },
+                "limitations": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional session limitations supplied by the caller.",
+                },
             },
-            "required": ["task_id", "task_scope", "target_issue", "requested_depth", "operation_mode"],
+            "required": [
+                "task_id",
+                "task_scope",
+                "target_issue",
+                "requested_depth",
+                "operation_mode",
+            ],
         },
         output_schema={
             "type": "object",
@@ -504,7 +542,10 @@ TOOLS_V0 = [
                         "scope_summary": {"type": "string"},
                         "trust_summary": {"type": "string"},
                         "context_package_ref": {"type": ["string", "null"]},
-                        "required_reads": {"type": "array", "items": {"type": "string"}},
+                        "required_reads": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                        },
                         "relevant_artifacts": {"type": "array"},
                         "relevant_symbols": {"type": "array"},
                         "relevant_docs": {"type": "array"},
@@ -513,16 +554,55 @@ TOOLS_V0 = [
                         "enriched_decisions": {"type": "array"},
                         "enriched_evidence": {"type": "array"},
                         "enriched_memory": {"type": "array"},
-                        "enriched_stop_conditions": {"type": "array", "items": {"type": "string"}},
-                        "stale_evidence_notice": {"type": "array", "items": {"type": "string"}},
-                        "contradictory_evidence_notice": {"type": "array", "items": {"type": "string"}},
-                        "missing_evidence_notice": {"type": "array", "items": {"type": "string"}},
+                        "enriched_stop_conditions": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                        },
+                        "stale_evidence_notice": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                        },
+                        "contradictory_evidence_notice": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                        },
+                        "missing_evidence_notice": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                        },
+                        "session_context": {
+                            "type": "object",
+                            "properties": {
+                                "memory_type": {"type": "string"},
+                                "session_only": {"type": "boolean"},
+                                "ttl_seconds": {"type": "integer"},
+                                "brain_source": {"type": "string"},
+                                "brain_status": {"type": "string"},
+                                "repo_state": {"type": "object"},
+                                "github_state": {"type": "object"},
+                                "agent_operating_mode": {"type": "object"},
+                                "working_assumptions": {
+                                    "type": "array",
+                                    "items": {"type": "string"},
+                                },
+                                "limitations": {
+                                    "type": "array",
+                                    "items": {"type": "string"},
+                                },
+                            },
+                        },
                         "dependency_paths": {"type": "array"},
                         "known_risks": {"type": "array", "items": {"type": "string"}},
                         "guardrails": {"type": "array", "items": {"type": "string"}},
-                        "stop_conditions": {"type": "array", "items": {"type": "string"}},
+                        "stop_conditions": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                        },
                         "validation_plan": {"type": "array"},
-                        "unresolved_questions": {"type": "array", "items": {"type": "string"}},
+                        "unresolved_questions": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                        },
                         "human_go_required": {"type": "boolean"},
                     },
                 },
@@ -754,9 +834,18 @@ TOOLS_V0 = [
                         "affected_symbols": {"type": "array"},
                         "affected_tests": {"type": "array"},
                         "affected_docs": {"type": "array"},
-                        "affected_decisions": {"type": "array", "items": {"type": "string"}},
-                        "affected_evidence": {"type": "array", "items": {"type": "string"}},
-                        "affected_memory_refs_read_only": {"type": "array", "items": {"type": "string"}},
+                        "affected_decisions": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                        },
+                        "affected_evidence": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                        },
+                        "affected_memory_refs_read_only": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                        },
                         "graph_paths": {"type": "array"},
                         "gate_risks": {"type": "array", "items": {"type": "string"}},
                         "confidence": {
@@ -1539,7 +1628,10 @@ def register_all_tools() -> None:
     # #2110: Provide a stable alias for the briefing tool without renaming it.
     # The alias schema is deep-copied from context.briefing to prevent drift.
     base = ContextToolRegistry.get_tool("context.briefing")
-    if base is not None and ContextToolRegistry.get_tool("cdb_context_briefing") is None:
+    if (
+        base is not None
+        and ContextToolRegistry.get_tool("cdb_context_briefing") is None
+    ):
         ContextToolRegistry.register(
             ToolDefinition(
                 name="cdb_context_briefing",

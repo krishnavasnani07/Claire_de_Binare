@@ -585,15 +585,20 @@ def context_readiness_handler(**kwargs) -> dict[str, Any]:
         ]
 
     # --- Validate operation_mode against contract enum ---
-    VALID_OPERATION_MODES = frozenset({
-        "read_only",
-        "dry_run",
-        "write (code/docs)",
-        "write (config/infra)",
-        "write (DB/migration)",
-        "write (MCP live)",
-    })
-    if not isinstance(operation_mode, str) or operation_mode not in VALID_OPERATION_MODES:
+    VALID_OPERATION_MODES = frozenset(
+        {
+            "read_only",
+            "dry_run",
+            "write (code/docs)",
+            "write (config/infra)",
+            "write (DB/migration)",
+            "write (MCP live)",
+        }
+    )
+    if (
+        not isinstance(operation_mode, str)
+        or operation_mode not in VALID_OPERATION_MODES
+    ):
         valid_operation_modes = ", ".join(sorted(VALID_OPERATION_MODES))
         invalid_mode_stop = (
             f"S1: invalid operation_mode — must be one of: {valid_operation_modes}"
@@ -653,13 +658,16 @@ def context_readiness_handler(**kwargs) -> dict[str, Any]:
     paths_lower = " ".join(target_paths).lower()
 
     triggers = ["trading", "risk", "execution", "strategy"]
-    touches_trading_risk = any(
-        t in task_lower or t in paths_lower for t in triggers
-    )
+    touches_trading_risk = any(t in task_lower or t in paths_lower for t in triggers)
 
     live_kw = [
-        "live", "echtgeld", "production deploy", "go-live",
-        "live readiness", "lr-go", "live trading authorization",
+        "live",
+        "echtgeld",
+        "production deploy",
+        "go-live",
+        "live readiness",
+        "lr-go",
+        "live trading authorization",
     ]
     has_live_claim = any(kw in task_lower for kw in live_kw)
 
@@ -714,9 +722,7 @@ def context_readiness_handler(**kwargs) -> dict[str, Any]:
         for r in missing_reads:
             output_stop_conditions.append(f"S3: minimum read unavailable: {r}")
     if not context_package_ref and not required_reads:
-        output_stop_conditions.append(
-            "S2: no context package and no required reads"
-        )
+        output_stop_conditions.append("S2: no context package and no required reads")
     if is_write and not impact_refs:
         output_stop_conditions.append("S6: write without impact report")
     if not stop_conditions_in:
@@ -724,9 +730,7 @@ def context_readiness_handler(**kwargs) -> dict[str, Any]:
     if is_write and not evidence_refs:
         output_stop_conditions.append("S4: core assumptions lack evidence")
     if has_live_claim:
-        output_stop_conditions.append(
-            "S8: live/echtgeld claims outside LR SSOT"
-        )
+        output_stop_conditions.append("S8: live/echtgeld claims outside LR SSOT")
     if touches_trading_risk and is_write:
         output_stop_conditions.append("S7: trading/risk/execution scope touched")
 
@@ -755,9 +759,7 @@ def context_readiness_handler(**kwargs) -> dict[str, Any]:
             "Context sufficient. Write operation or trading/risk scope "
             "requires Human-GO."
         )
-        guardrails.append(
-            "Stop. Request Human-GO. Do not write until approved."
-        )
+        guardrails.append("Stop. Request Human-GO. Do not write until approved.")
     elif operation_mode == "dry_run":
         status = "ready_for_dry_run"
         reasons.append("Dry-run mode. Plan and preview, but do not execute.")
@@ -827,6 +829,12 @@ def context_briefing_handler(**kwargs) -> dict[str, Any]:
     _decision_events_raw = kwargs.get("decision_events")
     _memory_records_raw = kwargs.get("memory_records")
     _enrichment_scope = kwargs.get("enrichment_scope", "wave14")
+    _repo_state_raw = kwargs.get("repo_state")
+    _github_state_raw = kwargs.get("github_state")
+    _brain_source_raw = kwargs.get("brain_source")
+    _brain_status_raw = kwargs.get("brain_status")
+    _working_assumptions_raw = kwargs.get("working_assumptions")
+    _session_limitations_raw = kwargs.get("limitations")
     if not isinstance(_enrichment_scope, str) or not _enrichment_scope.strip():
         _enrichment_scope = "wave14"
     else:
@@ -907,14 +915,16 @@ def context_briefing_handler(**kwargs) -> dict[str, Any]:
             },
         }
 
-    valid_modes = frozenset({
-        "read_only",
-        "dry_run",
-        "write (code/docs)",
-        "write (config/infra)",
-        "write (DB/migration)",
-        "write (MCP live)",
-    })
+    valid_modes = frozenset(
+        {
+            "read_only",
+            "dry_run",
+            "write (code/docs)",
+            "write (config/infra)",
+            "write (DB/migration)",
+            "write (MCP live)",
+        }
+    )
     if not isinstance(operation_mode, str) or operation_mode not in valid_modes:
         return {
             "tool": "context.briefing",
@@ -931,6 +941,158 @@ def context_briefing_handler(**kwargs) -> dict[str, Any]:
     if risk_level not in frozenset({"low", "medium", "high"}):
         risk_level = "medium"
 
+    valid_brain_sources = frozenset(
+        {
+            "repo-only",
+            "in_memory",
+            "surrealdb-local",
+            "unavailable",
+        }
+    )
+    valid_brain_statuses = frozenset({"used", "partial", "not-used", "blocked"})
+    valid_working_tree_states = frozenset({"clean", "dirty", "unknown"})
+    session_context_limitations: list[str] = []
+
+    if isinstance(_brain_source_raw, str) and _brain_source_raw in valid_brain_sources:
+        brain_source = _brain_source_raw
+    else:
+        brain_source = "repo-only"
+        if _brain_source_raw is not None:
+            session_context_limitations.append(
+                "brain_source malformed; defaulted to repo-only"
+            )
+        else:
+            session_context_limitations.append(
+                "brain_source not provided; defaulted to repo-only"
+            )
+
+    if isinstance(_brain_status_raw, str) and _brain_status_raw in valid_brain_statuses:
+        brain_status = _brain_status_raw
+    else:
+        brain_status = "not-used" if brain_source == "repo-only" else "blocked"
+        if _brain_status_raw is not None:
+            session_context_limitations.append(
+                "brain_status malformed; defaulted conservatively"
+            )
+        else:
+            session_context_limitations.append(
+                "brain_status not provided; defaulted conservatively"
+            )
+
+    if brain_source == "repo-only" and brain_status != "not-used":
+        brain_status = "not-used"
+        session_context_limitations.append(
+            "repo-only brain source cannot advertise used or partial brain status; coerced to not-used"
+        )
+    elif brain_source == "unavailable" and brain_status != "blocked":
+        brain_status = "blocked"
+        session_context_limitations.append(
+            "unavailable brain source cannot advertise usable brain status; coerced to blocked"
+        )
+
+    if brain_source == "repo-only":
+        session_context_limitations.append(
+            "repo-only brain source; no DB-backed memory or evidence claims"
+        )
+
+    repo_state = {
+        "branch": "unknown",
+        "commit": "unknown",
+        "working_tree": "unknown",
+    }
+    if isinstance(_repo_state_raw, dict):
+        repo_branch = _repo_state_raw.get("branch")
+        repo_commit = _repo_state_raw.get("commit")
+        repo_working_tree = _repo_state_raw.get("working_tree")
+
+        if isinstance(repo_branch, str) and repo_branch.strip():
+            repo_state["branch"] = repo_branch.strip()
+        else:
+            session_context_limitations.append(
+                "repo_state.branch missing or malformed; using unknown"
+            )
+
+        if isinstance(repo_commit, str) and repo_commit.strip():
+            repo_state["commit"] = repo_commit.strip()
+        else:
+            session_context_limitations.append(
+                "repo_state.commit missing or malformed; using unknown"
+            )
+
+        if repo_working_tree in valid_working_tree_states:
+            repo_state["working_tree"] = repo_working_tree
+        else:
+            session_context_limitations.append(
+                "repo_state.working_tree missing or malformed; using unknown"
+            )
+    else:
+        session_context_limitations.append(
+            "repo_state not provided; using unknown repo state"
+        )
+
+    github_state = {
+        "target_issue": target_issue if isinstance(target_issue, str) else None,
+        "related_prs": [],
+        "open_epics": [],
+    }
+    if isinstance(_github_state_raw, dict):
+        github_target_issue = _github_state_raw.get("target_issue")
+        if github_target_issue is None or isinstance(github_target_issue, str):
+            github_state["target_issue"] = github_target_issue
+        else:
+            session_context_limitations.append(
+                "github_state.target_issue malformed; using request target_issue or null"
+            )
+
+        for field_name in ("related_prs", "open_epics"):
+            field_value = _github_state_raw.get(field_name)
+            if isinstance(field_value, list):
+                github_state[field_name] = [
+                    item for item in field_value if isinstance(item, str)
+                ]
+                if len(github_state[field_name]) != len(field_value):
+                    session_context_limitations.append(
+                        f"github_state.{field_name} contained non-string entries; dropped invalid items"
+                    )
+            elif field_value is not None:
+                session_context_limitations.append(
+                    f"github_state.{field_name} malformed; using empty list"
+                )
+    else:
+        session_context_limitations.append(
+            "github_state not provided; using request target_issue and empty related PR/epic lists"
+        )
+
+    working_assumptions = []
+    if isinstance(_working_assumptions_raw, list):
+        working_assumptions = [
+            item for item in _working_assumptions_raw if isinstance(item, str)
+        ]
+        if len(working_assumptions) != len(_working_assumptions_raw):
+            session_context_limitations.append(
+                "working_assumptions contained non-string entries; dropped invalid items"
+            )
+    elif _working_assumptions_raw is not None:
+        session_context_limitations.append(
+            "working_assumptions malformed; using empty list"
+        )
+
+    if isinstance(_session_limitations_raw, list):
+        caller_limitations = [
+            item for item in _session_limitations_raw if isinstance(item, str)
+        ]
+        session_context_limitations.extend(caller_limitations)
+        if len(caller_limitations) != len(_session_limitations_raw):
+            session_context_limitations.append(
+                "limitations contained non-string entries; dropped invalid items"
+            )
+    elif _session_limitations_raw is not None:
+        session_context_limitations.append(
+            "limitations malformed; using generated limitations"
+        )
+
+    session_context_limitations_norm = list(dict.fromkeys(session_context_limitations))
+
     # --- Normalize arrays ---
     if not isinstance(target_paths, list):
         target_paths = []
@@ -944,7 +1106,9 @@ def context_briefing_handler(**kwargs) -> dict[str, Any]:
     target_symbols_norm = [str(s) for s in target_symbols if isinstance(s, str)]
     target_concepts_norm = [str(c) for c in target_concepts if isinstance(c, str)]
     agent_type_norm = agent_type.strip() if isinstance(agent_type, str) else ""
-    risk_level_norm = risk_level if risk_level in frozenset({"low", "medium", "high"}) else "medium"
+    risk_level_norm = (
+        risk_level if risk_level in frozenset({"low", "medium", "high"}) else "medium"
+    )
 
     request_for_hash: dict[str, Any] = {
         "task_id": task_id.strip(),
@@ -957,6 +1121,12 @@ def context_briefing_handler(**kwargs) -> dict[str, Any]:
         "operation_mode": operation_mode,
         "agent_type": agent_type_norm,
         "risk_level": risk_level_norm,
+        "repo_state": repo_state,
+        "github_state": github_state,
+        "brain_source": brain_source,
+        "brain_status": brain_status,
+        "working_assumptions": working_assumptions,
+        "limitations": session_context_limitations_norm,
     }
     briefing_id = hashlib.sha256(
         json.dumps(request_for_hash, sort_keys=True).encode()
@@ -1010,9 +1180,7 @@ def context_briefing_handler(**kwargs) -> dict[str, Any]:
             if sc_text not in stop_conditions:
                 stop_conditions.append(sc_text)
     except Exception as e:
-        resolver_error = (
-            f"stop resolver unavailable: {type(e).__name__}: {e}"
-        )
+        resolver_error = f"stop resolver unavailable: {type(e).__name__}: {e}"
 
     # --- Guardrails (always present) ---
     guardrails = [
@@ -1026,7 +1194,9 @@ def context_briefing_handler(**kwargs) -> dict[str, Any]:
     ]
 
     # --- Required reads (from readiness, minimum baseline always present) ---
-    required_reads = readiness.get("required_next_reads", MINIMUM_READS) or MINIMUM_READS
+    required_reads = (
+        readiness.get("required_next_reads", MINIMUM_READS) or MINIMUM_READS
+    )
 
     # --- Delegate to context.package for standard/deep depth ---
     package_artifacts: list[dict[str, Any]] = []
@@ -1093,7 +1263,9 @@ def context_briefing_handler(**kwargs) -> dict[str, Any]:
             )
 
     # --- Agent attribution for scope summary ---
-    agent_label = f" [{agent_type.strip()}]" if agent_type and agent_type.strip() else ""
+    agent_label = (
+        f" [{agent_type.strip()}]" if agent_type and agent_type.strip() else ""
+    )
 
     # --- Depth-dependent content ---
     if requested_depth == "quick":
@@ -1135,8 +1307,7 @@ def context_briefing_handler(**kwargs) -> dict[str, Any]:
         )
     if not target_paths and not target_symbols:
         known_risks.append(
-            "no target_paths or target_symbols specified; "
-            "context may be minimal"
+            "no target_paths or target_symbols specified; " "context may be minimal"
         )
 
     # --- Surface resolver failure ---
@@ -1183,6 +1354,27 @@ def context_briefing_handler(**kwargs) -> dict[str, Any]:
         }
     )
 
+    db_claims_allowed = brain_source == "surrealdb-local" and brain_status in frozenset(
+        {"used", "partial"}
+    )
+
+    session_context = {
+        "memory_type": "working_memory",
+        "session_only": True,
+        "ttl_seconds": 14400,
+        "brain_source": brain_source,
+        "brain_status": brain_status,
+        "repo_state": repo_state,
+        "github_state": github_state,
+        "agent_operating_mode": {
+            "operation_mode": operation_mode,
+            "human_go_required": human_go_required,
+            "db_claims_allowed": db_claims_allowed,
+        },
+        "working_assumptions": working_assumptions,
+        "limitations": session_context_limitations_norm,
+    }
+
     # --- Enrichment (#2122) ---
     enrichment_id = hashlib.sha256(
         (briefing_id + requested_depth).encode()
@@ -1197,12 +1389,14 @@ def context_briefing_handler(**kwargs) -> dict[str, Any]:
     blocking_trust_findings: list[str] = []
     recommended_next_reads_enrichment: list[str] = []
 
-    _has_records = any([
-        isinstance(_evidence_records_raw, list) and bool(_evidence_records_raw),
-        isinstance(_claim_records_raw, list) and bool(_claim_records_raw),
-        isinstance(_decision_events_raw, list) and bool(_decision_events_raw),
-        isinstance(_memory_records_raw, list) and bool(_memory_records_raw),
-    ])
+    _has_records = any(
+        [
+            isinstance(_evidence_records_raw, list) and bool(_evidence_records_raw),
+            isinstance(_claim_records_raw, list) and bool(_claim_records_raw),
+            isinstance(_decision_events_raw, list) and bool(_decision_events_raw),
+            isinstance(_memory_records_raw, list) and bool(_memory_records_raw),
+        ]
+    )
 
     if not _has_records:
         # Fail-closed: no records provided — controlled-empty enrichment
@@ -1266,8 +1460,7 @@ def context_briefing_handler(**kwargs) -> dict[str, Any]:
                 # Filter matched evidence to requested scope — by_freshness does not
                 # filter by scope, unlike claim/decision/memory enrichers.
                 _matched_ev = [
-                    ev for ev in _matched_ev
-                    if ev.get("scope") == _enrichment_scope
+                    ev for ev in _matched_ev if ev.get("scope") == _enrichment_scope
                 ]
                 enriched_evidence = [
                     {
@@ -1287,7 +1480,8 @@ def context_briefing_handler(**kwargs) -> dict[str, Any]:
                 # None, ints) must not reach .get() or they raise AttributeError.
                 _matched_ev_ids = {_ev.get("evidence_id") for _ev in _matched_ev}
                 _undated_recs = [
-                    rec for rec in _evidence_records_raw
+                    rec
+                    for rec in _evidence_records_raw
                     if isinstance(rec, dict)
                     and not rec.get("created_at")
                     and rec.get("evidence_id") not in _matched_ev_ids
@@ -1302,15 +1496,17 @@ def context_briefing_handler(**kwargs) -> dict[str, Any]:
                     )
                 if _undated_recs:
                     for _urec in _undated_recs[:20]:
-                        enriched_evidence.append({
-                            "evidence_id": _urec.get("evidence_id"),
-                            "title": _urec.get("title"),
-                            "confidence": _urec.get("confidence"),
-                            "stale": _urec.get("stale"),
-                            "blocking_missing": _urec.get("blocking_missing"),
-                            "evidence_type": _urec.get("evidence_type"),
-                            "scope": _urec.get("scope"),
-                        })
+                        enriched_evidence.append(
+                            {
+                                "evidence_id": _urec.get("evidence_id"),
+                                "title": _urec.get("title"),
+                                "confidence": _urec.get("confidence"),
+                                "stale": _urec.get("stale"),
+                                "blocking_missing": _urec.get("blocking_missing"),
+                                "evidence_type": _urec.get("evidence_type"),
+                                "scope": _urec.get("scope"),
+                            }
+                        )
                     _undated_ids = [r.get("evidence_id") for r in _undated_recs]
                     blocking_trust_findings.append(
                         f"undated_evidence_missing_created_at: {_undated_ids}"
@@ -1320,9 +1516,7 @@ def context_briefing_handler(**kwargs) -> dict[str, Any]:
                     )
                 _stale_ev_ids = _evidence_service_result.get("stale_evidence_ids", [])
                 if _stale_ev_ids:
-                    stale_evidence_notice.append(
-                        f"stale_evidence: {_stale_ev_ids}"
-                    )
+                    stale_evidence_notice.append(f"stale_evidence: {_stale_ev_ids}")
                     recommended_next_reads_enrichment.append(
                         "Review stale evidence before proceeding"
                     )
@@ -1347,7 +1541,8 @@ def context_briefing_handler(**kwargs) -> dict[str, Any]:
         if isinstance(_claim_records_raw, list) and _claim_records_raw:
             try:
                 _scoped_claims = [
-                    r for r in _claim_records_raw
+                    r
+                    for r in _claim_records_raw
                     if isinstance(r, dict) and r.get("scope") == _enrichment_scope
                 ]
                 _cl_req = ClaimResolveRequest(
@@ -1370,7 +1565,8 @@ def context_briefing_handler(**kwargs) -> dict[str, Any]:
         if isinstance(_decision_events_raw, list) and _decision_events_raw:
             try:
                 _scoped_decisions = [
-                    r for r in _decision_events_raw
+                    r
+                    for r in _decision_events_raw
                     if isinstance(r, dict) and r.get("scope") == _enrichment_scope
                 ]
                 _dec_req = DecisionHistoryQueryRequest(
@@ -1384,8 +1580,7 @@ def context_briefing_handler(**kwargs) -> dict[str, Any]:
                     _matched_dec = _decision_service_result.get("matched_decisions", [])
                     # Post-filter to exact scope as defence-in-depth.
                     _matched_dec = [
-                        d for d in _matched_dec
-                        if d.get("scope") == _enrichment_scope
+                        d for d in _matched_dec if d.get("scope") == _enrichment_scope
                     ]
                     enriched_decisions = [
                         {
@@ -1406,9 +1601,7 @@ def context_briefing_handler(**kwargs) -> dict[str, Any]:
                     mode="by_scope",
                     scope=_enrichment_scope,
                 )
-                _memory_service_result = read_memory_v1(
-                    _memory_records_raw, _mem_req
-                )
+                _memory_service_result = read_memory_v1(_memory_records_raw, _mem_req)
                 _matched_mem = _memory_service_result.get("matched_memory", [])
                 enriched_memory = [
                     {
@@ -1423,9 +1616,7 @@ def context_briefing_handler(**kwargs) -> dict[str, Any]:
                 ]
                 _stale_mem_ids = _memory_service_result.get("stale_memory_ids", [])
                 if _stale_mem_ids:
-                    stale_evidence_notice.append(
-                        f"stale_memory: {_stale_mem_ids}"
-                    )
+                    stale_evidence_notice.append(f"stale_memory: {_stale_mem_ids}")
             except MemoryReadError as _e:
                 known_risks.append(f"memory_read_error: {_e}")
 
@@ -1433,11 +1624,7 @@ def context_briefing_handler(**kwargs) -> dict[str, Any]:
         try:
             _ts_req = TrustSummaryRequest(
                 scope=_enrichment_scope,
-                topic=(
-                    target_concepts_norm[0]
-                    if target_concepts_norm
-                    else None
-                ),
+                topic=(target_concepts_norm[0] if target_concepts_norm else None),
             )
             _ts_result = build_trust_summary_v1(
                 _ts_req,
@@ -1450,14 +1637,10 @@ def context_briefing_handler(**kwargs) -> dict[str, Any]:
             _composite_score = _ts_result.get("composite_score", 0.0)
             _ts_blocking = _ts_result.get("blocking_trust_findings", [])
             if _ts_blocking:
-                blocking_trust_findings.extend(
-                    [str(_f) for _f in _ts_blocking]
-                )
+                blocking_trust_findings.extend([str(_f) for _f in _ts_blocking])
             _stale_ts_flags = _ts_result.get("stale_flags", [])
             if _stale_ts_flags:
-                stale_evidence_notice.extend(
-                    [str(_f) for _f in _stale_ts_flags]
-                )
+                stale_evidence_notice.extend([str(_f) for _f in _stale_ts_flags])
             trust_summary = (
                 f"Trust level: {_trust_level}. "
                 f"Composite score: {_composite_score:.2f}. "
@@ -1508,6 +1691,7 @@ def context_briefing_handler(**kwargs) -> dict[str, Any]:
         "blocking_trust_findings": blocking_trust_findings,
         "recommended_next_reads": recommended_next_reads_enrichment,
         "approval_semantics": {"no_echtgeld_go": True},
+        "session_context": session_context,
         "dependency_paths": dependency_paths,
         "known_risks": known_risks,
         "guardrails": guardrails,
@@ -1617,14 +1801,16 @@ def context_stop_resolver_handler(**kwargs) -> dict[str, Any]:
     if readiness_result_in is not None and not isinstance(readiness_result_in, dict):
         readiness_result_in = None
 
-    valid_modes = frozenset({
-        "read_only",
-        "dry_run",
-        "write (code/docs)",
-        "write (config/infra)",
-        "write (DB/migration)",
-        "write (MCP live)",
-    })
+    valid_modes = frozenset(
+        {
+            "read_only",
+            "dry_run",
+            "write (code/docs)",
+            "write (config/infra)",
+            "write (DB/migration)",
+            "write (MCP live)",
+        }
+    )
     if not isinstance(operation_mode, str) or operation_mode not in valid_modes:
         operation_mode = "read_only"
 
@@ -1731,7 +1917,10 @@ def context_required_reads_handler(**kwargs) -> dict[str, Any]:
             },
         }
 
-    if not isinstance(operation_mode, str) or operation_mode not in VALID_OPERATION_MODES:
+    if (
+        not isinstance(operation_mode, str)
+        or operation_mode not in VALID_OPERATION_MODES
+    ):
         return {
             "tool": "context.required_reads",
             "status": "error",
@@ -1817,14 +2006,16 @@ def cdb_context_impact_handler(**kwargs) -> dict[str, Any]:
     if target_issue is not None and not isinstance(target_issue, str):
         target_issue = None
 
-    valid_modes = frozenset({
-        "read_only",
-        "dry_run",
-        "write (code/docs)",
-        "write (config/infra)",
-        "write (DB/migration)",
-        "write (MCP live)",
-    })
+    valid_modes = frozenset(
+        {
+            "read_only",
+            "dry_run",
+            "write (code/docs)",
+            "write (config/infra)",
+            "write (DB/migration)",
+            "write (MCP live)",
+        }
+    )
     if not isinstance(operation_mode, str) or operation_mode not in valid_modes:
         return {
             "tool": "cdb_context_impact",
@@ -1839,8 +2030,12 @@ def cdb_context_impact_handler(**kwargs) -> dict[str, Any]:
         }
 
     target_paths_clean = [p for p in target_paths if isinstance(p, str) and p.strip()]
-    target_symbols_clean = [s for s in target_symbols if isinstance(s, str) and s.strip()]
-    target_concepts_clean = [c for c in target_concepts if isinstance(c, str) and c.strip()]
+    target_symbols_clean = [
+        s for s in target_symbols if isinstance(s, str) and s.strip()
+    ]
+    target_concepts_clean = [
+        c for c in target_concepts if isinstance(c, str) and c.strip()
+    ]
 
     try:
         inp = ImpactRadarInput(
@@ -1887,7 +2082,9 @@ def cdb_context_evidence_resolve_handler(**kwargs) -> dict[str, Any]:
     Thin adapter: passes **kwargs as the request mapping to the Wave-14 adapter.
     Fail-closed. No DB/network/write.
     """
-    from tools.mcp.context_evidence_memory_tools import handle_cdb_context_evidence_resolve
+    from tools.mcp.context_evidence_memory_tools import (
+        handle_cdb_context_evidence_resolve,
+    )
 
     return handle_cdb_context_evidence_resolve(kwargs)
 
@@ -2388,9 +2585,7 @@ class ContextBridge:
             }
 
         # Input Gate (#2099): scan parameters for forbidden patterns
-        input_violations = PermissionGuard.check_tool_inputs(
-            tool_name, parameters
-        )
+        input_violations = PermissionGuard.check_tool_inputs(tool_name, parameters)
         if input_violations:
             first = input_violations[0]
             return {
