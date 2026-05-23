@@ -23,10 +23,15 @@ from tools.mcp.permission_guard import (
     FORBIDDEN_SQL_KEYWORDS,
     INPUT_SCAN_EXEMPT_TOOLS,
     INPUT_SCAN_TOOLS,
+    PARAMETER_SCAN_EXEMPTIONS,
     PermissionCheckResult,
     PermissionGuard,
 )
-from tools.mcp.registry import ContextToolRegistry, ToolDefinition
+from tools.mcp.registry import (
+    ContextToolRegistry,
+    ToolDefinition,
+    create_not_implemented_handler,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -115,10 +120,22 @@ class TestExecuteGate:
 
     def test_execute_not_implemented_tool_returns_error(self) -> None:
         """Stub tool returns not_implemented error."""
-        bridge = create_bridge()
-        result = bridge.execute_tool("context.show_audit", {"entity_id": "test"})
-        assert result["status"] == "error"
-        assert result["error"]["code"] == "not_implemented"
+        name = "__test_stub_not_implemented__"
+        ContextToolRegistry._tools[name] = ToolDefinition(
+            name=name,
+            description="Temporary stub tool for permission guard tests",
+            input_schema={"type": "object", "properties": {}},
+            output_schema={"type": "object", "properties": {}},
+            read_only=True,
+            handler=create_not_implemented_handler(name),
+        )
+        try:
+            bridge = create_bridge()
+            result = bridge.execute_tool(name, {})
+            assert result["status"] == "error"
+            assert result["error"]["code"] == "not_implemented"
+        finally:
+            del ContextToolRegistry._tools[name]
 
     def test_execute_search_with_forbidden_keyword_blocked(self) -> None:
         """context.search with INSERT in query is blocked by input gate."""
@@ -213,6 +230,30 @@ class TestExecuteGate:
         )
         assert result["status"] == "ok"
 
+    def test_execute_show_audit_with_keyword_tool_name_reaches_handler(self) -> None:
+        """show_audit lets target_tool identifiers reach the handler."""
+        bridge = create_bridge()
+        result = bridge.execute_tool(
+            "context.show_audit", {"target_tool": "context.create"}
+        )
+        assert result["status"] == "ok"
+        assert result["audit"]["target_tool"] == "context.create"
+        assert result["audit"]["exists"] is False
+        assert result["audit"]["handler_status"] == "unknown_tool"
+
+    def test_execute_show_audit_entity_id_alias_with_keyword_reaches_handler(
+        self,
+    ) -> None:
+        """show_audit preserves entity_id alias compatibility for tool names."""
+        bridge = create_bridge()
+        result = bridge.execute_tool(
+            "context.show_audit", {"entity_id": "context.update"}
+        )
+        assert result["status"] == "ok"
+        assert result["audit"]["target_tool"] == "context.update"
+        assert result["audit"]["exists"] is False
+        assert result["audit"]["handler_status"] == "unknown_tool"
+
 
 # ---------------------------------------------------------------------------
 # 3. Input Gate — Tool Classification
@@ -237,6 +278,13 @@ class TestInputGateToolClassification:
         assert "context.self_explain" in INPUT_SCAN_EXEMPT_TOOLS
         assert "context.stop_resolver" in INPUT_SCAN_EXEMPT_TOOLS
         assert "context.required_reads" in INPUT_SCAN_EXEMPT_TOOLS
+
+    def test_show_audit_identifier_fields_are_parameter_exempt(self) -> None:
+        """show_audit skips scanning only the tool identifier fields."""
+        assert PARAMETER_SCAN_EXEMPTIONS["context.show_audit"] == {
+            "target_tool",
+            "entity_id",
+        }
 
     def test_scan_and_exempt_are_disjoint(self) -> None:
         """No tool is in both INPUT_SCAN_TOOLS and INPUT_SCAN_EXEMPT_TOOLS."""
@@ -278,6 +326,14 @@ class TestInputGateToolClassification:
             "context.search", {"query": "INSERT INTO context"}
         )
         assert len(results) >= 1
+
+    def test_show_audit_non_identifier_field_still_scanned(self) -> None:
+        """show_audit keeps mutation scanning for non-identifier string fields."""
+        results = PermissionGuard.check_tool_inputs(
+            "context.show_audit",
+            {"audit_type": "CREATE"},
+        )
+        assert any(r.code == "forbidden_keyword" for r in results)
 
 
 _WAVE14_EXEMPT_TOOLS = [
