@@ -38,9 +38,69 @@ Dieses Dokument erklärt, wie die KI-Agenten (Claude, Codex, Gemini, Copilot) im
 
 ## Technische Konfiguration
 
-### MCP-Konfigurationsdateien
+### CDB Context MCP (kanonisch)
 
-Das Projekt verwendet zwei MCP-Konfigurationsdateien:
+Der **CDB Context MCP** ist das repo-native MCP-Interface für Context Intelligence Tools (`context.briefing`, `context.required_reads`, `context.readiness` etc.).
+
+**Config-Datei:** `claire-de-binare.mcp.json` im Repo-Root
+
+```json
+{
+  "mcpServers": {
+    "cdb_context": {
+      "enabled": true,
+      "command": "python",
+      "args": ["-m", "tools.mcp.server"],
+      "type": "stdio"
+    }
+  }
+}
+```
+
+**Installation pro Agent-Host:**
+1. Das Repo muss lokal ausgecheckt sein und der Agent muss von dort starten (damit `tools.*`-Pfade auflösen).
+2. Der Agent-Host muss die `cdb_context`-Server-Definition aus `claire-de-binare.mcp.json` in seine aktive MCP-Konfiguration übernehmen.
+3. Python 3.12 und die Projekt-Abhängigkeiten müssen installiert sein.
+
+**Validierung (fünf Ebenen):**
+1. Config existiert: `Test-Path claire-de-binare.mcp.json`
+2. Host kennt Config: Agent-Host-MCP-Einstellungen prüfen
+3. Server startet: `python -m tools.mcp.server` läuft fehlerfrei
+4. Tool-Inventar: `context.briefing` erscheint im MCP-Tool-Inventar
+5. Aufruf funktioniert: `context.briefing({"task_id": "test", "task_scope": "validate", "operation_mode": "read_only"})` liefert gültige Response
+
+**Bridge-Validation (auch ohne MCP SDK):**
+```bash
+python -c "from tools.mcp.context_bridge import create_bridge; b=create_bridge(); print(len(b.list_tools()))"
+# Erwartet: 26
+python -c "from tools.mcp.context_bridge import create_bridge; b=create_bridge(); print('context.briefing' in [t['name'] for t in b.list_tools()])"
+# Erwartet: True
+```
+
+**Capability Resolution (Pflicht bei Context-/MCP-/Memory-/Evidence-Scope):**
+- Vor jeder Planung prüfen, ob `context.briefing` im aktiven MCP-Inventar ist.
+- Falls nicht: `brain_source=unavailable` oder `repo-only` + `brain_status=not-used`.
+- Keine DB-backed Brain-Claims ohne `surrealdb-local` und nutzbaren `brain_status`.
+- Referenz: `docs/runbooks/surrealdb_context_mcp_access.md` § 1.5.1.
+
+### Per-Agent Templates und Setup-Script
+
+| Surface | Config-Datei | Typ |
+|---------|--------------|-----|
+| OpenCode | `.opencode.jsonc` (Repo-Root) | repo-getrackte Konfiguration |
+| Claude / Cloud Code | `agents/templates/claude_mcp.json.template` | Vorlage (muss in user-level `.mcp.json` kopiert werden) |
+| Gemini | `agents/templates/gemini_mcp_config.yml.template` | Vorlage (muss in Workflow-YAML eingebettet werden) |
+| Codex | `agents/templates/codex_mcp_config.md` | Referenz (kein eigenes MCP-Surface) |
+| Alle Surfaces | `agents/templates/onboarding_mcp_setup.ps1` | Setup-Skript (L1/L3/L4/L5 validieren) |
+
+**Setup ausführen:**
+```bash
+pwsh -File agents/templates/onboarding_mcp_setup.ps1
+```
+
+### Legacy MCP-Konfigurationsdateien (historisch)
+
+Das Projekt verwendete früher zwei MCP-Konfigurationsdateien (nicht mehr kanonisch):
 
 1. **`mcp-config.toml`** (Lokale Windows-Entwicklung)
    - Für Windows 11 + WSL2 optimiert

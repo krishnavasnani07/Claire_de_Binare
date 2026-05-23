@@ -75,6 +75,117 @@ If any capability check fails:
 
 Established by PR #2559 (`a35d7728`). Cross-reference: `cdb-session-start` skill, step 5.
 
+### 1.5.1. Agent MCP Installation Matrix
+
+This matrix defines how every active agent surface accesses the CDB Context MCP.
+Repo presence is not MCP availability. Each surface must be verified independently.
+
+**Five-level distinction:**
+
+| Level | Criterion | How to verify |
+|---|---|---|---|
+| L1 | Config file exists | `claire-de-binare.mcp.json` present in repo root |
+| L2 | Agent host knows config | Host MCP config references `cdb_context` server entry |
+| L3 | MCP server starts | L3a: bridge import (`create_bridge()` works); L3b: stdio server import (`import tools.mcp.server` — bounded, no event loop). If bridge works but stdio is blocked by env, report WARN — bridge-level access is available, host integration needs env fix. |
+| L4 | Tool inventory exposes target | `context.briefing` appears in active MCP tool list |
+| L5 | Actual invocation works | `context.briefing({...})` returns valid response |
+
+**Per-surface status:**
+
+| Agent Surface | L1 Config | L2 Host | L3 Server | L4 Inventory | L5 Invocation | Overall Status |
+|---|---|---|---|---|---|---|---|
+| **Codex** | ✓ verified | via host agent (OpenCode or Claude) | ⚠️ blocked (env: pydantic-core mismatch) | ✓ bridge verified | ✓ bridge verified | reference in agents/templates/codex_mcp_config.md |
+| **OpenCode** | ✓ verified | ✓ repo-tracked config (`.opencode.jsonc`) | ⚠️ blocked (env: pydantic-core mismatch) | ✓ bridge verified | ✓ bridge verified | repo-tracked config + bridge-verified; stdio server needs env fix |
+| **Claude / Cloud Code** | ✓ verified | template in `agents/templates/claude_mcp.json.template` | needs host-specific test | needs host-specific test | needs host-specific test | template exists; needs host-specific copy to user-level `.mcp.json` |
+| **Gemini** | ✓ verified | template in `agents/templates/gemini_mcp_config.yml.template` | needs host-specific test | needs host-specific test | needs host-specific test | template exists; needs host-specific embed in workflow YAML |
+| **Onboarding / new agent** | ✓ verified | setup script in `agents/templates/onboarding_mcp_setup.ps1` | ⚠️ blocked (env: pydantic-core mismatch) | ✓ bridge verified | ✓ bridge verified | setup script validates L1/L3/L4/L5; L2 requires manual host config |
+
+**Status key:**
+- `✓ verified` — directly confirmed in this repo session
+- `✓ repo-tracked config` — actual config file tracked in repo, auto-loaded by agent host
+- `via host agent` — covered by calling agent's MCP config
+- `template in ...` — tracked template file; requires manual copy/embed
+- `setup script in ...` — executable validation script
+- `⚠️ blocked (env)` — local environment dependency conflict (pydantic-core version); not a code defect
+- `needs host-specific test` — requires the specific agent host to be running with the config registered
+
+**Validation commands (bridge-level, works regardless of MCP SDK):**
+
+```bash
+# Bridge creates successfully — returns tool count
+python -c "from tools.mcp.context_bridge import create_bridge; b=create_bridge(); print(len(b.list_tools()))"
+# Expected: 26
+
+# Key tool present in inventory
+python -c "from tools.mcp.context_bridge import create_bridge; b=create_bridge(); print('context.briefing' in [t['name'] for t in b.list_tools()])"
+# Expected: True
+```
+
+**Validation command (stdio server import — bounded, does not enter event loop):**
+
+```bash
+python -c "import tools.mcp.server; print('STDIO IMPORT OK')"
+# If blocked by pydantic-core version mismatch, fix:
+# pip install 'pydantic>=2.0,<3.0' 'pydantic-core==2.46.4'
+```
+
+**Repo-tracked configs and templates:**
+
+| Surface | File | Type | Location |
+|---------|------|------|----------|
+| OpenCode | `.opencode.jsonc` | repo-tracked config (auto-loaded) | repo root |
+| Claude / Cloud Code | `claude_mcp.json.template` | template (copy to user-level `.mcp.json`) | `agents/templates/` |
+| Gemini | `gemini_mcp_config.yml.template` | template (embed in workflow YAML) | `agents/templates/` |
+| Codex | `codex_mcp_config.md` | reference (no separate MCP surface) | `agents/templates/` |
+| Any surface | `onboarding_mcp_setup.ps1` | validation script (run from repo root) | `agents/templates/` |
+
+Run the onboarding script to validate your setup:
+
+```bash
+pwsh -File agents/templates/onboarding_mcp_setup.ps1
+```
+
+Expected output (best case — bridge + stdio both work):
+```
+=== CDB Context MCP Capability Validation ===
+[L1] Config file exists... PASS
+[L2] Host knows config (manual check)... SKIP (manual)
+[L3] Bridge and stdio server check... PASS
+       Bridge: 26 tools, Stdio import: OK
+[L4] context.briefing in tool inventory... PASS
+[L5] context.briefing invocation... PASS
+=== Results: 4 passed, 0 warnings, 0 failed ===
+CDB Context MCP is available.
+```
+
+Expected output (bridge works, stdio blocked by env):
+```
+=== CDB Context MCP Capability Validation ===
+[L1] Config file exists... PASS
+[L2] Host knows config (manual check)... SKIP (manual)
+[L3] Bridge and stdio server check... BRIDGE OK — STDIO BLOCKED
+       Bridge: 26 tools, Stdio import: BLOCKED
+       STDIO WARN: <error details>
+       This is a local environment blocker (pydantic-core version mismatch),
+       not a #2619 config defect. Bridge-level tool access works.
+       Fix: pip install 'pydantic>=2.0,<3.0' 'pydantic-core==2.46.4'
+[L4] context.briefing in tool inventory... PASS
+[L5] context.briefing invocation... PASS
+=== Results: 4 passed, 1 warnings, 0 failed ===
+CDB Context MCP is available (bridge); warnings above.
+```
+
+**Capability Resolution Rules (all surfaces):**
+
+When scope includes Context, MCP, SurrealDB, ContextBridge, DB-backed Memory, or Evidence:
+
+1. Run MCP Capability Resolution before planning — verify active tool inventory, not config file presence.
+2. If `context.briefing` or required MCP tools are unavailable: stop or explicitly degrade to repo-only.
+3. Do not claim DB-backed Brain/Evidence/Memory unless `surrealdb-local` or equivalent DB-backed source is actually available and usable.
+4. Non-DB fallback must not report DB-backed `brain_status="used"`.
+5. Missing MCP access must be reported as `brain_source=unavailable` or explicit `repo-only` / `brain_status=not-used` fallback.
+6. Repo-wide fallback for any surface that cannot verify MCP access: `brain_source=repo-only`, `brain_status=not-used`, repo evidence under `records_or_results`.
+
 ---
 
 ## 2. Non-Goals (Anti-Criteria)
