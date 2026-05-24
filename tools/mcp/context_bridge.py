@@ -816,16 +816,18 @@ def context_package_handler(**kwargs) -> dict[str, Any]:
         if raw_ref.startswith("path:"):
             bare_path = raw_ref.split(":", 1)[1].strip()
             repo_relative_path = _normalize_repo_relative_path(bare_path)
-            normalized_inputs.append(
-                f"path:{repo_relative_path}" if repo_relative_path else "path:"
-            )
             if repo_relative_path is None:
+                # Keep package_id unique even for rejected path: entries without leaking absolute paths.
+                normalized_inputs.append(
+                    "path_invalid:" + _safe_artifact_echo(bare_path or "<empty>")
+                )
                 _reject_missing(
                     raw_ref,
                     "invalid_source_ref",
                     "path: references must use a repo-relative path without absolute prefixes or parent traversal",
                 )
                 continue
+            normalized_inputs.append(f"path:{repo_relative_path}")
 
             if not _repo_relative_file_exists(repo_relative_path):
                 _reject_missing(

@@ -253,6 +253,14 @@ class TestContextPackageHandler:
         assert result["package"]["items"] == []
         assert result["package"]["missing_context"][0]["code"] == "invalid_source_ref"
 
+    def test_package_id_includes_invalid_path_entries(self) -> None:
+        bridge = create_bridge()
+        r1 = bridge.execute_tool("context.package", {"artifacts": ["path:../foo"]})
+        r2 = bridge.execute_tool("context.package", {"artifacts": [r"path:C:\tmp\a"]})
+        assert r1["status"] == "ok"
+        assert r2["status"] == "ok"
+        assert r1["package"]["package_id"] != r2["package"]["package_id"]
+
     def test_non_string_artifact_rejected_without_crash(self) -> None:
         bridge = create_bridge()
         result = bridge.execute_tool(
