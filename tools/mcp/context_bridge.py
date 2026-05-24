@@ -748,6 +748,13 @@ def context_package_handler(**kwargs) -> dict[str, Any]:
 
     for artifact in artifacts_in:
         if not isinstance(artifact, str):
+            # Keep package_id unique even for rejected entries.
+            normalized_inputs.append(
+                "invalid_type:"
+                + type(artifact).__name__
+                + ":"
+                + _safe_artifact_echo(str(artifact))
+            )
             _reject_missing(
                 artifact,
                 "invalid_artifact_type",
@@ -757,6 +764,8 @@ def context_package_handler(**kwargs) -> dict[str, Any]:
 
         raw_ref = artifact.strip()
         if not raw_ref:
+            # Different empty/whitespace inputs should not collapse to the same package_id.
+            normalized_inputs.append(f"invalid_empty:{len(artifact)}")
             _reject_missing(
                 artifact,
                 "invalid_source_ref",

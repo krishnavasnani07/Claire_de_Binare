@@ -262,6 +262,14 @@ class TestContextPackageHandler:
         assert len(result["package"]["items"]) == 1
         assert len(result["package"]["missing_context"]) == 2
 
+    def test_package_id_includes_rejected_artifacts(self) -> None:
+        bridge = create_bridge()
+        r1 = bridge.execute_tool("context.package", {"artifacts": [None]})
+        r2 = bridge.execute_tool("context.package", {"artifacts": [123]})
+        assert r1["status"] == "ok"
+        assert r2["status"] == "ok"
+        assert r1["package"]["package_id"] != r2["package"]["package_id"]
+
     def test_source_refs_sorted_and_stable(self) -> None:
         bridge = create_bridge()
         result = bridge.execute_tool(
