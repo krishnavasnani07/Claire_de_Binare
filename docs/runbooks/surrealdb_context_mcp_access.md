@@ -294,7 +294,7 @@ Input scanning uses word-boundary regex and recursive parameter walking (dicts a
 
 ## 7. Tool Usage Examples
 
-`context.search`, `context.trace`, and `context.package` examples below still use mocked/in-memory responses. `context.explain_source`, `context.show_snapshot`, and `context.show_audit` are already deterministic repo-/registry-only handlers. For real SurrealDB data, a future Wave will provide a real adapter where applicable.
+`context.search` and `context.trace` examples below still use mocked/in-memory responses. `context.package`, `context.explain_source`, `context.show_snapshot`, and `context.show_audit` are deterministic repo-/registry-only handlers. For real SurrealDB data, a future Wave will provide a real adapter where applicable.
 
 ### 7.1 context.search
 
@@ -421,7 +421,10 @@ Response:
 
 ```python
 result = bridge.execute_tool("context.package", {
-    "artifacts": ["art_001", "art_002"],
+    "artifacts": [
+        "context.readiness",
+        "docs/runbooks/surrealdb_context_mcp_access.md"
+    ],
     "format": "json",
     "include_metadata": True
 })
@@ -436,26 +439,57 @@ Response (ok):
         "format": "json",
         "items": [
             {
-                "id": "art_001",
-                "type": "evidence",
-                "summary": "Mock summary for art_001",
-                "source_refs": ["src_art_001_1", "src_art_001_2"],
-                "confidence": 0.85,
-                "freshness": "2026-05-03T00:00:00Z"
+                "id": "context.readiness",
+                "type": "tool",
+                "summary": "Registry tool context.readiness",
+                "source_refs": ["tool:context.readiness"],
+                "confidence": null,
+                "freshness": null,
+                "metadata": {
+                    "read_only": true,
+                    "handler_status": "implemented"
+                }
+            },
+            {
+                "id": "docs/runbooks/surrealdb_context_mcp_access.md",
+                "type": "file",
+                "summary": "Repo file docs/runbooks/surrealdb_context_mcp_access.md",
+                "source_refs": ["path:docs/runbooks/surrealdb_context_mcp_access.md"],
+                "confidence": null,
+                "freshness": null,
+                "metadata": {
+                    "repo_relative_path": "docs/runbooks/surrealdb_context_mcp_access.md"
+                }
             }
         ],
-        "created_at": "2026-05-03T12:00:00Z",
-        "package_id": "pkg_art_001-art_002",
+        "created_at": null,
+        "package_id": "pkg_<deterministic_hash_prefix>",
         "warnings": [],
         "stale_flags": [],
         "missing_context": [],
-        "stop_conditions": ["no_live_go", "no_echtgeld_authorization", "no_risk_approval"],
-        "metadata": {"include_metadata": true, "scope": "default", "truncated": false, "total_requested": 2}
+        "source_refs": [
+            "path:docs/runbooks/surrealdb_context_mcp_access.md",
+            "tool:context.readiness"
+        ],
+        "stop_conditions": [
+            "no_live_go",
+            "no_echtgeld_authorization",
+            "no_risk_approval"
+        ],
+        "metadata": {
+            "include_metadata": true,
+            "scope": "default",
+            "truncated": false,
+            "total_requested": 2,
+            "total_resolved": 2,
+            "total_missing": 0,
+            "resolver": "repo-registry"
+        }
     }
 }
 ```
 
-Artifacts are capped at 10 items (truncation warning added). Empty or missing artifacts returns `invalid_artifacts` error. Package ID is deterministic from sorted artifact IDs.
+Artifacts are capped at 10 items (truncation warning added). Missing/non-list/empty artifacts returns `invalid_artifacts`. The package is repo-/registry-only: it does not read or write SurrealDB, does not create persistent handoff records, and does not imply Live-Go/LR.
 
 ### 7.5 context.readiness
 
