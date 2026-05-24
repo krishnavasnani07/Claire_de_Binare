@@ -656,12 +656,12 @@ def context_package_handler(**kwargs) -> dict[str, Any]:
     Read-only handler for context.package tool.
 
     Packages context artifacts for handoff between agents or sessions.
-    Uses mocked responses (no live DB/network).
-    Fails closed on invalid inputs.
+    Repo-/registry-only deterministic packaging (no DB/network).
+    Fails closed on invalid inputs and never invents mock artifacts.
     """
     # Validate required artifacts
     artifacts = kwargs.get("artifacts")
-    if not artifacts or not isinstance(artifacts, list):
+    if not artifacts or not isinstance(artifacts, list) or not artifacts:
         return {
             "tool": "context.package",
             "status": "error",
@@ -688,73 +688,267 @@ def context_package_handler(**kwargs) -> dict[str, Any]:
     if not isinstance(include_metadata, bool):
         include_metadata = True
 
-    # Mocked package result (no live DB/network)
-    # Follows #2097 requirements: bounded package, SourceRefs, confidence/freshness/warnings, stop_conditions
-    package_items = []
-    for artifact_id in artifacts[:10]:  # Limit to 10 items
-        package_items.append(
+    scope = kwargs.get("scope", "default")
+    if not isinstance(scope, str) or not scope.strip():
+        scope = "default"
+    scope = scope.strip()
+
+    warnings: list[str] = []
+    truncated = False
+    total_requested = len(artifacts)
+    artifacts_in = artifacts[:10]
+    if total_requested > 10:
+        truncated = True
+        warnings.append("artifacts_limit_exceeded_truncated")
+
+    package_items: list[dict[str, Any]] = []
+    missing_context: list[dict[str, Any]] = []
+    normalized_inputs: list[str] = []
+    package_source_refs: list[str] = []
+
+    def _safe_artifact_echo(value: str) -> str:
+        candidate = value.strip()
+        prefix: str | None = None
+        if candidate.startswith("tool:"):
+            prefix = "tool:"
+            candidate = candidate.split(":", 1)[1]
+        elif candidate.startswith("path:"):
+            prefix = "path:"
+            candidate = candidate.split(":", 1)[1]
+
+        candidate_norm = candidate.strip().replace("\\", "/")
+        if not candidate_norm:
+            safe = ""
+        elif candidate_norm.startswith("/") or candidate_norm.startswith("//"):
+            safe = "<rejected:absolute_path>"
+        elif candidate_norm.startswith("\\\\"):
+            safe = "<rejected:unc_path>"
+        elif re.match(r"^[A-Za-z]:", candidate_norm):
+            safe = "<rejected:drive_path>"
+        elif ".." in PurePosixPath(candidate_norm).parts:
+            safe = "<rejected:path_traversal>"
+        else:
+            safe = value
+
+        if prefix is None or safe == value:
+            return safe
+        return f"{prefix}{safe}"
+
+    def _reject_missing(artifact_value: Any, code: str, message: str) -> None:
+        artifact_text = (
+            artifact_value if isinstance(artifact_value, str) else str(artifact_value)
+        )
+        missing_context.append(
             {
-                "id": artifact_id,
-                "type": "evidence",
-                "summary": f"Mock summary for {artifact_id}",
-                "source_refs": [f"src_{artifact_id}_1", f"src_{artifact_id}_2"],
-                "confidence": 0.85,
-                "freshness": "2026-05-03T00:00:00Z",
+                "artifact": _safe_artifact_echo(artifact_text),
+                "code": code,
+                "message": message,
             }
         )
 
-    warnings = []
-    if len(artifacts) > 10:
-        warnings.append("artifacts_limit_exceeded_truncated")
-    if len(package_items) == 0:
-        warnings.append("empty_package")
+    for artifact in artifacts_in:
+        if not isinstance(artifact, str):
+            _reject_missing(
+                artifact,
+                "invalid_artifact_type",
+                "artifact entries must be strings",
+            )
+            continue
 
-    missing_context = []
-    if len(artifacts) == 0:
-        missing_context.append("no_artifacts_provided")
+        raw_ref = artifact.strip()
+        if not raw_ref:
+            _reject_missing(
+                artifact,
+                "invalid_source_ref",
+                "artifact reference must be a non-empty string",
+            )
+            continue
 
-    package = {
-        "request_scope": kwargs.get("scope", "default"),
-        "query_summary": f"Package request for {len(artifacts)} artifacts",
-        "top_artifacts": package_items[:5],
-        "top_docs": [],
-        "top_symbols": [],
-        "graph_paths": [],
-        "source_refs": [
-            item
-            for sub in [a.get("source_refs", []) for a in package_items]
-            for item in sub
-        ],
-        "confidence_summary": {"average": 0.85, "lowest": 0.8, "highest": 0.9},
-        "warnings": warnings,
-        "stale_flags": [],
-        "missing_context": missing_context,
-        "recommended_next_queries": [],
-        "stop_conditions": [
-            "no_live_go",
-            "no_echtgeld_authorization",
-            "no_risk_approval",
-        ],
-    }
+        # ---- tool: prefix (registry only) ----
+        if raw_ref.startswith("tool:"):
+            tool_name = raw_ref.split(":", 1)[1].strip()
+            normalized_inputs.append(f"tool:{tool_name}" if tool_name else "tool:")
+            if not tool_name:
+                _reject_missing(
+                    raw_ref,
+                    "invalid_source_ref",
+                    "tool: references must include a non-empty registered tool name",
+                )
+                continue
+
+            tool_def = ContextToolRegistry.get_tool(tool_name)
+            if tool_def is None:
+                _reject_missing(
+                    f"tool:{tool_name}",
+                    "source_not_found",
+                    "artifact did not match a registered tool",
+                )
+                continue
+
+            src_ref = f"tool:{tool_name}"
+            package_source_refs.append(src_ref)
+            package_items.append(
+                {
+                    "id": tool_name,
+                    "type": "tool",
+                    "summary": f"Registry tool {tool_name}",
+                    "source_refs": [src_ref],
+                    "confidence": None,
+                    "freshness": None,
+                    "metadata": {
+                        "read_only": bool(tool_def.read_only),
+                        "handler_status": _infer_handler_status(tool_def),
+                    },
+                }
+            )
+            continue
+
+        # ---- path: prefix (repo file only) ----
+        if raw_ref.startswith("path:"):
+            bare_path = raw_ref.split(":", 1)[1].strip()
+            repo_relative_path = _normalize_repo_relative_path(bare_path)
+            normalized_inputs.append(
+                f"path:{repo_relative_path}" if repo_relative_path else "path:"
+            )
+            if repo_relative_path is None:
+                _reject_missing(
+                    raw_ref,
+                    "invalid_source_ref",
+                    "path: references must use a repo-relative path without absolute prefixes or parent traversal",
+                )
+                continue
+
+            if not _repo_relative_file_exists(repo_relative_path):
+                _reject_missing(
+                    f"path:{repo_relative_path}",
+                    "source_not_found",
+                    "artifact did not match an existing repo-relative file path",
+                )
+                continue
+
+            src_ref = f"path:{repo_relative_path}"
+            package_source_refs.append(src_ref)
+            package_items.append(
+                {
+                    "id": repo_relative_path,
+                    "type": "file",
+                    "summary": f"Repo file {repo_relative_path}",
+                    "source_refs": [src_ref],
+                    "confidence": None,
+                    "freshness": None,
+                    "metadata": {
+                        "repo_relative_path": repo_relative_path,
+                    },
+                }
+            )
+            continue
+
+        # ---- no prefix: prefer exact tool match, else repo-relative file ----
+        tool_def = ContextToolRegistry.get_tool(raw_ref)
+        if tool_def is not None:
+            normalized_inputs.append(raw_ref)
+            src_ref = f"tool:{raw_ref}"
+            package_source_refs.append(src_ref)
+            package_items.append(
+                {
+                    "id": raw_ref,
+                    "type": "tool",
+                    "summary": f"Registry tool {raw_ref}",
+                    "source_refs": [src_ref],
+                    "confidence": None,
+                    "freshness": None,
+                    "metadata": {
+                        "read_only": bool(tool_def.read_only),
+                        "handler_status": _infer_handler_status(tool_def),
+                    },
+                }
+            )
+            continue
+
+        repo_relative_path = _normalize_repo_relative_path(raw_ref)
+        normalized_inputs.append(repo_relative_path or raw_ref.replace("\\", "/"))
+        if repo_relative_path is None:
+            _reject_missing(
+                raw_ref,
+                "invalid_source_ref",
+                "artifact path candidates must be repo-relative and must not use absolute prefixes or parent traversal",
+            )
+            continue
+
+        if not _repo_relative_file_exists(repo_relative_path):
+            _reject_missing(
+                repo_relative_path,
+                "source_not_found",
+                "artifact did not match a registered tool or an existing repo-relative file path",
+            )
+            continue
+
+        src_ref = f"path:{repo_relative_path}"
+        package_source_refs.append(src_ref)
+        package_items.append(
+            {
+                "id": repo_relative_path,
+                "type": "file",
+                "summary": f"Repo file {repo_relative_path}",
+                "source_refs": [src_ref],
+                "confidence": None,
+                "freshness": None,
+                "metadata": {
+                    "repo_relative_path": repo_relative_path,
+                },
+            }
+        )
+
+    if missing_context:
+        warnings.append("some_artifacts_unresolved")
+
+    # Deterministic, stable ordering
+    package_source_refs = sorted(set(package_source_refs))
+    missing_context = sorted(
+        [dict(entry) for entry in missing_context],
+        key=lambda item: (item.get("artifact", ""), item.get("code", "")),
+    )
 
     return {
         "tool": "context.package",
         "status": "ok",
         "package": {
             "format": format_opt,
-            "items": package_items[:10],
-            "created_at": "2026-05-03T12:00:00Z",
-            "package_id": f"pkg_{'-'.join(str(a) for a in sorted(artifacts[:10]))}",
+            "items": package_items,
+            "created_at": None,
+            "package_id": (
+                "pkg_"
+                + hashlib.sha256(
+                    json.dumps(
+                        {
+                            "scope": scope,
+                            "format": format_opt,
+                            "artifacts": normalized_inputs,
+                            "truncated": truncated,
+                        },
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ).encode("utf-8")
+                ).hexdigest()[:12]
+            ),
             "warnings": warnings,
-            "stale_flags": package.get("stale_flags", []),
+            "stale_flags": [],
             "missing_context": missing_context,
-            "stop_conditions": package["stop_conditions"],
+            "source_refs": package_source_refs,
+            "stop_conditions": [
+                "no_live_go",
+                "no_echtgeld_authorization",
+                "no_risk_approval",
+            ],
             "metadata": (
                 {
                     "include_metadata": include_metadata,
-                    "scope": package["request_scope"],
-                    "truncated": len(artifacts) > 10,
-                    "total_requested": len(artifacts),
+                    "scope": scope,
+                    "truncated": truncated,
+                    "total_requested": total_requested,
+                    "total_resolved": len(package_items),
+                    "total_missing": len(missing_context),
+                    "resolver": "repo-registry",
                 }
                 if include_metadata
                 else {}
@@ -1642,7 +1836,7 @@ def context_briefing_handler(**kwargs) -> dict[str, Any]:
 
     if requested_depth in ("standard", "deep"):
         package_result = context_package_handler(
-            artifacts=["briefing_artifact_001", "briefing_artifact_002"],
+            artifacts=["context.readiness", "AGENTS.md"],
             format="json",
         )
         pkg = package_result.get("package", {})
