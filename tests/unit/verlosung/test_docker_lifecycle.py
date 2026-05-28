@@ -34,7 +34,9 @@ def parse_docker_json(stdout):
             try:
                 services.append(json.loads(line))
             except json.JSONDecodeError:
-                logging.getLogger(__name__).debug("JSON decode error for docker ps line (ignored)")
+                logging.getLogger(__name__).debug(
+                    "JSON decode error for docker ps line (ignored)"
+                )
     return services
 
 
@@ -299,7 +301,7 @@ def test_docker_compose_volume_persistence():
             port=5432,
             database="claire_de_binare",
             user="claire_user",
-            password="claire_db_secret_2024",
+            password="local_test",
         )
         cursor = conn.cursor()
         cursor.execute("SELECT COUNT(*) FROM portfolio_snapshots")
@@ -325,7 +327,7 @@ def test_docker_compose_volume_persistence():
         port=5432,
         database="claire_de_binare",
         user="claire_user",
-        password="claire_db_secret_2024",
+        password="local_test",
     )
     cursor = conn.cursor()
     cursor.execute("SELECT COUNT(*) FROM portfolio_snapshots")
