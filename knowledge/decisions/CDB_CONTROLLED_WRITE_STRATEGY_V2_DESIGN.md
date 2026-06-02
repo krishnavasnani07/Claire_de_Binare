@@ -217,7 +217,9 @@ Writes that touch memory content, proof exports, or GitHub comments must follow:
   - any credential in adapter config checked into repo
 
 Until #2821 closes or passes review, treat **managed secret policy** as an
-**activation blocker** for write-capable managed runtime.
+**activation blocker** for write-capable managed runtime. SSOT after #2821 design
+lands: [`CDB_CONTEXT_MANAGED_RUNTIME_SECRET_POLICY_GATES_0_4.md`](CDB_CONTEXT_MANAGED_RUNTIME_SECRET_POLICY_GATES_0_4.md)
+(prerequisite accepted; runtime still **NOT ACTIVATED**).
 
 ---
 

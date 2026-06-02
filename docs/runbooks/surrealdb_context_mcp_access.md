@@ -54,6 +54,11 @@ read results **do not** authorize code changes, merges, or runtime actions.
 Productive **T3 audit trail** non-local endpoint design (G1, issue #2735) is a
 **separate** lineage from this read-path decision — do not conflate activation.
 
+**Secret policy (Gates 0–4, prerequisite only):**
+[`knowledge/decisions/CDB_CONTEXT_MANAGED_RUNTIME_SECRET_POLICY_GATES_0_4.md`](../../knowledge/decisions/CDB_CONTEXT_MANAGED_RUNTIME_SECRET_POLICY_GATES_0_4.md)
+(GitHub issue #2821). Satisfies #2803 **G0-4** documentation evidence; does **not**
+enable managed/non-local runtime or credential ingestion.
+
 ---
 
 ## 1.5. MCP Capability Resolution Protocol

@@ -3,14 +3,15 @@
 **Status Class**: Working Repo / Engineering Status
 **Authority**: Current repo/main/test/dependency snapshot; not the canonical live-readiness or Echtgeld Go/No-Go source.
 **Operational Canon**: `docs/live-readiness/LR-AUDIT-STATUS-2026-03-05.md`
-**Last Updated**: 2026-06-02
+**Last Updated**: 2026-06-03
 **GitHub Boundary**: The live commit and PR state is tracked in GitHub (UI/API or `gh`); this file is a curated repo/engineering ledger, not a live mirror.
 
 ---
 
-## Repo / Engineering Status (2026-06-02)
+## Repo / Engineering Status (2026-06-03)
 
-- **#1976 grandparent / Real-Task-Proof readiness**: **READY_FOR_REAL_TASK_PROOF_RUN** — assessment [`docs/surrealdb/SURREALDB_1976_GRANDPARENT_DOD_AND_REAL_TASK_PROOF.md`](docs/surrealdb/SURREALDB_1976_GRANDPARENT_DOD_AND_REAL_TASK_PROOF.md) on `main` (PR [#2827](https://github.com/jannekbuengener/Claire_de_Binare/pull/2827) `22c70b86`); Grandparent DoD **HOLD**; Real-Task-Proof **not PASS**; scoped proof task **#2821**. **Governance:** #1976 was **auto-closed** by PR #2827 squash title (`#1976` in merge subject) — **not** a fachlicher PASS; **reopened** 2026-06-02 with issue comment. GitHub-live: #1976 **OPEN**; #2778 **CLOSED**; #2821 **OPEN**. LR NO-GO.
+- **#2821 managed runtime secret policy (design)**: **IN PR** — branch `real-task-proof-2821-secret-policy`; delivers [`knowledge/decisions/CDB_CONTEXT_MANAGED_RUNTIME_SECRET_POLICY_GATES_0_4.md`](knowledge/decisions/CDB_CONTEXT_MANAGED_RUNTIME_SECRET_POLICY_GATES_0_4.md) + Real-Task-Proof [`docs/surrealdb/SURREALDB_1976_REAL_TASK_PROOF_RUN_2026-06-02.md`](docs/surrealdb/SURREALDB_1976_REAL_TASK_PROOF_RUN_2026-06-02.md) (**RTP verdict PASS** on §C gate). Satisfies #2803 **G0-4** documentation only; managed/non-local **NOT ACTIVATED**. GitHub-live (pre-merge): #2821 **OPEN**; #1976 **OPEN**. LR NO-GO.
+- **#1976 grandparent / Real-Task-Proof**: Readiness on `main` (PR [#2827](https://github.com/jannekbuengener/Claire_de_Binare/pull/2827) `22c70b86`); **RTP PASS** delivered via #2821 run (pending merge SHA). Post-merge: expect #2821 **CLOSED**, #1976 close per RTP gate. Grandparent wave matrix (readiness §B) may still list PARTIAL items — not re-certified in #2821 run. LR NO-GO.
 - **#2778 Phase-2 epic / final closeout**: **COMPLETED** — PR [#2825](https://github.com/jannekbuengener/Claire_de_Binare/pull/2825) squash-merged (`735b4ca0`); [`docs/surrealdb/SURREALDB_PHASE2_FINAL_CLOSEOUT_REVIEW.md`](docs/surrealdb/SURREALDB_PHASE2_FINAL_CLOSEOUT_REVIEW.md) on `main` with **`PASS_CLOSEOUT`** (C1–C14). GitHub-live: #2778 **CLOSED**; #1976 **OPEN**; #2821 **OPEN** (future write activation; not Phase-2 blocker). Session log: `knowledge/logs/sessions/2026-06-02-2778-phase2-final-closeout-review.md`. LR NO-GO.
 - **#2804 Controlled write strategy v2 (design only)**: **COMPLETED** — PR [#2823](https://github.com/jannekbuengener/Claire_de_Binare/pull/2823) squash-merged (`57a810d8`); SSOT [`knowledge/decisions/CDB_CONTROLLED_WRITE_STRATEGY_V2_DESIGN.md`](knowledge/decisions/CDB_CONTROLLED_WRITE_STRATEGY_V2_DESIGN.md) + Phase-2 closeout matrix; runbook/managed-runtime cross-links; **no** write-path activation. **`PERSIST_ALLOWED=False`**, **`MUTATION_ALLOWED=False`** unchanged. GitHub-live: #2804 **CLOSED**. Session log: `knowledge/logs/sessions/2026-06-02-2804-write-strategy-and-phase2-closeout.md`. LR NO-GO.
 - **#2803 Managed / non-local runtime decision**: **COMPLETED** — PR [#2820](https://github.com/jannekbuengener/Claire_de_Binare/pull/2820) squash-merged (`02ce3ed7`); decision record + runbook §1.6 on `main`. **Posture:** `local_only` active; managed/non-local **NOT ACTIVATED**. GitHub-live: #2803 **CLOSED**. Session log: `knowledge/logs/sessions/2026-06-02-2803-managed-nonlocal-runtime-decision.md`. LR NO-GO.
@@ -19,11 +20,11 @@
 - **#2799 Hybrid retrieval and ranking v1**: **COMPLETED** — PR [#2812](https://github.com/jannekbuengener/Claire_de_Binare/pull/2812) squash-merged (`8bc98fab`); `tools/surrealdb/hybrid_retrieval_ranking.py` + fixture unit tests on `main`. GitHub-live: #2799 **CLOSED**; epic #2778 **CLOSED**. Session log: `knowledge/logs/sessions/2026-06-02-2799-hybrid-ranking-v1.md`. MCP `context.search` wiring and vector weighting deferred. LR NO-GO.
 - **#2802 Control-room signal layer v1**: **COMPLETED** — PR [#2818](https://github.com/jannekbuengener/Claire_de_Binare/pull/2818) merged (`2f1d88c6`); read-only `build_control_room_signal_layer_v1` + contract + 20 unit tests on `main` (orthogonal to Wave-19 view builder; no MCP/UI/runtime). GitHub-live: #2802 **CLOSED**; epic #2778 **CLOSED**; grandparent #1976 **OPEN**. Session log: `knowledge/logs/sessions/2026-06-02-2802-control-room-signal-layer.md`. No productive DB/MCP writes. LR NO-GO.
 - **Phase-1 closeout chain (complete)**: #2773–#2777, #2689, #2780, #2781 **CLOSED**; #2780 via PR [#2795](https://github.com/jannekbuengener/Claire_de_Binare/pull/2795) (`5c365391` area); docs audit `PASS_WITH_DEFERRED_EXIT_ITEMS`.
-- **#1976 grandparent epic**: **OPEN** (reopened after accidental #2827 merge close) — **`READY_FOR_REAL_TASK_PROOF_RUN`** on #2821; epic-close **HOLD** until Real-Task-Proof **PASS**; see assessment doc above.
+- **#1976 grandparent epic**: **OPEN** (pre-merge) — RTP **PASS** in proof artifact; close after PR merge. See [`SURREALDB_1976_REAL_TASK_PROOF_RUN_2026-06-02.md`](docs/surrealdb/SURREALDB_1976_REAL_TASK_PROOF_RUN_2026-06-02.md).
 - **#2794**: **OPEN** — non-blocking architecture-doc follow-up (post-#2793).
-- **main**: `22c70b86` (PR #2827 readiness assessment; prior #2826 `f25c6f50`).
+- **main**: `f6d69b7d` (PR #2828 ledger sync); RTP policy PR pending.
 - **Active GitHub focus (manual, non-exhaustive)**:
-  - #2821 secret policy (follow-up)
+  - #2821 secret policy (RTP run / PR)
   - Phase-2 children #2797–#2804 (**all CLOSED**)
   - #1976 (grandparent; OPEN)
   - #2794 (architecture doc; non-blocking)
