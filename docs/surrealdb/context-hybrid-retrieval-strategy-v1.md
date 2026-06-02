@@ -141,12 +141,83 @@ When combining results from multiple modes, the following ranking factors are ap
 | Factor | Weight | Description |
 |--------|--------|--------------|
 | `source_match` | 0.20 | Direct match to query source/type |
-| `graph_distance` | 0.15 | Proximity in entity graph (closer = higher) |
+| `graph_distance` | 0.15 | Graph proximity (hop count via `graph_distance`, or pre-normalized via `graph_distance_score`) |
 | `evidence_strength` | 0.15 | Quality of supporting evidence |
 | `freshness` | 0.15 | Recency of the result (decay over time) |
 | `confidence` | 0.20 | Confidence score of the result |
 | `scope_match` | 0.10 | Match to query scope/path |
 | `memory_trust` | 0.05 | Trust score of memory source |
+
+Canonical weights are implemented as `DEFAULT_RANKING_WEIGHTS` in
+`tools/surrealdb/hybrid_retrieval_ranking.py` (`schema_version`:
+`hybrid-retrieval-ranking/v1`). Issue #2799 delivers the pure-Python ranking
+path; MCP `context.search` wiring remains a follow-up.
+
+### Ranking implementation (v1)
+
+- **Module**: `tools/surrealdb/hybrid_retrieval_ranking.py`
+- **Entry points**: `rank_retrieval_results()`, `compute_ranking_explanation()`
+- **Inputs**: in-memory candidate dicts (no live DB required for CI)
+- **Outputs**: ranked candidates with `score` and nested `ranking_explanation`
+- **`limit`**: `None` returns all ranked candidates; `0` returns an empty list;
+  positive integers cap the result count. Negative limits raise
+  `HybridRetrievalRankingError`.
+
+#### Explainability schema
+
+Each ranked result may include:
+
+```json
+{
+  "ranking_explanation": {
+    "schema_version": "hybrid-retrieval-ranking/v1",
+    "factor_scores": {
+      "source_match": 0.9,
+      "graph_distance": 0.8,
+      "evidence_strength": 0.9,
+      "freshness": 0.95,
+      "confidence": 0.92,
+      "scope_match": 0.85,
+      "memory_trust": 0.8
+    },
+    "weights": { "...": "DEFAULT_RANKING_WEIGHTS" },
+    "weighted_contributions": { "...": "factor_score * weight" },
+    "final_score": 0.87,
+    "warnings": ["missing_factor:scope_match"],
+    "caveats": [],
+    "guardrails": [
+      "Retrieval results are context, not truth.",
+      "No retrieval result implies Live-Go."
+    ]
+  }
+}
+```
+
+#### Missing and weak values
+
+- Missing factor inputs use a conservative default (`0.35`) and emit
+  `missing_factor:<name>` warnings.
+- `confidence < 0.3` or `inferred: true` adds weak-match warnings; results stay
+  visible (not dropped).
+- Custom weights must sum to `1.0` (otherwise `HybridRetrievalRankingError`).
+
+#### Tie-breaking (deterministic)
+
+1. `final_score` descending
+2. `confidence` descending
+3. `freshness` descending
+4. `source_ref` or `result_id` ascending (stable string)
+
+#### Graph distance convention
+
+- **`graph_distance_score`** (optional): pre-normalized proximity in `0.0–1.0`.
+  Use this when the adapter already computed a score.
+- **`graph_distance`** (optional): **hop count only** (non-negative integer or
+  float). `0` hops → `1.0`; higher hops decay linearly to `0.0` at
+  `GRAPH_DISTANCE_MAX_HOPS` (default `10`). Do **not** send normalized values
+  (e.g. `0.5`) in `graph_distance` — they would be misread as half a hop.
+- If both fields are absent, ranking uses the missing-factor default and emits
+  `missing_factor:graph_distance`.
 
 ### Freshness Decay
 
@@ -178,7 +249,8 @@ All retrieval results follow this schema:
   "evidence_refs": ["string"] | null,
   "warnings": ["string"],
   "retrieval_mode": "full_text|structured_filter|graph_traversal|evidence_lookup|decision_history|memory_lookup|optional_vector_search",
-  "matched_on": ["keyword"|"concept"|"symbol"|"scope"|"evidence"|"decision"|"memory"]
+  "matched_on": ["keyword"|"concept"|"symbol"|"scope"|"evidence"|"decision"|"memory"],
+  "ranking_explanation": "object (optional, hybrid-retrieval-ranking/v1)"
 }
 ```
 
@@ -240,12 +312,15 @@ Vector search is **optional** and not required for baseline retrieval:
 - **Dependency**: requires vector index on supported fields
 - **Impact**: adds `concept` query capability
 - **Fallback**: if vector search fails or disabled, falls back to `full_text`
+- **Ranking v1**: `vector_score` on candidates is ignored for weighting; a caveat
+  is recorded when present. No embeddings or index files in this slice.
 
 ### Vector Search Constraints
 
 - No new hard dependencies
 - Graceful degradation if vector index unavailable
 - Optional in `hybrid_ranked` mode
+- **Deferred** for weighted ranking v1 (Issue #2799)
 
 ---
 
@@ -365,7 +440,10 @@ This contract was validated against:
 
 ## Files Changed
 
-- `docs/surrealdb/context-hybrid-retrieval-strategy-v1.md` (new)
+- `docs/surrealdb/context-hybrid-retrieval-strategy-v1.md` (contract + v1 ranking notes)
+- `tools/surrealdb/hybrid_retrieval_ranking.py` (#2799)
+- `tests/unit/surrealdb/test_hybrid_retrieval_ranking.py`
+- `tests/fixtures/surrealdb/hybrid_retrieval_ranking/candidates_v1.json`
 
 ---
 
