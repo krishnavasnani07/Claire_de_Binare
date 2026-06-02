@@ -1,4 +1,4 @@
-# Session: #2821 Real-Task-Proof secret policy (2026-06-03)
+# Session: #2821 Real-Task-Proof secret policy (2026-06-02 UTC)
 
 ## Scope
 

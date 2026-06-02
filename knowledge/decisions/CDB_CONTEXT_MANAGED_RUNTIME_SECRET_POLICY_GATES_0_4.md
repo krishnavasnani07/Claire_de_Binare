@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Status | **accepted** (design / prerequisite only) |
-| Date | 2026-06-03 |
+| Date | 2026-06-02 |
 | Issue | GitHub issue [#2821](https://github.com/jannekbuengener/Claire_de_Binare/issues/2821) |
 | Lineage | [#1976](https://github.com/jannekbuengener/Claire_de_Binare/issues/1976) (grandparent), [#2778](https://github.com/jannekbuengener/Claire_de_Binare/issues/2778) (Phase-2 epic, CLOSED), [#2803](https://github.com/jannekbuengener/Claire_de_Binare/issues/2803) (managed/non-local decision), [#2804](https://github.com/jannekbuengener/Claire_de_Binare/issues/2804) (controlled write v2 design) |
 | Runtime activation | **NOT ACTIVATED** |

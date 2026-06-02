@@ -3,12 +3,12 @@
 **Status Class**: Working Repo / Engineering Status
 **Authority**: Current repo/main/test/dependency snapshot; not the canonical live-readiness or Echtgeld Go/No-Go source.
 **Operational Canon**: `docs/live-readiness/LR-AUDIT-STATUS-2026-03-05.md`
-**Last Updated**: 2026-06-03
+**Last Updated**: 2026-06-02
 **GitHub Boundary**: The live commit and PR state is tracked in GitHub (UI/API or `gh`); this file is a curated repo/engineering ledger, not a live mirror.
 
 ---
 
-## Repo / Engineering Status (2026-06-03)
+## Repo / Engineering Status (2026-06-02)
 
 - **#2821 managed runtime secret policy (design)**: **IN PR** — branch `real-task-proof-2821-secret-policy`; delivers [`knowledge/decisions/CDB_CONTEXT_MANAGED_RUNTIME_SECRET_POLICY_GATES_0_4.md`](knowledge/decisions/CDB_CONTEXT_MANAGED_RUNTIME_SECRET_POLICY_GATES_0_4.md) + Real-Task-Proof [`docs/surrealdb/SURREALDB_1976_REAL_TASK_PROOF_RUN_2026-06-02.md`](docs/surrealdb/SURREALDB_1976_REAL_TASK_PROOF_RUN_2026-06-02.md) (**RTP verdict PASS** on §C gate). Satisfies #2803 **G0-4** documentation only; managed/non-local **NOT ACTIVATED**. GitHub-live (pre-merge): #2821 **OPEN**; #1976 **OPEN**. LR NO-GO.
 - **#1976 grandparent / Real-Task-Proof**: Readiness on `main` (PR [#2827](https://github.com/jannekbuengener/Claire_de_Binare/pull/2827) `22c70b86`); **RTP PASS** delivered via #2821 run (pending merge SHA). Post-merge: expect #2821 **CLOSED**, #1976 close per RTP gate. Grandparent wave matrix (readiness §B) may still list PARTIAL items — not re-certified in #2821 run. LR NO-GO.
