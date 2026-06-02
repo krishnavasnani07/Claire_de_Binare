@@ -10,13 +10,14 @@
 
 ## Repo / Engineering Status (2026-06-02)
 
-- **#2778 Phase-2 planning activation**: **ACTIVE-PLANNING** (Jannek GO 2026-06-02; planning/child-slicing only — not implementation blanket GO). Entry recheck **READY-FOR-JANNEK-GO** posted; child slices **#2797–#2804** OPEN. Comments: [#2778 activation](https://github.com/jannekbuengener/Claire_de_Binare/issues/2778#issuecomment-4597944784), [entry recheck](https://github.com/jannekbuengener/Claire_de_Binare/issues/2778#issuecomment-4597927077). Session log: `knowledge/logs/sessions/2026-06-02-2778-phase2-entry-and-planning.md`. LR NO-GO.
+- **#2799 Hybrid retrieval and ranking v1**: **COMPLETED** — PR [#2812](https://github.com/jannekbuengener/Claire_de_Binare/pull/2812) squash-merged (`8bc98fab`); `tools/surrealdb/hybrid_retrieval_ranking.py` + fixture unit tests on `main`. GitHub-live: #2799 **CLOSED**; epic #2778 **OPEN**. Session log: `knowledge/logs/sessions/2026-06-02-2799-hybrid-ranking-v1.md`. MCP `context.search` wiring and vector weighting deferred. LR NO-GO.
+- **#2778 Phase-2 planning activation**: **ACTIVE-PLANNING** (Jannek GO 2026-06-02; planning/child-slicing only — not implementation blanket GO). Entry recheck **READY-FOR-JANNEK-GO** posted; child slices **#2797–#2804** (#2799 **CLOSED** via PR #2812; others OPEN). Comments: [#2778 activation](https://github.com/jannekbuengener/Claire_de_Binare/issues/2778#issuecomment-4597944784), [entry recheck](https://github.com/jannekbuengener/Claire_de_Binare/issues/2778#issuecomment-4597927077). Session log: `knowledge/logs/sessions/2026-06-02-2778-phase2-entry-and-planning.md`. LR NO-GO.
 - **Phase-1 closeout chain (complete)**: #2773–#2777, #2689, #2780, #2781 **CLOSED**; #2780 via PR [#2795](https://github.com/jannekbuengener/Claire_de_Binare/pull/2795) (`5c365391` area); docs audit `PASS_WITH_DEFERRED_EXIT_ITEMS`.
 - **#1976 grandparent epic**: **OPEN** — Real-Task-Proof still required before closeout; not implied by #2778 planning GO.
 - **#2794**: **OPEN** — non-blocking architecture-doc follow-up (post-#2793).
-- **main**: `25cd8c82` (PR #2796 control-board auto-routing merged during session ff-only sync).
+- **main**: `8bc98fab` (PR #2812 #2799 hybrid ranking squash-merged; prior `25cd8c82` was PR #2796 control-board auto-routing).
 - **Active GitHub focus (manual, non-exhaustive)**:
-  - #2778 + child slices #2797–#2804 (Phase-2 planning → scoped implementation)
+  - #2778 + child slices #2797–#2804 (#2799 **CLOSED**; others OPEN — Phase-2 planning → scoped implementation)
   - #1976 (grandparent; OPEN)
   - #2794 (architecture doc; non-blocking)
   - #2440 (LR-030 Shadow/Soak — OPEN)
