@@ -1,10 +1,11 @@
-# #1976 Real-Task-Proof Run — #2821 Secret Policy (2026-06-03 execution)
+# #1976 Real-Task-Proof Run — #2821 Secret Policy (2026-06-02 execution)
 
 | Field | Value |
 | --- | --- |
 | **Real task** | [#2821](https://github.com/jannekbuengener/Claire_de_Binare/issues/2821) — Context managed runtime secret policy (design) |
 | **Grandparent** | [#1976](https://github.com/jannekbuengener/Claire_de_Binare/issues/1976) |
-| **Execution date** | 2026-06-03 (UTC, agent session) |
+| **Execution date (UTC)** | 2026-06-02 (session evidence; commit chronology below) |
+| **Proof commit (UTC)** | `a3275494` — authored 2026-06-02T23:14:13Z (pre-fix); see PR [#2829](https://github.com/jannekbuengener/Claire_de_Binare/pull/2829) for merge SHA |
 | **Branch** | `real-task-proof-2821-secret-policy` (from `origin/main` @ `f6d69b7d`) |
 | **Worktree** | `Claire_de_Binare__2821-real-task-proof` |
 | **Readiness SSOT** | [`SURREALDB_1976_GRANDPARENT_DOD_AND_REAL_TASK_PROOF.md`](SURREALDB_1976_GRANDPARENT_DOD_AND_REAL_TASK_PROOF.md) (landed PR [#2827](https://github.com/jannekbuengener/Claire_de_Binare/pull/2827) `22c70b86`) |
@@ -19,7 +20,7 @@
 brain_source: repo-only
 brain_status: used
 tools_or_queries:
-  - gh issue view 2821, 1976, 2778 (2026-06-03)
+  - gh issue view 2821, 1976, 2778 (2026-06-02 UTC session)
   - gh pr view 2825, 2827, 2828 (merged SHAs)
   - gh pr list --state open → []
   - git rev-parse HEAD (worktree, pre-PR commit on origin/main base)
@@ -63,7 +64,7 @@ limitations:
 
 ---
 
-## Live GitHub reads (2026-06-03)
+## Live GitHub reads (2026-06-02 UTC)
 
 | Object | State | Notes |
 | --- | --- | --- |
