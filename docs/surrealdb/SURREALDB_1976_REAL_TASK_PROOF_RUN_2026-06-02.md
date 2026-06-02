@@ -18,7 +18,7 @@
 
 ```text
 brain_source: repo-only
-brain_status: used
+brain_status: not-used
 tools_or_queries:
   - gh issue view 2821, 1976, 2778 (2026-06-02 UTC session)
   - gh pr view 2825, 2827, 2828 (merged SHAs)
