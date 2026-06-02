@@ -94,7 +94,7 @@ labels until a future contract extends the factory with inverse allowlist guards
 | G0-1 | Phase-2 read-only slices **#2797–#2802** landed on `main` with PR SHAs | GitHub merge evidence |
 | G0-2 | Default brain posture **#2775** remains active; no contradiction | This repo + `CDB_CONTEXT_BRAIN_DEFAULT_POSTURE.md` |
 | G0-3 | MCP capability **L3–L5** verified per agent surface or documented WARN | [`docs/runbooks/surrealdb_context_mcp_access.md`](../../docs/runbooks/surrealdb_context_mcp_access.md) §1.5.1 |
-| G0-4 | **Managed secret-handling policy** accepted (no secrets in repo/PRs/logs) | Dedicated issue + decision doc |
+| G0-4 | **Managed secret-handling policy** accepted (no secrets in repo/PRs/logs) | [#2821](https://github.com/jannekbuengener/Claire_de_Binare/issues/2821) + [`CDB_CONTEXT_MANAGED_RUNTIME_SECRET_POLICY_GATES_0_4.md`](CDB_CONTEXT_MANAGED_RUNTIME_SECRET_POLICY_GATES_0_4.md) (design on `main`; activation still blocked) |
 | G0-5 | Security/deployment review (TLS, tenant isolation, egress, audit logging) | Design issue + operator sign-off |
 | G0-6 | Adapter contract extension (**read-only**, non-local allowlist, localhost denylist for productive-read path) | Implementation PR + unit tests |
 | G0-7 | Operator proof pack: read queries succeed; write/admin SQL fail-closed | Session log + redacted proof |
