@@ -29,7 +29,7 @@ tools_or_queries:
            tests/unit/agents/test_agent_brain_adoption_contract.py -m unit → 23 passed
 records_or_results:
   - #2821: OPEN at run start; closed after PR merge (post-merge action)
-  - #1976: OPEN at run start; close recommended after RTP PASS + merge
+  - #1976: OPEN at run start; **remain OPEN** after merge (RTP PASS ≠ epic closeout per readiness §B)
   - #2778: CLOSED (2026-06-02T21:44:14Z)
   - origin/main @ f6d69b7d (PR #2828 ledger sync)
 repo_crosscheck:
@@ -42,7 +42,7 @@ repo_crosscheck:
 impact_on_plan:
   - #2821 design deliverable landed as policy doc + cross-links
   - #2803 G0-4 documentation evidence satisfied; runtime still NOT ACTIVATED
-  - RTP §C matrix → PASS; recommends #1976 close after merge (RTP gate only)
+  - RTP §C matrix → PASS for #2821 slice only; does **not** authorize #1976 epic closeout
 limitations:
   - No surrealdb-local query/record IDs (no productive DB session)
   - MCP enumerate via in-process bridge, not full IDE MCP host certification
@@ -205,6 +205,8 @@ No `.py` files modified in this slice.
 ## Post-merge actions (when PR merged)
 
 1. Comment on #2821 with policy path + merge SHA.
-2. Close #2821 (PR body: `Closes #2821`).
-3. Comment on #1976: RTP **PASS**, link this file + PR; close #1976 per RTP gate (not full wave matrix re-certification).
-4. Update `CURRENT_STATUS.md` ledger from live `gh issue view`.
+2. Close #2821 only (PR body: `Closes #2821`).
+3. Comment on #1976 (do **not** close): RTP **PASS** for Real-Task-Proof Gate (§C) on scoped task #2821; link this file + PR merge SHA; state epic remains **OPEN** per [`SURREALDB_1976_GRANDPARENT_DOD_AND_REAL_TASK_PROOF.md`](SURREALDB_1976_GRANDPARENT_DOD_AND_REAL_TASK_PROOF.md) §B (lines 81–84) — remaining FAIL/PARTIAL wave items must be accepted out-of-scope **or** remediated before grandparent closeout.
+4. Update `CURRENT_STATUS.md` ledger from live `gh issue view` (#1976 expected **OPEN**).
+
+**Explicit non-action:** Do not close #1976 from this artifact. RTP PASS satisfies the **Finales Real-Task-Proof Gate** criterion only; it does not override epic-close **HOLD** or re-certify the §B wave matrix.

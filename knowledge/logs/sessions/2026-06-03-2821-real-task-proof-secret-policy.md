@@ -40,4 +40,4 @@ secret policy (Gates 0–4). Docs-only; no code/runtime/MCP mutations.
 ## Post-merge (planned)
 
 - Close #2821 via PR; comment with policy path + SHA
-- Close #1976 with RTP PASS comment + proof link
+- Comment on #1976 with RTP PASS + proof link; **keep #1976 OPEN** (readiness §B epic-close HOLD)
