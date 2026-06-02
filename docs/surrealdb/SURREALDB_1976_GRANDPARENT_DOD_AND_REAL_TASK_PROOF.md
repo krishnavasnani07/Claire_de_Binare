@@ -7,7 +7,8 @@
 | **Repo SHA** | `f25c6f50751fbb6d7bc8e19b81e84cefedb08b9d` (`origin/main` at readiness review) |
 | **Review date** | 2026-06-02 |
 | **Readiness verdict** | **`READY_FOR_REAL_TASK_PROOF_RUN`** (scoped task [#2821](https://github.com/jannekbuengener/Claire_de_Binare/issues/2821)) |
-| **Epic-close verdict** | **`HOLD`** — Grandparent DoD not fully satisfied; Real-Task-Proof **not PASS** |
+| **Epic-close verdict** | **`HOLD`** — Grandparent DoD not fully satisfied (see §B) |
+| **Real-Task-Proof Gate** | **`PASS`** (scoped #2821) — see §F addendum; does **not** authorize #1976 epic close |
 
 ---
 
@@ -73,8 +74,8 @@ Grouped status against `main` + GitHub (2026-06-02). Legend: **PASS** = belegt u
 | Welle 19–20 — Control room, self-explanation, Agent OS | Reports + readiness | **PARTIAL** | `control_room_view_builder.py`, `context_self_explanation.py`, `evaluate_agent_os_readiness_v1` in [`agent_os_readiness.py`](../../tools/surrealdb/agent_os_readiness.py); #2802 signal layer orthogonal |
 | Welle 21 — Cross-cutting | Search, CI, perf, backup plans | **PARTIAL** | Anchor #2205 **CLOSED**; vector search / CI integration largely **plan/design** per epic non-goals |
 | Guardrails LR / writes / secrets | Fail-closed | **PASS** | LR NO-GO SSOT; `PERSIST_ALLOWED=False`, `MUTATION_ALLOWED=False`; #2803 `local_only`; #2804 design-only writes |
-| **#2821 secret policy (Gates 0–4)** | Managed/non-local prerequisite | **FAIL** (open work) | [#2821](https://github.com/jannekbuengener/Claire_de_Binare/issues/2821) **OPEN** — design-only policy not landed |
-| **Real-Task-Proof Gate** | Live task under repo/GitHub context | **FAIL** (not run) | This document is **readiness only**; see §C |
+| **#2821 secret policy (Gates 0–4)** | Managed/non-local prerequisite | **PASS** (design) | [`CDB_CONTEXT_MANAGED_RUNTIME_SECRET_POLICY_GATES_0_4.md`](../../knowledge/decisions/CDB_CONTEXT_MANAGED_RUNTIME_SECRET_POLICY_GATES_0_4.md) — PR [#2829](https://github.com/jannekbuengener/Claire_de_Binare/pull/2829); #2821 closes on merge |
+| **Real-Task-Proof Gate** | Live task under repo/GitHub context | **PASS** (scoped) | [`SURREALDB_1976_REAL_TASK_PROOF_RUN_2026-06-02.md`](SURREALDB_1976_REAL_TASK_PROOF_RUN_2026-06-02.md) §C — **not** full §B wave re-certification |
 
 ### Epic-close verdict: **HOLD**
 
@@ -100,8 +101,8 @@ Phase-2 **`PASS_CLOSEOUT`** does not override (1).
 | Restunsicherheiten fail-closed | Yes | Documented in §B/C limitations | Run must list per-task uncertainties |
 | No false LR/DB/live claims | Yes | LR NO-GO explicit | Run must re-check |
 
-**Real-Task-Proof status today:** **not PASS** (no documented live task execution).  
-**Readiness status:** **`READY_FOR_REAL_TASK_PROOF_RUN`** — blockers for *starting* a scoped read-only run are cleared; execution is a **separate Run-GO**.
+**Real-Task-Proof status (2026-06-02 pre-run snapshot):** **not PASS** — superseded by §F after PR [#2829](https://github.com/jannekbuengener/Claire_de_Binare/pull/2829).  
+**Readiness status (pre-run):** **`READY_FOR_REAL_TASK_PROOF_RUN`** — historical; see §F for post-run canon.
 
 ---
 
@@ -131,8 +132,8 @@ Phase-2 **`PASS_CLOSEOUT`** does not override (1).
 | --- | --- |
 | Phase-2 prerequisite (#2778) | **Satisfied** (`PASS_CLOSEOUT` on `main`) |
 | Grandparent DoD (#1976) | **HOLD** — partial wave delivery; #2821 open; productive paths not activated |
-| Real-Task-Proof Gate | **Not PASS** — run not executed |
-| **Readiness for proof run** | **`READY_FOR_REAL_TASK_PROOF_RUN`** on **#2821** (read-only) |
+| Real-Task-Proof Gate | **PASS** (scoped #2821) — §F; epic close still **HOLD** |
+| **Readiness for proof run** | **Completed** — see §F; #2821 delivery via PR #2829 |
 
 ---
 
@@ -151,8 +152,24 @@ GitHub **auto-closed** #1976 when PR #2827 merged (squash subject referenced `#1
 
 ---
 
+## F) Real-Task-Proof run addendum (2026-06-02 UTC, PR #2829)
+
+Post-run update to this SSOT. Supersedes §C/E **pre-run** FAIL rows for #2821 policy and RTP gate only.
+
+| Item | Status | Evidence |
+| --- | --- | --- |
+| Scoped task | #2821 secret policy (design) | [`CDB_CONTEXT_MANAGED_RUNTIME_SECRET_POLICY_GATES_0_4.md`](../../knowledge/decisions/CDB_CONTEXT_MANAGED_RUNTIME_SECRET_POLICY_GATES_0_4.md) |
+| Proof artifact | RTP **PASS** (§C matrix) | [`SURREALDB_1976_REAL_TASK_PROOF_RUN_2026-06-02.md`](SURREALDB_1976_REAL_TASK_PROOF_RUN_2026-06-02.md) |
+| Delivery PR | [#2829](https://github.com/jannekbuengener/Claire_de_Binare/pull/2829) | Branch `real-task-proof-2821-secret-policy` @ `05483b5d` (pre-merge) |
+| #2821 | Closes on merge | PR `Closes #2821` |
+| #1976 | **Stays OPEN** | Epic-close **HOLD** per §B — RTP PASS satisfies criterion (1) only; criterion (2) FAIL/PARTIAL waves still open |
+
+**Operator rule:** Do not close #1976 from RTP PASS alone. Comment on #1976 with proof link; remediate or accept §B gaps before epic closeout.
+
+---
+
 ## Non-goals (this slice)
 
-- Executing the Real-Task-Proof run itself
-- Closing #1976 or #2821
+- Executing the Real-Task-Proof run itself *(completed in §F addendum via separate PR #2829)*
+- Closing #1976 *(epic remains OPEN per §B)*
 - Implementing Wellen 7–21 gaps or activating productive SurrealDB/MCP writes
