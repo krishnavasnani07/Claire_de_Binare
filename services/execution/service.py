@@ -236,6 +236,41 @@ def _build_result_metadata(order: Order, result: ExecutionResult) -> dict:
     return metadata
 
 
+_ARVP_PAPER_ORDER_ID_PREFIX = "paper_"
+
+
+def _correlation_ledger_order_ids(
+    order: Order, result: ExecutionResult
+) -> tuple[str, str]:
+    """Return (canonical_order_id, exchange_order_id) for correlation_ledger.
+
+    ARVP paper-reference export (#1901) requires top-level ledger order_id to
+    start with ``paper_``. Risk-approved mock orders often carry a UUID while the
+    mock executor returns ``MOCK_...``; derive a stable ``paper_<internal>`` id
+    without changing live-trading semantics.
+    """
+    exchange_order_id = (result.order_id or "").strip()
+    internal_id = (order.order_id or "").strip()
+
+    if internal_id.startswith(_ARVP_PAPER_ORDER_ID_PREFIX):
+        return internal_id, exchange_order_id
+
+    if config.MOCK_TRADING:
+        if internal_id:
+            return f"{_ARVP_PAPER_ORDER_ID_PREFIX}{internal_id}", exchange_order_id
+        if exchange_order_id:
+            if exchange_order_id.startswith(_ARVP_PAPER_ORDER_ID_PREFIX):
+                return exchange_order_id, exchange_order_id
+            return (
+                f"{_ARVP_PAPER_ORDER_ID_PREFIX}{exchange_order_id}",
+                exchange_order_id,
+            )
+        return "", exchange_order_id
+
+    canonical = internal_id or exchange_order_id
+    return canonical, exchange_order_id
+
+
 def _parse_order_payload(order_data: object) -> Order | None:
     """Return validated Order or None for invalid payload input."""
     if not isinstance(order_data, dict):
@@ -328,7 +363,9 @@ def init_services():
                 adapter_id,
                 mock_trading=config.MOCK_TRADING,
             )
-            logger.info("🟢 Using execution adapter: %s (Paper Trading Mode)", adapter_id)
+            logger.info(
+                "🟢 Using execution adapter: %s (Paper Trading Mode)", adapter_id
+            )
         elif adapter_id == MEXC_BUILTIN:
             dry_run = config.DRY_RUN if hasattr(config, "DRY_RUN") else True
             testnet = config.MEXC_TESTNET if hasattr(config, "MEXC_TESTNET") else False
@@ -549,8 +586,10 @@ def process_order(order_data: object):
 
         execute_v2 = getattr(executor, "execute", None)
         if callable(execute_v2):
-            adapter_run_mode = order.run_mode if order.run_mode else (
-                "paper" if config.MOCK_TRADING else "live"
+            adapter_run_mode = (
+                order.run_mode
+                if order.run_mode
+                else ("paper" if config.MOCK_TRADING else "live")
             )
             adapter_response = execute_v2(
                 ExecutionAdapterRequest(
@@ -600,24 +639,31 @@ def process_order(order_data: object):
         result.metadata = _build_result_metadata(order, result)
 
         # Phase 8C/8E: Persist ORDER and FILL events to correlation_ledger
-        # order_id ist jetzt final (von executor zurückgegeben)
+        # ARVP paper-reference contract v1 (Issue #1901) qualifies paper runs via
+        # order_id prefix "paper_...". correlation_ledger must preserve a canonical
+        # internal order_id when present; exchange/venue ids go in payload only.
         # Correlation write failures must NOT prevent order_results publish.
         if db:
             try:
                 timestamp_ms = int(time.time() * 1000)
                 schema_status = ExecutionResult._schema_status(result.status)
+                canonical_order_id, exchange_order_id = _correlation_ledger_order_ids(
+                    order, result
+                )
 
                 # ORDER event (always persisted)
                 order_payload = {
                     "signal_id": order.signal_id,
                     "decision_id": order.decision_id,
-                    "order_id": result.order_id,
+                    "order_id": canonical_order_id,
                     "symbol": order.symbol,
                     "side": order.side,
                     "quantity": order.quantity,
                     "strategy_id": order.strategy_id,
                     "trace_id": order.trace_id,
                 }
+                if exchange_order_id and exchange_order_id != canonical_order_id:
+                    order_payload["exchange_order_id"] = exchange_order_id
                 # Phase 9: Trace Contract v1 - Policy governance (conditional)
                 if getattr(order, "policy_id", None) is not None:
                     order_payload["policy_id"] = order.policy_id
@@ -633,7 +679,7 @@ def process_order(order_data: object):
                     symbol=order.symbol,
                     timestamp_ms=timestamp_ms,
                     decision_id=order.decision_id,
-                    order_id=result.order_id,
+                    order_id=canonical_order_id,
                     payload=order_payload,
                 ):
                     logger.warning(
@@ -645,7 +691,7 @@ def process_order(order_data: object):
                     fill_payload = {
                         "signal_id": order.signal_id,
                         "decision_id": order.decision_id,
-                        "order_id": result.order_id,
+                        "order_id": canonical_order_id,
                         "fill_id": result.fill_id,
                         "symbol": order.symbol,
                         "side": order.side,
@@ -654,6 +700,8 @@ def process_order(order_data: object):
                         "strategy_id": order.strategy_id,
                         "trace_id": order.trace_id,
                     }
+                    if exchange_order_id and exchange_order_id != canonical_order_id:
+                        fill_payload["exchange_order_id"] = exchange_order_id
                     # Phase 9: Trace Contract v1 - Policy governance (conditional)
                     if getattr(order, "policy_id", None) is not None:
                         fill_payload["policy_id"] = order.policy_id
@@ -669,7 +717,7 @@ def process_order(order_data: object):
                         symbol=order.symbol,
                         timestamp_ms=timestamp_ms,
                         decision_id=order.decision_id,
-                        order_id=result.order_id,
+                        order_id=canonical_order_id,
                         fill_id=result.fill_id,
                         payload=fill_payload,
                     ):
@@ -720,7 +768,10 @@ def process_order(order_data: object):
                     policy_snapshot=getattr(order, "policy_snapshot", None),
                 )
             except Exception:
-                logger.debug("Contract emission skipped (execution path guardrail)", exc_info=True)
+                logger.debug(
+                    "Contract emission skipped (execution path guardrail)",
+                    exc_info=True,
+                )
 
         # Update stats (Thread-safe)
         schema_status = ExecutionResult._schema_status(result.status)
