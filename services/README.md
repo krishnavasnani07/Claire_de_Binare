@@ -15,7 +15,7 @@ Stateless runtime services for the BLUE+RED stack. Persistent state lives in Pos
 | [db_writer/](db_writer/) | BLUE | [README](db_writer/README.md) |
 | [execution/](execution/) | BLUE | [README](execution/README.md) |
 | [market/](market/) | BLUE | [README](market/README.md) |
-| [paper_runner/](paper_runner/) | BLUE | (see compose + `knowledge/operating_rules/`) |
+| Paper runner (`tools/paper_trading/`) | BLUE | [README](../tools/paper_trading/README.md) |
 | [regime/](regime/) | BLUE | [README](regime/README.md) |
 | [risk/](risk/) | BLUE | [README](risk/README.md) |
 | [signal/](signal/) | RED | [README](signal/README.md) |
@@ -34,4 +34,4 @@ docker compose -f infrastructure/compose/compose.blue.yml up -d
 docker compose -f infrastructure/compose/compose.red.yml up -d
 ```
 
-See `infrastructure/compose/README.md` and `services/risk/README.md` / `services/signal/README.md`.
+See `infrastructure/compose/README.md` and linked service READMEs above.

@@ -44,8 +44,8 @@ Automation, Guards und Evidence-Helfer auf Repo-Root-Ebene. Für Stack/Backup/Se
 
 | Pfad | Zweck |
 |---|---|
-| [`infrastructure/scripts/`](../infrastructure/scripts/) | `setup_blue_red.ps1`, `smoke_test.ps1`, backup/DR |
-| [`tools/`](../tools/README.md) | `cdb.ps1`, MCP validate, secrets rotator |
+| [`infrastructure/scripts/README.md`](../infrastructure/scripts/README.md) | `setup_blue_red.ps1`, `smoke_test.ps1`, backup/DR |
+| [`tools/README.md`](../tools/README.md) | `cdb.ps1`, MCP validate, secrets rotator |
 | [`.github/scripts/`](../.github/scripts/) | Workflow-backed Python |
 
 ## Boundary
