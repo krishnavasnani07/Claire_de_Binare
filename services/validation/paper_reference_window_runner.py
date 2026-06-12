@@ -28,6 +28,12 @@ from core.replay.paper_reference_window_export import (
     build_export_request,
     export_paper_reference_window,
 )
+from core.utils.clock import utcnow
+from core.utils.evidence_class import (
+    EvidenceClassError,
+    evidence_class_warning_banner,
+    validate_evidence_class,
+)
 
 _READONLY_DSN_ENV = "POSTGRES_READONLY_PASSWORD_DSN"
 _EXPECTED_READONLY_LOGIN = "cdb_readonly"
@@ -75,6 +81,13 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         type=int,
         help="Optional later bound for causal post-window SIGNAL lookup (#3058).",
     )
+    p.add_argument(
+        "--chain-source",
+        default="live",
+        choices=["live", "stimulus"],
+        help="Source of the chain: 'live' (natural market, default) or 'stimulus' (synthetic fixture). "
+        "Stimulus chains are classified as pipeline_test_evidence.",
+    )
     return p.parse_args(argv)
 
 
@@ -90,6 +103,7 @@ def _build_source_query_intent(args: argparse.Namespace) -> str:
         qualifiers.append(f"filter bot_id={args.bot_id}")
     if args.config_hash:
         qualifiers.append(f"filter config_hash={args.config_hash}")
+    qualifiers.append(f"chain_source={getattr(args, 'chain_source', 'live')}")
     return "; ".join(qualifiers)
 
 
@@ -270,7 +284,6 @@ def main(argv: list[str] | None = None) -> int:
         payload = export_paper_reference_window(
             request=request, rows=rows, causal_context_rows=causal_context_rows
         )
-        out_path.write_text(canonical_json_dumps(payload), encoding="utf-8")
     except PaperReferenceExportError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
@@ -278,12 +291,53 @@ def main(argv: list[str] | None = None) -> int:
         print(f"ERROR: paper_reference_window export failed: {exc}", file=sys.stderr)
         return 2
 
+    now_utc = utcnow().isoformat()
+    extracted_by = getattr(request, "extracted_by", "paper_reference_window_runner")
+
+    # Evidence class is determined by --chain-source CLI arg. Stimulus-runner
+    # chains cannot be detected from persisted ledger fields (stimulus_run_id
+    # is used for UUIDv5 signal-id seeding but never stored), so the operator
+    # must explicitly declare the chain source (#3129 review).
+    chain_source = getattr(args, "chain_source", "live")
+    if chain_source == "stimulus":
+        evidence_class = "pipeline_test_evidence"
+        payload["pipeline_tool"] = "paper_runtime_stimulus_runner"
+        payload["fixture_source"] = f"extracted_by={extracted_by}"
+    else:
+        evidence_class = "natural_paper_evidence"
+        payload["campaign_id"] = request.strategy_id
+        payload["start_criterion"] = "ledger_export"
+        payload["safety_flags"] = {
+            "mock_trading": True,
+            "dry_run": True,
+            "mexc_testnet": True,
+        }
+        payload["provenance"] = f"extracted_by={extracted_by}@{now_utc}"
+
+    warning_banner = evidence_class_warning_banner(evidence_class)
+    payload["evidence_class"] = evidence_class
+    payload["evidence_class_version"] = "1.0"
+    payload["produced_by"] = "paper_reference_window_runner"
+    payload["produced_at_utc"] = now_utc
+    if warning_banner:
+        payload["warning_banner"] = warning_banner
+
+    try:
+        validate_evidence_class(payload)
+    except EvidenceClassError as exc:
+        print(f"EVIDENCE CLASS VALIDATION FAILED: {exc}", file=sys.stderr)
+        return 2
+
+    out_path.write_text(canonical_json_dumps(payload), encoding="utf-8")
+
     readonly_database, readonly_current_user, readonly_session_user = readonly_identity
     print(
         "OK: paper_reference_window exported "
         f"(strategy_id={request.strategy_id}, symbol={request.symbol}, "
         f"window=[{request.start_ts_ms_utc},{request.end_ts_ms_utc}], "
         f"bot_id={request.bot_id or '*'}, config_hash={request.config_hash or '*'}, "
+        f"evidence_class={evidence_class}, "
+        f"chain_source={chain_source}, "
         f"database={readonly_database}, current_user={readonly_current_user}, "
         f"session_user={readonly_session_user})"
     )
