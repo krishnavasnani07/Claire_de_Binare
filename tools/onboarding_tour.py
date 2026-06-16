@@ -163,8 +163,8 @@ COMMON_SURFACES: list[tuple[str, str]] = [
         "Prompt, evidence, and PR-body templates.",
     ),
     (
-        "#3251 planned next surface; use docs/onboarding/examples/first_issue_to_pr_flow.md until it lands.",
-        "First-issue sandbox is not live yet, so the tour keeps it as a planned surface only.",
+        "docs/onboarding/first_issue_sandbox.md",
+        "Guided rehearsal path for the first safe docs-only issue-to-PR workflow.",
     ),
 ]
 
@@ -191,7 +191,9 @@ def _normalize_role(role: str | None) -> str | None:
 def _validate_output_safe(text: str) -> None:
     for pattern in FORBIDDEN_OUTPUT_PATTERNS:
         if pattern.search(text):
-            raise ValueError("output contains forbidden pattern - potential secret leak")
+            raise ValueError(
+                "output contains forbidden pattern - potential secret leak"
+            )
 
 
 def _format_steps(title: str, steps: list[tuple[str, str]]) -> list[str]:
