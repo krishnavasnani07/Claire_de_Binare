@@ -47,7 +47,7 @@
 ## Rollback Instructions
 
 To revert this sync:
-\\\ash
+\\\bash
 git revert <commit-sha>
 # or
 git reset --hard origin/main
