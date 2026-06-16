@@ -6,7 +6,9 @@ secret output, stack mutation, DB writes, or MCP mutations.
 Usage:
     python -m tools.onboarding_doctor
     python -m tools.onboarding_doctor --format json
+    python -m tools.onboarding_doctor --report docs/evidence/local_onboarding_check.md
     ./tools/cdb.ps1 onboarding doctor
+    ./tools/cdb.ps1 onboarding doctor --report docs/evidence/local_onboarding_check.md
     make onboarding-doctor
 
 Exit codes:
@@ -30,6 +32,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
+from core.utils.clock import utcnow as cdb_utcnow  # noqa: E402
 
 CheckResult = str  # "PASS" | "WARN" | "FAIL" | "SKIP"
 EnvVarCheck = str  # "set" | "unset" | "invalid"
@@ -83,7 +90,12 @@ def _run_cmd(
         out = (proc.stdout or "").strip()
         err = (proc.stderr or "").strip()
         return proc.returncode, out, err
-    except (FileNotFoundError, OSError, subprocess.TimeoutExpired, UnicodeDecodeError) as exc:
+    except (
+        FileNotFoundError,
+        OSError,
+        subprocess.TimeoutExpired,
+        UnicodeDecodeError,
+    ) as exc:
         return -1, "", str(exc)
 
 
@@ -105,6 +117,7 @@ class DoctorOutput:
     git_found: CheckResult = "FAIL"
     git_branch: str = ""
     git_dirty: CheckResult = "SKIP"
+    repo_head: str = ""
     python_found: CheckResult = "FAIL"
     python_version: str = ""
     python_version_ok: CheckResult = "FAIL"
@@ -124,10 +137,12 @@ class DoctorOutput:
     def to_dict(self) -> dict[str, Any]:
         return {
             "repo_root": self.repo_root_found,
+            "repo_head": self.repo_head,
             "git": {
                 "found": self.git_found,
                 "branch": self.git_branch,
                 "dirty": self.git_dirty,
+                "head": self.repo_head,
             },
             "python": {
                 "found": self.python_found,
@@ -150,7 +165,12 @@ class DoctorOutput:
             "lr_note": self.lr_note,
             "warnings": self.warnings,
             "checks": [
-                {"name": c.name, "status": c.status, "detail": c.detail, "action": c.action}
+                {
+                    "name": c.name,
+                    "status": c.status,
+                    "detail": c.detail,
+                    "action": c.action,
+                }
                 for c in self.checks
             ],
         }
@@ -190,7 +210,10 @@ def _check_env_file() -> tuple[CheckResult, str]:
         return "PASS", ".env found"
     example = Path.cwd() / ".env.example"
     if example.is_file():
-        return "WARN", ".env missing, but .env.example exists (run: cp .env.example .env)"
+        return (
+            "WARN",
+            ".env missing, but .env.example exists (run: cp .env.example .env)",
+        )
     return "FAIL", ".env missing and no .env.example found"
 
 
@@ -265,12 +288,17 @@ def build_report(
         _, branch_out, _ = _run_cmd(branch_cmd, runner=git_runner)
         report.git_branch = branch_out.strip() or "unknown"
 
+        head_cmd = "git rev-parse HEAD"
+        _, head_out, _ = _run_cmd(head_cmd, runner=git_runner)
+        report.repo_head = head_out.strip() or ""
+
         status_cmd = "git status --porcelain"
         _, status_out, _ = _run_cmd(status_cmd, runner=git_runner)
         report.git_dirty = "WARN" if status_out.strip() else "PASS"
     else:
         report.git_branch = ""
         report.git_dirty = "SKIP"
+        report.repo_head = ""
 
     # Python
     python_cmd = "python --version"
@@ -342,14 +370,24 @@ def build_report(
         CheckItem(name="Repo root", status=report.repo_root_found),
         CheckItem(name="Git", status=report.git_found, detail=report.git_branch),
         CheckItem(name="Git branch", status=report.git_dirty, detail=report.git_branch),
-        CheckItem(name="Python", status=report.python_found, detail=report.python_version),
-        CheckItem(name="Python version", status=report.python_version_ok, detail=report.python_version),
+        CheckItem(
+            name="Python", status=report.python_found, detail=report.python_version
+        ),
+        CheckItem(
+            name="Python version",
+            status=report.python_version_ok,
+            detail=report.python_version,
+        ),
         CheckItem(name="gh CLI", status=report.gh_found),
         CheckItem(name="gh auth", status=report.gh_auth),
         CheckItem(name="Docker", status=report.docker_found),
         CheckItem(name="Docker Compose", status=report.compose_found),
         CheckItem(name=".env file", status=report.env_file),
-        CheckItem(name="SECRETS_PATH", status=report.secrets_path, detail=report.secrets_resolved_dir),
+        CheckItem(
+            name="SECRETS_PATH",
+            status=report.secrets_path,
+            detail=report.secrets_resolved_dir,
+        ),
         CheckItem(name="Onboarding files", status=report.onboarding_files),
         CheckItem(name="make context-doctor", status=report.context_doctor_reachable),
     ]
@@ -383,7 +421,9 @@ def format_report(report: DoctorOutput, fmt: str) -> str:
         lines.append(line)
 
     lines.append("")
-    lines.append(f"  >> Secrets path: {_safe_summary(report.secrets_resolved_dir, 100)}")
+    lines.append(
+        f"  >> Secrets path: {_safe_summary(report.secrets_resolved_dir, 100)}"
+    )
     lines.append(f"  >> .env: {report.env_file}")
 
     if report.warnings:
@@ -398,10 +438,112 @@ def format_report(report: DoctorOutput, fmt: str) -> str:
         lines.append("     Context Intelligence preflight.")
     else:
         lines.append("")
-        lines.append("  >> Run 'make context-query-config-init' then 'make context-doctor'")
+        lines.append(
+            "  >> Run 'make context-query-config-init' then 'make context-doctor'"
+        )
         lines.append("     for Context Intelligence preflight.")
 
     return "\n".join(lines)
+
+
+def format_markdown_report(
+    report: DoctorOutput,
+    generated_at: str | None = None,
+) -> str:
+    if generated_at is None:
+        generated_at = cdb_utcnow().isoformat(timespec="seconds")
+
+    fail_count = sum(1 for c in report.checks if c.status == "FAIL")
+    warn_count = sum(1 for c in report.checks if c.status == "WARN")
+    pass_count = sum(1 for c in report.checks if c.status == "PASS")
+
+    if fail_count > 0:
+        overall = "FAIL"
+    elif warn_count > 0:
+        overall = "WARN"
+    else:
+        overall = "PASS"
+
+    lines: list[str] = [
+        "# CDB Onboarding Doctor Report",
+        "",
+        f"**Generated**: {generated_at}",
+        f"**Repo HEAD**: {report.repo_head or 'unknown'}",
+        f"**Branch**: {report.git_branch or 'unknown'}",
+        "",
+        "## Summary",
+        "",
+        f"- **PASS**: {pass_count}",
+        f"- **WARN**: {warn_count}",
+        f"- **FAIL**: {fail_count}",
+        f"- **Overall**: {overall}",
+        "",
+        "## Safety Boundaries",
+        "",
+        "- LR remains **NO-GO**.",
+        "- Board stage `trade-capable` is **not** a Live-Go.",
+        "- No Echtgeld-Go.",
+        "- This report is read-only evidence; no runtime, Docker, DB, or MCP actions performed.",
+        "- No secret values are included in this report.",
+        "",
+        "## Repo State",
+        "",
+        "| Field | Value |",
+        "|-------|-------|",
+        f"| HEAD | `{report.repo_head or 'unknown'}` |",
+        f"| Branch | `{report.git_branch or 'unknown'}` |",
+        f"| Working tree | {report.git_dirty} |",
+        f"| Secrets path | {_safe_summary(report.secrets_resolved_dir, 120)} |",
+        f"| .env | {report.env_file} |",
+        "",
+        "## Checks",
+        "",
+        "| Check | Status | Detail |",
+        "|-------|--------|--------|",
+    ]
+
+    for check in report.checks:
+        detail = check.detail.replace("|", "\\|") if check.detail else ""
+        lines.append(f"| {check.name} | {check.status} | {detail} |")
+
+    lines.extend(
+        [
+            "",
+            "## Active Onboarding Surfaces",
+            "",
+        ]
+    )
+    for rel_path in ONBOARDING_FILE_CHECKS:
+        lines.append(f"- `{rel_path}`")
+
+    if report.warnings:
+        lines.extend(
+            [
+                "",
+                "## Warnings",
+                "",
+            ]
+        )
+        for w in report.warnings:
+            lines.append(f"- {_safe_summary(w, 200)}")
+
+    lines.extend(
+        [
+            "",
+            "## Limitations",
+            "",
+            "- Local checks only; no runtime, Docker, DB, or MCP mutation.",
+            "- Context Doctor reachability is a check only, not a full preflight.",
+            "- No container, network, or stack validation.",
+            "- No external-API or exchange-connectivity validation.",
+            "",
+            "---",
+            "",
+            f"*Report generated by `tools/onboarding_doctor.py` ({overall})*",
+        ]
+    )
+
+    return "\n".join(lines) + "\n"
 
 
 def _safe_summary(text: str, max_len: int = 80) -> str:
@@ -414,7 +556,9 @@ _HELP_EPILOG = """\
 Examples:
   python -m tools.onboarding_doctor
   python -m tools.onboarding_doctor --format json
+  python -m tools.onboarding_doctor --report docs/evidence/local_onboarding_check.md
   .\\tools\\cdb.ps1 onboarding doctor
+  .\\tools\\cdb.ps1 onboarding doctor --report docs/evidence/local_onboarding_check.md
   make onboarding-doctor
 
 Exit codes:
@@ -436,6 +580,11 @@ def main(argv: list[str] | None = None) -> int:
         default="text",
         help="Output format (default: text)",
     )
+    parser.add_argument(
+        "--report",
+        metavar="PATH",
+        help="Write a Markdown report to PATH (opt-in; default: no file written)",
+    )
     args = parser.parse_args(argv)
 
     if args.format not in ("text", "json"):
@@ -446,6 +595,23 @@ def main(argv: list[str] | None = None) -> int:
     output = format_report(report, args.format)
     _validate_output_safe(output)
     print(output)
+
+    if args.report:
+        try:
+            generated_at = cdb_utcnow().isoformat(timespec="seconds")
+            md = format_markdown_report(report, generated_at)
+            _validate_output_safe(md)
+            report_path = Path(args.report)
+            report_path.parent.mkdir(parents=True, exist_ok=True)
+            report_path.write_text(md, encoding="utf-8")
+            print(
+                f"Markdown report written to: {report_path.resolve()}",
+                file=sys.stderr,
+            )
+        except (OSError, ValueError) as exc:
+            print(f"ERROR: cannot write report: {exc}", file=sys.stderr)
+            return 2
+
     return compute_exit_code(report)
 
 
