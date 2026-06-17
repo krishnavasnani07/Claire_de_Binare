@@ -57,6 +57,4 @@ def test_context_brain_bootloader_contract_anchors(
     assert path.is_file(), f"missing canonical file: {relative_path}"
     text = path.read_text(encoding="utf-8")
     for needle in needles:
-        assert needle in text, (
-            f"{relative_path} missing contract anchor: {needle!r}"
-        )
+        assert needle in text, f"{relative_path} missing contract anchor: {needle!r}"
