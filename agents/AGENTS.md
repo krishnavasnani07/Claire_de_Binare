@@ -112,7 +112,30 @@ context_brain_attempted: true
 context_brain_used: true | false
 repo_fallback_used: true | false
 repo_fallback_reason: none | unavailable | stale | contradictory | insufficient_evidence | missing_record | tool_blocked
+context_tool_status: available | partial | blocked | absent
+context_trust_level: high | medium | low | none
+records_found: <count> | none
 ```
+
+### Fallback-Klassifikationsmatrix
+
+Welcher `repo_fallback_reason` bei welchem tatsächlichen Tool-Zustand korrekt ist:
+
+| Tool-Status | Trust-Level | Records Found | Korrekter `repo_fallback_reason` |
+|---|---|---|---|
+| `available` | `high` | >=1 | `none` (kein Fallback nötig) |
+| `available` | `low` | 0 | `insufficient_evidence` |
+| `available` | `medium` | 0 | `missing_record` |
+| `available` | `low` | >=1 (stale) | `stale` |
+| `available` | `any` | widersprüchlich | `contradictory` |
+| `partial` | `low` | 0 | `insufficient_evidence` |
+| `blocked` | `none` | 0 | `tool_blocked` |
+| `absent` | `none` | 0 | `unavailable` |
+
+**Härteregel:** `repo_fallback_reason=unavailable` ist NUR erlaubt, wenn der
+Context-Brain-Tool-Zugang wirklich fehlt (Tool nicht importierbar, nicht aufrufbar,
+nicht im aktiven MCP-Surface). Ein verfügbares Tool, das LOW Trust oder keine
+Records liefert, ist **nicht** `unavailable`.
 
 ### Regeln
 
@@ -129,6 +152,15 @@ repo_fallback_reason: none | unavailable | stale | contradictory | insufficient_
 4. Keine DB-backed Claims ohne Tool-/Query-/Record-Evidence.
 5. Context Brain / MCP-Ergebnisse autorisieren **keine** automatischen Code-,
    Issue- oder Write-Aktionen; Human-GO erforderlich.
+6. `context_brain_used=true` nur mit echter Tool-/Query-/Record-Evidence.
+   Context Briefing, session memory oder caller-supplied metadata allein
+   sind keine DB-backed Evidence.
+7. Falsche Fallback-Klassifikation (z. B. `unavailable` bei verfügbarem Tool mit
+   LOW/no Records) löst `HOLD_BOOTLOADER_EVIDENCE_MISCLASSIFIED` aus und blockiert
+   den weiteren Workflow bis zur Korrektur.
+8. Lokale Context-Refresh-/Brain-Apply-Artefakte aus #3287-#3291 sind als
+   repo-backed Brain-Evidence-Kandidaten zu prüfen, wenn Context Tools keine
+   Records liefern.
 
 ## Brain Evidence Gate
 
@@ -154,6 +186,9 @@ context_brain_attempted: true
 context_brain_used: true | false
 repo_fallback_used: true | false
 repo_fallback_reason: none | unavailable | stale | contradictory | insufficient_evidence | missing_record | tool_blocked
+context_tool_status: available | partial | blocked | absent
+context_trust_level: high | medium | low | none
+records_found: <count> | none
 ```
 
 ### Field Logic
@@ -166,8 +201,17 @@ repo_fallback_reason: none | unavailable | stale | contradictory | insufficient_
 - `brain_source=unavailable`: Klar `blocked` oder `repo-only fallback` melden.
 - `context_brain_attempted`: IMMER `true` — der Preflight-Versuch ist Pflicht.
 - `context_brain_used`: `true` nur wenn echte Tool-/Query-/Record-Evidence vorliegt.
+  Context Briefing, session memory oder caller-supplied metadata allein sind
+  keine DB-backed Evidence.
 - `repo_fallback_used`: `true` wenn nach Preflight auf Repo-Reads zurueckgefallen wurde.
-- `repo_fallback_reason`: Exakter Grund fuer Repo-Fallback (Enum).
+- `repo_fallback_reason`: Exakter Grund fuer Repo-Fallback (Enum). Siehe
+  Fallback-Klassifikationsmatrix oben: `unavailable` ist NUR bei echt fehlendem
+  Tool-Zugang erlaubt, nicht bei LOW/no Records.
+- `context_tool_status`: Tatsaechlicher Status des Context-Brain-Tools nach
+  Preflight-Versuch.
+- `context_trust_level`: Vertrauensniveau der gelieferten Evidence (kann auf
+  Tool-Metadaten oder Bundle-Signalen basieren).
+- `records_found`: Anzahl der gefundenen Records (0 bei `none`).
 
 ### Default posture (SSOT)
 
@@ -208,6 +252,9 @@ Higher wins; fail-closed when lower layers conflict:
 - GitHub/Repo/Live evidence wins over Brain/CIS claims.
 - Board-Stage `trade-capable` is not Live-Go.
 - LR remains NO-GO.
+- Falsche Fallback-Klassifikation (z. B. `unavailable` bei verfügbarem Tool mit
+  LOW/no Records) löst `HOLD_BOOTLOADER_EVIDENCE_MISCLASSIFIED` aus. Der Workflow
+  muss bis zur Korrektur blockiert bleiben.
 
 ## Legacy Note
 
