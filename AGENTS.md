@@ -267,11 +267,12 @@ OpenCode skill surface zusaetzlich: `.opencode/skills/` (gezielt laden, nicht pa
 
 ## Agent Operating Rules
 
-- **Context Brain first.** Jeder Agenten-Prompt MUSS vor Repo-Reads einen Context Brain Preflight versuchen. Repo-Fallback ist nur nach belegtem Fehlversuch erlaubt. Siehe `agents/AGENTS.md` § Context Brain Preflight Gate.
+- **Context Brain first.** Jeder Agenten-Prompt MUSS vor Repo-Reads einen Context Brain Preflight versuchen. Repo-Fallback ist nur nach belegtem Fehlversuch erlaubt. Siehe `agents/AGENTS.md` § Context Brain Preflight Gate (inkl. Fallback-Klassifikationsmatrix).
+- **Fallback-Klassifikation hart:** `repo_fallback_reason=unavailable` ist NUR erlaubt, wenn Context Tools wirklich nicht verfuegbar sind. Bei verfuegbarem Tool + LOW/no Records ist `insufficient_evidence` oder `missing_record` korrekt. Falsche Klassifikation blockiert den Workflow (`HOLD_BOOTLOADER_EVIDENCE_MISCLASSIFIED`).
 - Read `knowledge/governance/CDB_AGENT_POLICY.md` section 4 before any write.
 - Respect single-writer locks, explicit stop signals, and write gates.
 - `DELIVERY_APPROVED.yaml` is human-controlled; agents must not modify it.
-- Before planning for strategy/runtime/module/service/contract/context scope, output a `Brain Evidence` block (see `agents/AGENTS.md` § Brain Evidence Gate).
+- Before planning for strategy/runtime/module/service/contract/context scope, output a `Brain Evidence` block (see `agents/AGENTS.md` § Brain Evidence Gate). Der Block MUSS die Felder `context_tool_status`, `context_trust_level` und `records_found` enthalten.
 - LR status remains NO-GO for live trading unless explicitly changed by canon/human approval.
 
 ---
