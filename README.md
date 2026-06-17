@@ -5,6 +5,22 @@ Diese Root-README ist die GitHub-Haupt-Landingpage. Der aktive Pfad bleibt Shado
 
 ## Start Here
 
+### Agent Onboarding
+
+Für frische Agenten zuerst:
+
+```text
+/onboarding
+```
+
+Der Befehl startet den kanonischen Onboarding-Flow und führt durch Bootloader, Read Order, Repo-Kontext und Safety-Gates.
+
+Onboarding-Ressourcen:
+
+- [AGENTS.md](AGENTS.md)
+- [agents/AGENTS.md](agents/AGENTS.md)
+- [docs/onboarding/](docs/onboarding/)
+
 - Neue Entwickler: [`DEVELOPER_ONBOARDING.md`](DEVELOPER_ONBOARDING.md)
 - Kurzer Docs-Index: [`docs/index.md`](docs/index.md)
 - Agenten-Bootloader: [`AGENTS.md`](AGENTS.md) -> [`agents/AGENTS.md`](agents/AGENTS.md)
